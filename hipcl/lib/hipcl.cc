@@ -5,6 +5,12 @@
 
 #include "backend.hh"
 
+#define LEVEL_ZERO
+
+#ifdef LEVEL_ZERO
+#include "core/ze_api.h"
+#endif
+
 static thread_local hipError_t tls_LastError = hipSuccess;
 
 static thread_local ClContext *tls_defaultCtx = nullptr;
@@ -42,6 +48,19 @@ static ClContext *getTlsDefaultCtx() {
 
 /***********************************************************************/
 
+#ifdef LEVEL_ZERO
+hipError_t hipGetDevice(int *deviceId) {
+  // Initialize the driver
+  zeInit(ZE_INIT_FLAG_NONE);
+
+  // Discover all the driver instances
+  uint32_t driverCount = 0;
+  zeDriverGet(&driverCount, nullptr);
+  
+  
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipGetDevice(int *deviceId) {
   InitializeOpenCL();
 
@@ -53,13 +72,28 @@ hipError_t hipGetDevice(int *deviceId) {
   *deviceId = cont->getDevice()->getHipDeviceT();
   RETURN(hipSuccess);
 }
+#endif
 
+#ifdef LEVEL_ZERO
+hipError_t hipGetDeviceCount(int *count) {
+  // Initialize the driver
+  zeInit(ZE_INIT_FLAG_NONE);
+
+  // Discover all the driver instances
+  uint32_t driverCount = 0;
+  zeDriverGet(&driverCount, nullptr);
+  * count = driverCount;
+  
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipGetDeviceCount(int *count) {
   InitializeOpenCL();
   ERROR_IF((count == nullptr), hipErrorInvalidValue);
   *count = NumDevices;
   RETURN(hipSuccess);
 }
+#endif
 
 hipError_t hipSetDevice(int deviceId) {
   InitializeOpenCL();
@@ -1571,6 +1605,35 @@ hipError_t hipModuleGetFunction(hipFunction_t *function, hipModule_t module,
   RETURN(hipSuccess);
 }
 
+#ifdef LEVEL_ZERO
+hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
+                                 unsigned int gridDimY, unsigned int gridDimZ,
+                                 unsigned int blockDimX, unsigned int blockDimY,
+                                 unsigned int blockDimZ,
+                                 unsigned int sharedMemBytes,
+                                 hipStream_t stream, void **kernelParams,
+                                 void **extra) {
+  ze_device_handle_t hDevice;
+  // Set up module description
+  size_t ilSize = 0;
+  ze_module_desc_t moduleDesc = {ZE_MODULE_DESC_VERSION_CURRENT,
+				 ZE_MODULE_FORMAT_IL_SPIRV,
+				 ilSize,
+				 nullptr,
+				 nullptr
+  };
+  ze_module_handle_t hModule;
+  zeModuleCreate(hDevice, &moduleDesc, &hModule, nullptr);
+
+  // Set up kernel description
+  ze_kernel_desc_t kernelDesc = {ZE_KERNEL_DESC_VERSION_CURRENT, ZE_KERNEL_FLAG_NONE, "kernel_name"}; // k->Name.c_str()};
+  ze_kernel_handle_t hKernel;
+  if (ZE_RESULT_SUCCESS == zeKernelCreate(hModule, &kernelDesc, &hKernel))
+    RETURN(hipSuccess);
+  else
+    RETURN(hipErrorInvalidDevice);
+}
+#else
 hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
                                  unsigned int gridDimY, unsigned int gridDimZ,
                                  unsigned int blockDimX, unsigned int blockDimY,
@@ -1604,6 +1667,7 @@ hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
     RETURN(cont->launchWithExtraParams(grid, block, sharedMemBytes, stream,
                                        extra, k));
 }
+#endif
 
 /*******************************************************************************/
 
