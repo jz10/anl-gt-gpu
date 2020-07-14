@@ -185,6 +185,12 @@ hipError_t hipDeviceGetName(char *name, int len, hipDevice_t deviceId) {
   RETURN(hipSuccess);
 }
 
+#ifdef LEVEL_ZERO
+hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
+  // TODO:
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
   InitializeOpenCL();
   ERROR_CHECK_DEVNUM(deviceId);
@@ -193,6 +199,7 @@ hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
     *bytes = CLDeviceById(deviceId).getGlobalMemSize();
   RETURN(hipSuccess);
 }
+#endif
 
 hipError_t hipDeviceSetCacheConfig(hipFuncCache_t cacheConfig) {
   RETURN(hipSuccess);
@@ -204,11 +211,18 @@ hipError_t hipDeviceGetCacheConfig(hipFuncCache_t *cacheConfig) {
   RETURN(hipSuccess);
 }
 
+#ifdef LEVEL_ZERO
+hipError_t hipDeviceGetSharedMemConfig(hipSharedMemConfig *pConfig) {
+  // TODO:
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipDeviceGetSharedMemConfig(hipSharedMemConfig *pConfig) {
   if (pConfig)
     *pConfig = hipSharedMemBankSizeFourByte;
   RETURN(hipSuccess);
 }
+#endif
 
 hipError_t hipDeviceSetSharedMemConfig(hipSharedMemConfig pConfig) {
   RETURN(hipSuccess);
