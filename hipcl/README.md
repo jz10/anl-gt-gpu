@@ -1,0 +1,1 @@
+This repostory is folked from https://github.com/cpc/hipcl.git . Here we are targeting to port Intel Leve-0 to HipCL runtime library implementation.
