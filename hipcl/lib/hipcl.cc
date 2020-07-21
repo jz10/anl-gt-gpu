@@ -56,7 +56,7 @@ hipError_t hipGetDevice(int *deviceId) {
   // Discover all the driver instances
   uint32_t driverCount = 0;
   zeDriverGet(&driverCount, nullptr);
-  
+  // TODO:
   
   RETURN(hipSuccess);
 }
@@ -110,6 +110,13 @@ hipError_t hipDeviceSynchronize(void) {
   RETURN(hipSuccess);
 }
 
+#ifdef LEVEL_ZERO
+hipError_t hipDeviceReset(void) {
+  zetSysmanDeviceReset();
+
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipDeviceReset(void) {
 
   ClContext *cont = getTlsDefaultCtx();
@@ -119,7 +126,14 @@ hipError_t hipDeviceReset(void) {
   dev->reset();
   RETURN(hipSuccess);
 }
+#endif
 
+#ifdef LEVEL_ZERO
+hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
+  
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
   InitializeOpenCL();
 
@@ -131,6 +145,7 @@ hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
   *device = ordinal;
   RETURN(hipSuccess);
 }
+#endif
 
 hipError_t hipDeviceComputeCapability(int *major, int *minor,
                                       hipDevice_t deviceId) {
@@ -147,6 +162,8 @@ hipError_t hipDeviceComputeCapability(int *major, int *minor,
   RETURN(hipSuccess);
 }
 
+#ifdef LEVEL_ZERO
+#else
 hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
                                  int deviceId) {
   InitializeOpenCL();
@@ -157,7 +174,24 @@ hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
   else
     RETURN(hipSuccess);
 }
+#endif
 
+#ifdef LEVEL_ZERO
+hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
+  // Initialize the driver  
+  zeInit(ZE_INIT_FLAG_NONE);
+  zet_sysman_properties_t devProps;
+  if (zetSysmanDeviceGetProperties(deviceId, &devProps) == ZE_RESULT_SUCCESS) {
+    prop->pciDeviceID = devProps.core.uuid.id;
+    // Or computeNode?
+    // devProps.numSubdevices;
+    strcpy(prop->name, devProps.brandName);
+    // devProps.modelName;
+  }
+
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
   InitializeOpenCL();
   ERROR_CHECK_DEVNUM(deviceId);
@@ -166,6 +200,7 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 
   RETURN(hipSuccess);
 }
+#endif
 
 hipError_t hipDeviceGetLimit(size_t *pValue, enum hipLimit_t limit) {
   ERROR_IF((pValue == nullptr), hipErrorInvalidValue);
@@ -858,6 +893,7 @@ hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
   RETURN(cont->eventElapsedTime(ms, start, stop));
 }
 
+
 hipError_t hipEventQuery(hipEvent_t event) {
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -869,6 +905,22 @@ hipError_t hipEventQuery(hipEvent_t event) {
 
 /********************************************************************/
 
+#ifdef LEVEL_ZERO
+hipError_t hipMalloc(void **ptr, size_t size) {
+  ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
+
+  ze_driver_handle_t hDriver;
+  ze_device_mem_alloc_desc_t device_desc;
+  device_desc.version = ZE_DEVICE_MEM_ALLOC_DESC_VERSION_CURRENT;
+  // Use default flag
+  device_desc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_DEFAULT;
+  device_desc.ordinal = ;
+  // Set the memory alloc properties
+  zeDriverAllocDevicedMem(hDriver, &device_desc, size, alignment, hDevice, ptr);
+
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipMalloc(void **ptr, size_t size) {
 
   ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
@@ -887,6 +939,7 @@ hipError_t hipMalloc(void **ptr, size_t size) {
   *ptr = retval;
   RETURN(hipSuccess);
 }
+#endif
 
 DEPRECATED("use hipHostMalloc instead")
 hipError_t hipMallocHost(void **ptr, size_t size) {
@@ -898,6 +951,16 @@ hipError_t hipHostAlloc(void **ptr, size_t size, unsigned int flags) {
   return hipMalloc(ptr, size);
 }
 
+#ifdef LEVEL_ZERO
+hipError_t hipFree(void *ptr) {
+  ERROR_IF((ptr == nullptr), hipSuccess);
+
+  ze_driver_handle_t hDriver;
+  zeDriverFreeMem(hDriver, ptr);
+
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipFree(void *ptr) {
 
   ERROR_IF((ptr == nullptr), hipSuccess);
@@ -912,10 +975,22 @@ hipError_t hipFree(void *ptr) {
   else
     RETURN(hipErrorInvalidDevicePointer);
 }
+#endif
 
+#ifdef LEVEL_ZERO
+hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
+  ze_driver_handle_t hDrive;
+  ze_host_mem_alloc_desc_t host_desc;
+  // TODO: handle flags
+  zeDriverAllocHostMem(hDrive, &host_desc, size, 0);
+
+  RETURN(hipSuccess);
+}
+#else
 hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
   return hipMalloc(ptr, size);
 }
+#endif
 
 hipError_t hipHostFree(void *ptr) { return hipFree(ptr); }
 
