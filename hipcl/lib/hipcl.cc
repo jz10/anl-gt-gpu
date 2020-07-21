@@ -282,6 +282,20 @@ hipError_t hipSetDeviceFlags(unsigned flags) {
   return hipSuccess;
 }
 
+#ifdef LEVEL_ZERO
+hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
+                                  int peerDeviceId) {
+  ze_device_handle_t hDevice;
+  ze_device_handle_t hPeerDevice;
+  ze_bool_t val;
+  zeDeviceCanAccessPeer(hDevice, hPeerDevice, &val);
+    
+  if (val == ZE_TRUE)
+    RETURN(hipSuccess);
+  else
+    RETURN(hipError);
+}
+#else
 hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
                                   int peerDeviceId) {
   // TODO this needs implementing
@@ -293,6 +307,7 @@ hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
     *canAccessPeer = 0;
   return hipSuccess;
 }
+#endif
 
 hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
   return hipErrorInvalidDevice;
