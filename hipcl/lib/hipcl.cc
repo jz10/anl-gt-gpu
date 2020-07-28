@@ -869,6 +869,35 @@ hipError_t hipDevicePrimaryCtxSetFlags(hipDevice_t deviceId,
 }
 
 /********************************************************************/
+zeMemAllocShared(ze_context_handle_t hContext,
+                 const ze_device_mem_alloc_desc_t *deviceDesc,
+                 const ze_host_mem_alloc_desc_t *hostDesc,
+                 size_t size,
+                 size_t alignment,
+                 ze_device_handle_t hDevice,
+                 void **pptr) {
+    return L0::Context::fromHandle(hContext)->allocSharedMem(hDevice, deviceDesc->flags, hostDesc->flags, size, alignment, pptr);
+}
+
+__zedllexport ze_result_t __zecall
+zeDriverAllocDeviceMem(
+    ze_driver_handle_t hDriver,
+    const ze_device_mem_alloc_desc_t *deviceDesc,
+    size_t size,
+    size_t alignment,
+    ze_device_handle_t hDevice,
+    void **pptr) {
+    return L0::DriverHandle::fromHandle(hDriver)->allocDeviceMem(hDevice, deviceDesc->flags, size, alignment, pptr);
+}
+
+zeDriverAllocHostMem(
+    ze_driver_handle_t hDriver,
+    const ze_host_mem_alloc_desc_t *hostDesc,
+    size_t size,
+    size_t alignment,
+    void **pptr) {
+    return L0::DriverHandle::fromHandle(hDriver)->allocHostMem(hostDesc->flags, size, alignment, pptr);
+}
 
 hipError_t hipEventCreate(hipEvent_t *event) {
   return hipEventCreateWithFlags(event, 0);
