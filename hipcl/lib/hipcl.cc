@@ -642,7 +642,21 @@ hipError_t hipStreamAddCallback(hipStream_t stream,
   else
     RETURN(hipErrorInvalidValue);
 }
+#ifdef LEVEL_ZERO
+hipError_t hipMalloc(void **ptr, size_t size) {
+  ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
 
+  ze_driver_handle_t hDriver;
+  ze_device_mem_alloc_desc_t device_desc;
+  device_desc.version = ZE_DEVICE_MEM_ALLOC_DESC_VERSION_CURRENT;
+
+  device_desc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_DEFAULT;
+  device_desc.ordinal = ;
+
+  zeDriverAllocDevicedMem(hDriver, &device_desc, size, alignment, hDevice, ptr);
+
+  RETURN(hipSuccess);
+}
 /********************************************************************/
 
 DEPRECATED(DEPRECATED_MSG)
@@ -955,6 +969,8 @@ hipError_t hipMalloc(void **ptr, size_t size) {
   RETURN(hipSuccess);
 }
 #endif
+
+
 
 DEPRECATED("use hipHostMalloc instead")
 hipError_t hipMallocHost(void **ptr, size_t size) {
