@@ -5,7 +5,9 @@
 
 #include "backend.hh"
 
-#ifndef LEVEL_ZERO
+#ifdef LEVEL_ZERO
+
+#include "core/ze_api.h"
 
 static thread_local hipError_t tls_LastError = hipSuccess;
 
@@ -45,21 +47,26 @@ static ClContext *getTlsDefaultCtx() {
 /***********************************************************************/
 
 hipError_t hipGetDevice(int *deviceId) {
-  InitializeOpenCL();
+  // Initialize the driver
+  zeInit(ZE_INIT_FLAG_NONE);
 
-  ERROR_IF((deviceId == nullptr), hipErrorInvalidValue);
-
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  *deviceId = cont->getDevice()->getHipDeviceT();
+  // Discover all the driver instances
+  uint32_t driverCount = 0;
+  zeDriverGet(&driverCount, nullptr);
+  // TODO:
+  
   RETURN(hipSuccess);
 }
 
 hipError_t hipGetDeviceCount(int *count) {
-  InitializeOpenCL();
-  ERROR_IF((count == nullptr), hipErrorInvalidValue);
-  *count = NumDevices;
+  // Initialize the driver
+  zeInit(ZE_INIT_FLAG_NONE);
+
+  // Discover all the driver instances
+  uint32_t driverCount = 0;
+  zeDriverGet(&driverCount, nullptr);
+  * count = driverCount;
+  
   RETURN(hipSuccess);
 }
 
@@ -79,24 +86,13 @@ hipError_t hipDeviceSynchronize(void) {
 }
 
 hipError_t hipDeviceReset(void) {
+  zetSysmanDeviceReset();
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  ClDevice *dev = cont->getDevice();
-  dev->reset();
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
-  InitializeOpenCL();
-
-  ERROR_IF(((ordinal < 0) || ((size_t)ordinal >= NumDevices)),
-           hipErrorInvalidValue);
-
-  ERROR_IF((device == nullptr), hipErrorInvalidDevice);
-
-  *device = ordinal;
+  
   RETURN(hipSuccess);
 }
 
@@ -127,10 +123,16 @@ hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
 }
 
 hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
-  InitializeOpenCL();
-  ERROR_CHECK_DEVNUM(deviceId);
-
-  CLDeviceById(deviceId).copyProperties(prop);
+  // Initialize the driver  
+  zeInit(ZE_INIT_FLAG_NONE);
+  zet_sysman_properties_t devProps;
+  if (zetSysmanDeviceGetProperties(deviceId, &devProps) == ZE_RESULT_SUCCESS) {
+    prop->pciDeviceID = devProps.core.uuid.id;
+    // Or computeNode?
+    // devProps.numSubdevices;
+    strcpy(prop->name, devProps.brandName);
+    // devProps.modelName;
+  }
 
   RETURN(hipSuccess);
 }
@@ -154,11 +156,7 @@ hipError_t hipDeviceGetName(char *name, int len, hipDevice_t deviceId) {
 }
 
 hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
-  InitializeOpenCL();
-  ERROR_CHECK_DEVNUM(deviceId);
-
-  if (bytes)
-    *bytes = CLDeviceById(deviceId).getGlobalMemSize();
+  // TODO:
   RETURN(hipSuccess);
 }
 
@@ -173,8 +171,7 @@ hipError_t hipDeviceGetCacheConfig(hipFuncCache_t *cacheConfig) {
 }
 
 hipError_t hipDeviceGetSharedMemConfig(hipSharedMemConfig *pConfig) {
-  if (pConfig)
-    *pConfig = hipSharedMemBankSizeFourByte;
+  // TODO:
   RETURN(hipSuccess);
 }
 
@@ -203,14 +200,15 @@ hipError_t hipSetDeviceFlags(unsigned flags) {
 
 hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
                                   int peerDeviceId) {
-  // TODO this needs implementing
-  ERROR_CHECK_DEVNUM(deviceId);
-  ERROR_CHECK_DEVNUM(peerDeviceId);
-  if (deviceId == peerDeviceId)
-    *canAccessPeer = 1;
+  ze_device_handle_t hDevice;
+  ze_device_handle_t hPeerDevice;
+  ze_bool_t val;
+  zeDeviceCanAccessPeer(hDevice, hPeerDevice, &val);
+    
+  if (val == ZE_TRUE)
+    RETURN(hipSuccess);
   else
-    *canAccessPeer = 0;
-  return hipSuccess;
+    RETURN(hipError);
 }
 
 hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
@@ -825,21 +823,17 @@ hipError_t hipEventQuery(hipEvent_t event) {
 /********************************************************************/
 
 hipError_t hipMalloc(void **ptr, size_t size) {
-
   ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
 
-  if (size == 0) {
-    *ptr = nullptr;
-    RETURN(hipSuccess);
-  }
+  ze_driver_handle_t hDriver;
+  ze_device_mem_alloc_desc_t device_desc;
+  device_desc.version = ZE_DEVICE_MEM_ALLOC_DESC_VERSION_CURRENT;
+  // Use default flag
+  device_desc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_DEFAULT;
+  device_desc.ordinal = ;
+  // Set the memory alloc properties
+  zeDriverAllocDevicedMem(hDriver, &device_desc, size, alignment, hDevice, ptr);
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  void *retval = cont->allocate(size);
-  ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
-
-  *ptr = retval;
   RETURN(hipSuccess);
 }
 
@@ -854,22 +848,21 @@ hipError_t hipHostAlloc(void **ptr, size_t size, unsigned int flags) {
 }
 
 hipError_t hipFree(void *ptr) {
-
   ERROR_IF((ptr == nullptr), hipSuccess);
-  //  if (ptr == nullptr)
-  //    RETURN(hipSuccess);
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  ze_driver_handle_t hDriver;
+  zeDriverFreeMem(hDriver, ptr);
 
-  if (cont->free(ptr))
-    RETURN(hipSuccess);
-  else
-    RETURN(hipErrorInvalidDevicePointer);
+  RETURN(hipSuccess);
 }
 
 hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
-  return hipMalloc(ptr, size);
+  ze_driver_handle_t hDrive;
+  ze_host_mem_alloc_desc_t host_desc;
+  // TODO: handle flags
+  zeDriverAllocHostMem(hDrive, &host_desc, size, 0);
+
+  RETURN(hipSuccess);
 }
 
 hipError_t hipHostFree(void *ptr) { return hipFree(ptr); }
@@ -1581,156 +1574,26 @@ hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
                                  unsigned int sharedMemBytes,
                                  hipStream_t stream, void **kernelParams,
                                  void **extra) {
+  ze_device_handle_t hDevice;
+  // Set up module description
+  size_t ilSize = 0;
+  ze_module_desc_t moduleDesc = {ZE_MODULE_DESC_VERSION_CURRENT,
+				 ZE_MODULE_FORMAT_IL_SPIRV,
+				 ilSize,
+				 nullptr,
+				 nullptr
+  };
+  ze_module_handle_t hModule;
+  zeModuleCreate(hDevice, &moduleDesc, &hModule, nullptr);
 
-  logDebug("hipModuleLaunchKernel\n");
-
-  if (sharedMemBytes > 0) {
-    logError("Dynamic shared memory isn't supported ATM\n");
-    RETURN(hipErrorLaunchFailure);
-  }
-
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  if (kernelParams == nullptr && extra == nullptr) {
-    logError("either kernelParams or extra is required!\n");
-    RETURN(hipErrorLaunchFailure);
-  }
-
-  dim3 grid(gridDimX, gridDimY, gridDimZ);
-  dim3 block(blockDimX, blockDimY, blockDimZ);
-
-  if (kernelParams)
-    RETURN(cont->launchWithKernelParams(grid, block, sharedMemBytes, stream,
-                                        kernelParams, k));
+  // Set up kernel description
+  ze_kernel_desc_t kernelDesc = {ZE_KERNEL_DESC_VERSION_CURRENT, ZE_KERNEL_FLAG_NONE, "kernel_name"}; // k->Name.c_str()};
+  ze_kernel_handle_t hKernel;
+  if (ZE_RESULT_SUCCESS == zeKernelCreate(hModule, &kernelDesc, &hKernel))
+    RETURN(hipSuccess);
   else
-    RETURN(cont->launchWithExtraParams(grid, block, sharedMemBytes, stream,
-                                       extra, k));
+    RETURN(hipErrorInvalidDevice);
 }
-
-#endif
 
 /*******************************************************************************/
 
-#include "hip/hip_fatbin.h"
-
-#define SPIR_TRIPLE "hip-spir64-unknown-unknown"
-
-static unsigned binaries_loaded = 0;
-
-extern "C" void **__hipRegisterFatBinary(const void *data) {
-  InitializeOpenCL();
-
-  const __CudaFatBinaryWrapper *fbwrapper =
-      reinterpret_cast<const __CudaFatBinaryWrapper *>(data);
-  if (fbwrapper->magic != __hipFatMAGIC2 || fbwrapper->version != 1) {
-    logCritical("The given object is not hipFatBinary !\n");
-    std::abort();
-  }
-
-  const __ClangOffloadBundleHeader *header = fbwrapper->binary;
-  std::string magic(reinterpret_cast<const char *>(header),
-                    sizeof(CLANG_OFFLOAD_BUNDLER_MAGIC) - 1);
-  if (magic.compare(CLANG_OFFLOAD_BUNDLER_MAGIC)) {
-    logCritical("The bundled binaries are not Clang bundled "
-                "(CLANG_OFFLOAD_BUNDLER_MAGIC is missing)\n");
-    std::abort();
-  }
-
-  std::string *module = new std::string;
-  if (!module) {
-    logCritical("Failed to allocate memory\n");
-    std::abort();
-  }
-
-  const __ClangOffloadBundleDesc *desc = &header->desc[0];
-  bool found = false;
-
-  for (uint64_t i = 0; i < header->numBundles;
-       ++i, desc = reinterpret_cast<const __ClangOffloadBundleDesc *>(
-                reinterpret_cast<uintptr_t>(&desc->triple[0]) +
-                desc->tripleSize)) {
-
-    std::string triple{&desc->triple[0], sizeof(SPIR_TRIPLE) - 1};
-    logDebug("Triple of bundle {} is: {}\n", i, triple);
-
-    if (triple.compare(SPIR_TRIPLE) == 0) {
-      found = true;
-      break;
-    } else {
-      logDebug("not a SPIR triple, ignoring\n");
-      continue;
-    }
-  }
-
-  if (!found) {
-    logDebug("Didn't find any suitable compiled binary!\n");
-    std::abort();
-  }
-
-  const char *string_data = reinterpret_cast<const char *>(
-      reinterpret_cast<uintptr_t>(header) + (uintptr_t)desc->offset);
-  size_t string_size = desc->size;
-  module->assign(string_data, string_size);
-
-  logDebug("Register module: {} \n", (void *)module);
-
-  for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
-    CLDeviceById(deviceId).registerModule(module);
-  }
-
-  ++binaries_loaded;
-  logDebug("__hipRegisterFatBinary {}\n", binaries_loaded);
-
-  return (void **)module;
-}
-
-extern "C" void __hipUnregisterFatBinary(void *data) {
-  std::string *module = reinterpret_cast<std::string *>(data);
-
-  logDebug("Unregister module: {} \n", (void *)module);
-  for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
-    CLDeviceById(deviceId).unregisterModule(module);
-  }
-
-  --binaries_loaded;
-  logDebug("__hipUnRegisterFatBinary {}\n", binaries_loaded);
-
-  if (binaries_loaded == 0) {
-    UnInitializeOpenCL();
-  }
-
-  delete module;
-}
-
-extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
-                                      char *deviceFunction,
-                                      const char *deviceName,
-                                      unsigned int threadLimit, void *tid,
-                                      void *bid, dim3 *blockDim, dim3 *gridDim,
-                                      int *wSize) {
-  InitializeOpenCL();
-
-  std::string *module = reinterpret_cast<std::string *>(data);
-  logDebug("RegisterFunction on module {}\n", (void *)module);
-
-  for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
-
-    if (CLDeviceById(deviceId).registerFunction(module, hostFunction,
-                                                deviceName)) {
-      logDebug("__hipRegisterFunction: kernel {} found\n", deviceName);
-    } else {
-      logCritical("__hipRegisterFunction can NOT find kernel: {} \n",
-                  deviceName);
-      std::abort();
-    }
-  }
-}
-
-extern "C" void __hipRegisterVar(std::vector<hipModule_t> *modules,
-                                 char *hostVar, char *deviceVar,
-                                 const char *deviceName, int ext, int size,
-                                 int constant, int global) {
-  logError("__hipRegisterVar not implemented yet\n");
-  InitializeOpenCL();
-}
