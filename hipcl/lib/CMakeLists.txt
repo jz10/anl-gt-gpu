@@ -4,7 +4,7 @@ add_subdirectory(bitcode)
 
 find_package(OpenCL 2.0 REQUIRED)
 
-set(HIPCL_SOURCES hipcl.cc hipcl_level0.cc backend.cc log.cc spirv.cc)
+set(HIPCL_SOURCES hipcl.cc backend.cc log.cc spirv.cc)
 
 set_source_files_properties(${HIPCL_SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -58,6 +58,7 @@ target_include_directories(hipcl
     PRIVATE
         "${CMAKE_SOURCE_DIR}"
         "${CMAKE_SOURCE_DIR}/include"
+	"${Level_0_INCLUDE_DIR}"
 )
 
 install(TARGETS hipcl

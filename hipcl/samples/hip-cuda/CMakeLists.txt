@@ -1,13 +1,13 @@
 set(SAMPLES
-    BinomialOption
-    BitonicSort
-    DCT
-    dwtHaar1D
-    FastWalshTransform
-    FloydWarshall
+#    BinomialOption
+#    BitonicSort
+#    DCT
+#    dwtHaar1D
+#    FastWalshTransform
+#    FloydWarshall
 #    Histogram
-#   still broken:
-#    PrefixSum
+##   still broken:
+##    PrefixSum
 #    RecursiveGaussian
 #    SimpleConvolution
 )

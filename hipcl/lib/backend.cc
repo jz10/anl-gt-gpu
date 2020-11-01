@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 
 #include "backend.hh"
 
@@ -1349,6 +1350,255 @@ bool ClDevice::getModuleAndFName(const void *HostFunction,
 }
 
 /***********************************************************************/
+// HipLZ support
+static std::vector<LZDevice *> HipLZDevices INIT_PRIORITY(120);
+
+size_t NumLZDevices = 1;
+
+class InvalidLevel0Initialization : public std::out_of_range {
+  using std::out_of_range::out_of_range;
+};
+
+LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
+  this->hDevice = hDevice_;
+  this->hDriver = hDriver_;
+
+  // Create Level-0 context  
+  ze_context_desc_t ctxtDesc = {
+    ZE_STRUCTURE_TYPE_CONTEXT_DESC,
+    nullptr,
+    0
+  };
+  ze_context_handle_t hContext;
+  ze_result_t status = zeContextCreate(this->hDriver, &ctxtDesc, &hContext);
+  if(status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeContextCreate Failed with return code " + std::to_string(status));
+  }
+
+  this->lzContext = new LZContext(this, hContext);
+}
+
+void LZDevice::registerModule(std::string* module) {
+  std::lock_guard<std::mutex> Lock(this->mtx);
+  Modules.push_back(module);
+}
+
+bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
+				const char *FunctionName) {
+  std::lock_guard<std::mutex> Lock(this->mtx);
+
+  auto it = std::find(Modules.begin(), Modules.end(), module);
+  if (it == Modules.end()) {
+    logError("HipLZ Module PTR not FOUND: {}\n", (void *)module);
+    return false;
+  }
+
+  HostPtrToModuleMap.emplace(std::make_pair(HostFunction, module));
+  HostPtrToNameMap.emplace(std::make_pair(HostFunction, FunctionName));
+
+  // Create HipLZ module
+  std::string funcName(FunctionName);
+  this->lzContext->CreateModule((uint8_t* )module->data(), module->length(), funcName);
+
+  return true;
+}
+
+// Get host function pointer's corresponding name 
+std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
+  if (HostPtrToNameMap.find(HostFunction) == HostPtrToNameMap.end())
+    throw InvalidLevel0Initialization("HipLZ no corresponding host function name found");
+
+  return HostPtrToNameMap[HostFunction];
+}
+
+LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 0) {
+  this->lzDevice = D;
+  this->hContext = hContext_;
+  
+  // Create command list 
+  ze_command_list_desc_t clDesc;
+  clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;                                    
+  clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour 
+  clDesc.pNext = nullptr;
+  
+  ze_command_list_handle_t hCommandList;
+  ze_result_t status = zeCommandListCreate(this->hContext, lzDevice->GetDeviceHandle(), &clDesc, &hCommandList);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+  } 
+  this->lzCommandList = new LZCommandList(this, hCommandList);
+}
+
+void LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
+  if (!this->lzModule) {
+    // Create module 
+    ze_module_desc_t moduleDesc = {
+      ZE_STRUCTURE_TYPE_MODULE_DESC,
+      nullptr,
+      ZE_MODULE_FORMAT_IL_SPIRV,
+      ilSize,
+      funcIL,
+      nullptr,
+      nullptr
+    };
+    ze_module_handle_t hModule;
+    ze_result_t status = zeModuleCreate(hContext, lzDevice->GetDeviceHandle(), &moduleDesc, &hModule, nullptr);
+    if (status != ZE_RESULT_SUCCESS) {
+      throw InvalidLevel0Initialization("Hiplz zeModuleCreate FAILED with return code  " + std::to_string(status));
+    } 
+
+    this->lzModule = new LZModule(hModule);
+  }
+  
+  // Create kernel
+  this->lzModule->CreateKernel(funcName);
+}
+
+// Launch HipLZ kernel 
+bool LZContext::launchHostFunc(const void* HostFunction) {
+  std::lock_guard<std::mutex> Lock(this->mtx);
+  LZKernel* Kernel = 0;
+  if (!this->lzModule) {
+    throw InvalidLevel0Initialization("Hiplz LZModule was not created before invoking kernel?");
+  }
+
+  std::string HostFunctionName = this->lzDevice->GetHostFunctionName(HostFunction);
+  Kernel = this->lzModule->GetKernel(HostFunctionName);
+
+  if (!Kernel)
+    throw InvalidLevel0Initialization("Hiplz no LZkernel found?");
+
+  // Launch kernel via Level-0 command list
+  ze_group_count_t hLaunchFuncArgs;
+  ze_event_handle_t hSignalEvent;
+  ze_result_t status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
+					   Kernel->GetKernelHandle(), &hLaunchFuncArgs, hSignalEvent, 0, nullptr);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
+  } 
+
+  return true;
+}
+
+// Create Level-0 kernel 
+void LZModule::CreateKernel(std::string funcName) {
+  if (this->kernels.find(funcName) != this->kernels.end())
+    return;
+
+  // Create kernel                                                                                                  
+  ze_kernel_desc_t kernelDesc = {
+    ZE_STRUCTURE_TYPE_KERNEL_DESC,
+    nullptr,
+    0, // flags                                                                                                     
+    funcName.c_str()
+  };
+  ze_kernel_handle_t hKernel;
+  ze_result_t status = zeKernelCreate(this->hModule, &kernelDesc, &hKernel);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeKernelCreate FAILED with return code " + std::to_string(status));
+  }
+
+  // Register kernel
+  this->kernels[funcName] = new LZKernel(hKernel);
+}
+
+// Get Level-0 kernel
+LZKernel* LZModule::GetKernel(std::string funcName) {
+  if (kernels.find(funcName) == kernels.end())
+    return nullptr;
+
+  return kernels[funcName];
+}
+
+static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device_type_t type) {
+  // get all devices  
+  uint32_t deviceCount = 0;
+  zeDeviceGet(pDriver, &deviceCount, nullptr);
+  logDebug("GET DRIVER'S DEVICE COUNT {} ", deviceCount);
+
+  std::vector<ze_device_handle_t> devices(deviceCount);
+  ze_device_handle_t devices_[10]; // Set initial number of devices as 10
+  ze_result_t status = zeDeviceGet(pDriver, &deviceCount, devices.data());
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeDeviceGet FAILED with return code " + std::to_string(status));
+  }
+
+  ze_device_handle_t found = nullptr;
+  // For each device, find the first one matching the type
+  for (uint32_t device = 0; device < deviceCount; ++device) {
+    auto phDevice = devices[device];
+    ze_device_properties_t device_properties = {};
+    device_properties.stype = ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
+    
+    status = zeDeviceGetProperties(phDevice, &device_properties);
+    if (status != ZE_RESULT_SUCCESS) {
+      throw InvalidLevel0Initialization("HipLZ zeDeviceGetProperties FAILED with return code " + std::to_string(status));
+    }
+     
+    if (type == device_properties.type) {
+      found = phDevice;
+      break;
+    }
+  }
+
+  return found;
+}
+
+static void InitializeHipLZCallOnce() {
+  // Initialize the driver 
+  ze_result_t status = zeInit(0);
+  if(status != ZE_RESULT_SUCCESS) {
+    logDebug("INITIALIZE LEVEL-0 ERROR {}", status);
+    exit(1);
+  }
+
+  const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
+  ze_driver_handle_t pDriver = nullptr;
+  ze_device_handle_t pDevice = nullptr;
+
+  // Get driver count
+  uint32_t driverCount = 0;
+  status = zeDriverGet(&driverCount, nullptr);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeDriverGet FAILED with return code " + std::to_string(status));
+  }
+
+  // Get drivers
+  std::vector<ze_driver_handle_t> drivers(driverCount);
+  status = zeDriverGet(&driverCount, drivers.data());
+  if(status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeDriverGet Failed with return code " + std::to_string(status));
+  }
+
+  // Find the level-0 device, here we just pick up the 1st one
+  for (uint32_t driver = 0; driver < driverCount; ++ driver) {
+    pDriver = drivers[driver];
+    pDevice = FindLevel0Device( pDriver, type );
+    if (pDevice) {
+      break;
+    }
+  }
+
+  // Manully set the number of HipLZ devices, this is just a temproary solution
+  NumLZDevices = 1;
+
+  if (pDevice) {
+    LZDevice* lzDevice = new LZDevice(pDevice, pDriver);
+    HipLZDevices.emplace_back(lzDevice);
+  } else {
+    throw InvalidLevel0Initialization("HipLZ can not find device ");
+  }
+}
+
+void InitializeHipLZ() {
+  static std::once_flag HipLZInitialized;
+  std::call_once(HipLZInitialized, InitializeHipLZCallOnce);
+}
+
+LZDevice &HipLZDeviceById(int deviceId) { return *HipLZDevices.at(deviceId); }
+
+/***********************************************************************/
+
 
 ClDevice &CLDeviceById(int deviceId) { return *OpenCLDevices.at(deviceId); }
 

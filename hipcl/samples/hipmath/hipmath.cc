@@ -1,4 +1,3 @@
-
 #include "hip/hip_runtime.h"
 
 #include <cmath>
@@ -14,7 +13,7 @@
             exit(1);                                                                    \
         }                                                                                          \
     }
-
+ 
 #define LEN 512
 #define SIZE LEN << 4
 
@@ -47,7 +46,7 @@ float bitcast_f(unsigned j) {
 
 
 __global__ void floatMath(float *In, float *Buf1Out, float *Buf2Out) {
-  for (size_t i = 0; i < SINCOS_N; ++i)
+  /*xxx for (size_t i = 0; i < SINCOS_N; ++i)
     sincosf(In[i], Buf1Out + i, Buf2Out + i);
 
   Buf1Out += SINCOS_N;
@@ -63,6 +62,7 @@ __global__ void floatMath(float *In, float *Buf1Out, float *Buf2Out) {
   Buf2Out[6] = acosf(In[6]);
   Buf2Out[7] = acoshf(In[7]);
   Buf2Out[8] = bitcast_f(__brev(bitcast_u(In[8])));
+  */
 }
 
 

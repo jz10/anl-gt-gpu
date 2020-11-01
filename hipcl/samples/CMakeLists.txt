@@ -19,8 +19,8 @@ function(add_hipcl_test EXEC_NAME TEST_NAME TEST_PASS SOURCE)
     add_executable("${EXEC_NAME}" ${SOURCE})
 
     set_target_properties("${EXEC_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
-
-    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl")
+    
+    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl" "OpenCL" "ze_loader")
 
     install(TARGETS "${EXEC_NAME}"
             RUNTIME DESTINATION "${HIPCL_SAMPLE_BINDIR}")
@@ -46,6 +46,7 @@ function(add_hipcl_binary EXEC_NAME)
 
     set_target_properties("${EXEC_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
 
+    
     target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl")
 
     install(TARGETS "${EXEC_NAME}"
@@ -67,12 +68,12 @@ set(SAMPLES
     1_hipEvent
     2_vecadd
     3_shared_memory
-#    4_shfl
-#    5_2dshfl
+    4_shfl
+    5_2dshfl
 #    6_dynamic_shared
-    hipInfo
+#    hipInfo
 #    7_streams
-#    9_unroll
+    9_unroll
 )
 
 foreach (SAMPLE ${SAMPLES})

@@ -3,9 +3,8 @@
 #include <fstream>
 #include <stack>
 
+#include "ze_api.h"
 #include "backend.hh"
-
-#ifndef LEVEL_ZERO
 
 static thread_local hipError_t tls_LastError = hipSuccess;
 
@@ -60,6 +59,11 @@ hipError_t hipGetDeviceCount(int *count) {
   InitializeOpenCL();
   ERROR_IF((count == nullptr), hipErrorInvalidValue);
   *count = NumDevices;
+
+  // Discover all the driver instances    
+  uint32_t driverCount = 0;
+  zeDriverGet(&driverCount, nullptr);
+  
   RETURN(hipSuccess);
 }
 
@@ -128,6 +132,11 @@ hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
 
 hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
   InitializeOpenCL();
+
+  // Here we initialize HipLZ device as well, but does not actually return device properties
+  // TODO: make a real properties retrieving function
+  InitializeHipLZ();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   CLDeviceById(deviceId).copyProperties(prop);
@@ -811,7 +820,6 @@ hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
 
   RETURN(cont->eventElapsedTime(ms, start, stop));
 }
-
 
 hipError_t hipEventQuery(hipEvent_t event) {
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
@@ -1522,8 +1530,22 @@ hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
   RETURN(cont->setArg(arg, size, offset));
 }
 
+// Here we still need to consider the context stack for thread local contexts
+static thread_local LZContext *tls_defaultLzCtx = nullptr;
+
+static LZContext *getTlsDefaultLzCtx() {
+  if (tls_defaultLzCtx == nullptr)
+    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx();
+  return tls_defaultLzCtx;
+}
+
 hipError_t hipLaunchByPtr(const void *hostFunction) {
   logDebug("hipLaunchByPtr\n");
+  // Try for HipLZ kernel at first
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  if (lzCtx->launchHostFunc(hostFunction)) 
+    RETURN(hipSuccess);
+
   ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
@@ -1607,8 +1629,6 @@ hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
     RETURN(cont->launchWithExtraParams(grid, block, sharedMemBytes, stream,
                                        extra, k));
 }
-
-#endif
 
 /*******************************************************************************/
 
@@ -1703,6 +1723,8 @@ extern "C" void __hipUnregisterFatBinary(void *data) {
   delete module;
 }
 
+#include <iostream>
+
 extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
                                       char *deviceFunction,
                                       const char *deviceName,
@@ -1710,10 +1732,13 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
                                       void *bid, dim3 *blockDim, dim3 *gridDim,
                                       int *wSize) {
   InitializeOpenCL();
-
+  
+  std::string devFunc = deviceFunction;
+  std::cout << "Register function: " << std::endl; // devFunc << std::endl;
+			  
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterFunction on module {}\n", (void *)module);
-
+  
   for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
 
     if (CLDeviceById(deviceId).registerFunction(module, hostFunction,
@@ -1721,6 +1746,18 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
       logDebug("__hipRegisterFunction: kernel {} found\n", deviceName);
     } else {
       logCritical("__hipRegisterFunction can NOT find kernel: {} \n",
+                  deviceName);
+      std::abort();
+    }
+  }
+
+  // HipLZ: here we register HipLZ kernels as well
+  for (size_t deviceId = 0; deviceId < NumLZDevices; ++ deviceId) {
+    if (HipLZDeviceById(deviceId).registerFunction(module, hostFunction,
+                                                   deviceName)) {
+      logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName);
+    } else {
+      logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n",
                   deviceName);
       std::abort();
     }
@@ -1734,3 +1771,4 @@ extern "C" void __hipRegisterVar(std::vector<hipModule_t> *modules,
   logError("__hipRegisterVar not implemented yet\n");
   InitializeOpenCL();
 }
+

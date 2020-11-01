@@ -14,6 +14,8 @@
 
 #include "hip/hipcl.hh"
 
+#include "ze_api.h"
+
 /************************************************************/
 
 #if !defined(SPDLOG_ACTIVE_LEVEL)
@@ -99,6 +101,7 @@ void logCritical(const char *fmt, const Args &... args) {
 #endif
 
 class ClEvent {
+protected:
   std::mutex EventMutex;
   cl::Event *Event;
   hipStream_t Stream;
@@ -132,6 +135,7 @@ typedef std::map<const void *, std::vector<hipFunction_t>> hipFunctionMap;
 class ExecItem;
 
 class ClKernel {
+protected:
   cl::Kernel Kernel;
   std::string Name;
   OCLFuncInfo *FuncInfo;
@@ -159,6 +163,7 @@ public:
 /********************************/
 
 class ClProgram {
+protected:
   cl::Program Program;
   cl::Context Context;
   cl::Device Device;
@@ -207,6 +212,7 @@ public:
 };
 
 class ClQueue {
+protected:
   std::mutex QueueMutex;
   cl::CommandQueue Queue;
   cl_event LastEvent;
@@ -270,6 +276,7 @@ public:
 class ClDevice;
 
 class ClContext {
+protected:
   std::mutex ContextMutex;
   unsigned Flags;
   ClDevice *Device;
@@ -332,6 +339,7 @@ public:
 };
 
 class ClDevice {
+protected:
   std::mutex DeviceMutex;
 
   hipDevice_t Index;
@@ -381,6 +389,106 @@ public:
   bool reserveMem(size_t bytes);
   bool releaseMem(size_t bytes);
 };
+
+class LZContext;
+
+class LZDevice {
+protected:
+  std::mutex mtx;
+  LZContext* lzContext;
+  ze_device_handle_t hDevice;
+  ze_driver_handle_t hDriver;
+
+  std::vector<std::string *> Modules;
+  std::map<const void *, std::string *> HostPtrToModuleMap;
+  std::map<const void *, std::string> HostPtrToNameMap;
+
+public:
+  LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_);
+  
+  ze_device_handle_t GetDeviceHandle() { return this->hDevice; };
+  ze_driver_handle_t GetDriverHandle() { return this->hDriver; }
+  
+  // Register HipLZ module which is presented as IL
+  void registerModule(std::string* module);
+  // Regsiter HipLZ module, kernel function name with host function which is a wrapper
+  bool registerFunction(std::string *module, const void *HostFunction, const char *FunctionName);
+
+  // Get host function pointer's corresponding name
+  std::string GetHostFunctionName(const void* HostFunction);
+
+  // Get primary context
+  LZContext* getPrimaryCtx() { return this->lzContext; };
+};
+
+class LZKernel {
+protected:
+  ze_kernel_handle_t hKernel;
+
+public: 
+  LZKernel(ze_kernel_handle_t hKernel_) {
+    this->hKernel = hKernel_;
+  }
+
+  ze_kernel_handle_t GetKernelHandle() { return this->hKernel; }
+};
+
+class LZModule {
+protected:
+  ze_module_handle_t hModule;
+  std::map<std::string, LZKernel* > kernels;
+
+public:
+  LZModule(ze_module_handle_t hModule_) {
+    this->hModule = hModule_;
+  };
+  
+  ze_module_handle_t GethModuleHandle() { return this->hModule; }
+  void CreateKernel(std::string funcName);
+  LZKernel* GetKernel(std::string funcName);
+};
+
+class LZCommandList;
+
+class LZContext : public ClContext {
+protected:
+  std::mutex mtx;
+  LZDevice* lzDevice;
+  LZModule* lzModule;
+  LZCommandList* lzCommandList;
+  ze_context_handle_t hContext;
+
+public:
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0) {}
+  LZContext(LZDevice* D, ze_context_handle_t hContext_);  
+
+  void CreateModule(uint8_t* moduleIL, size_t ilSize, std::string funcName);
+  ze_context_handle_t GetContextHandle() { return this->hContext; }
+
+  // Launch HipLZ kernel
+  bool launchHostFunc(const void* HostFunction);
+};
+
+class LZCommandList {
+protected:
+  LZContext* lzContext;
+  ze_command_list_handle_t hCommandList;
+
+public:
+  LZCommandList(LZContext* lzContext_, ze_command_list_handle_t hCommandList_) {
+    this->lzContext = lzContext_;
+    this->hCommandList = hCommandList_;
+  };
+
+  ze_command_list_handle_t GetCommandListHandle() { return this->hCommandList; }
+};
+
+LZDevice &HipLZDeviceById(int deviceId);
+
+extern size_t NumLZDevices;
+
+void InitializeHipLZ();
+
 
 void InitializeOpenCL();
 void UnInitializeOpenCL();
