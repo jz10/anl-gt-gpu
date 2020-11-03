@@ -206,7 +206,7 @@ bool ClProgram::setup(std::string &binary) {
   size_t numWords = binary.size() / 4;
   int32_t *bindata = new int32_t[numWords + 1];
   std::memcpy(bindata, binary.data(), binary.size());
-  bool res = parseSPIR(bindata, numWords, FuncInfo);
+  bool res = parseSPIR(bindata, numWords, FuncInfos);
   delete[] bindata;
   if (!res) {
     logError("SPIR-V parsing failed\n");
@@ -249,7 +249,7 @@ bool ClProgram::setup(std::string &binary) {
     ClKernel *k = new ClKernel(Context, std::move(kernels[i]));
     if (k == nullptr)
       return false; // TODO memleak
-    if (!k->setup(i, FuncInfo))
+    if (!k->setup(i, FuncInfos))
       return false;
     Kernels[i] = k;
   }
@@ -263,7 +263,7 @@ ClProgram::~ClProgram() {
   Kernels.clear();
 
   std::set<OCLFuncInfo *> PtrsToDelete;
-  for (auto &kv : FuncInfo)
+  for (auto &kv : FuncInfos)
     PtrsToDelete.insert(kv.second);
   for (auto &Ptr : PtrsToDelete)
     delete Ptr;
@@ -494,7 +494,7 @@ bool ClQueue::recordEvent(hipEvent_t event) {
 
 hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
   std::lock_guard<std::mutex> Lock(QueueMutex);
-
+  
   if (Arguments->setupAllArgs(Kernel) != CL_SUCCESS) {
     logError("Failed to set kernel arguments for launch! \n");
     return hipErrorLaunchFailure;
@@ -1429,7 +1429,19 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   this->lzCommandList = new LZCommandList(this, hCommandList);
 }
 
-void LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
+bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
+  // Parse the SPIR-V fat binary to retrieve kernel function information
+  size_t numWords = ilSize / 4;
+  int32_t * binarydata = new int32_t[numWords + 1];
+  std::memcpy(binarydata, funcIL, ilSize);
+  // Extract kernel function information 
+  bool res = parseSPIR(binarydata, numWords, FuncInfos);
+  delete[] binarydata;
+  if (!res) {
+    logError("SPIR-V parsing failed\n");
+    return false;
+  }
+
   if (!this->lzModule) {
     // Create module 
     ze_module_desc_t moduleDesc = {
@@ -1447,11 +1459,33 @@ void LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
       throw InvalidLevel0Initialization("Hiplz zeModuleCreate FAILED with return code  " + std::to_string(status));
     } 
 
+    // Create module object
     this->lzModule = new LZModule(hModule);
   }
   
-  // Create kernel
+  // Create kernel object
   this->lzModule->CreateKernel(funcName);
+
+  return true;
+}
+
+// Configure the call to LZ kernel, here we ignore OpenCL queue but using LZ command list
+bool LZContext::configureCall(dim3 grid, dim3 block, size_t shared) {
+  // TODO: make thread safeness
+  ExecItem *NewItem = new ExecItem(grid, block, shared, nullptr);
+  // Here we reuse the execution item stack from super class, i.e. OpenCL context 
+  ExecStack.push(NewItem);
+
+  return true;
+}
+
+// Set argument
+bool LZContext::setArg(const void *arg, size_t size, size_t offset) {
+  std::lock_guard<std::mutex> Lock(this->mtx);
+  LZExecItem* lzExecItem = (LZExecItem* )this->ExecStack.top();
+  lzExecItem->setArg(arg, size, offset);
+
+  return true;
 }
 
 // Launch HipLZ kernel 
@@ -1472,12 +1506,85 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   ze_group_count_t hLaunchFuncArgs;
   ze_event_handle_t hSignalEvent;
   ze_result_t status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
-					   Kernel->GetKernelHandle(), &hLaunchFuncArgs, hSignalEvent, 0, nullptr);
+						       Kernel->GetKernelHandle(), 
+						       &hLaunchFuncArgs, 
+						       hSignalEvent, 
+						       0, 
+						       nullptr);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
   } 
 
   return true;
+}
+
+int LZExecItem::setupAllArgs(LZKernel *kernel) {
+  OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
+  size_t NumLocals = 0;
+  for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
+    if (FuncInfo->ArgTypeInfo[i].space == OCLSpace::Local)
+      ++ NumLocals;
+  }
+  // there can only be one dynamic shared mem variable, per cuda spec 
+  assert(NumLocals <= 1);
+
+  if ((OffsetsSizes.size()+NumLocals) != FuncInfo->ArgTypeInfo.size()) {
+    logError("Some arguments are still unset\n");
+    return CL_INVALID_VALUE;
+  }
+
+  if (OffsetsSizes.size() == 0)
+    return CL_SUCCESS;
+
+  std::sort(OffsetsSizes.begin(), OffsetsSizes.end());
+  if ((std::get<0>(OffsetsSizes[0]) != 0) ||
+      (std::get<1>(OffsetsSizes[0]) == 0)) {
+    logError("Invalid offset/size\n");
+    return CL_INVALID_VALUE;
+  }
+
+  // check args are set  
+  if (OffsetsSizes.size() > 1) {
+    for (size_t i = 1; i < OffsetsSizes.size(); ++i) {
+      if ( (std::get<0>(OffsetsSizes[i]) == 0) ||
+           (std::get<1>(OffsetsSizes[i]) == 0) ||
+           (
+	    (std::get<0>(OffsetsSizes[i - 1]) + std::get<1>(OffsetsSizes[i - 1])) >
+            std::get<0>(OffsetsSizes[i]))
+           ) {
+	logError("Invalid offset/size\n");
+	return CL_INVALID_VALUE;
+      }
+    }
+  }
+
+  const unsigned char *start = ArgData.data();
+  void *p;
+  int err;
+  for (cl_uint i = 0; i < OffsetsSizes.size(); ++i) {
+    OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
+    logDebug("ARG {}: OS[0]: {} OS[1]: {} \n      TYPE {} SPAC {} SIZE {}\n", i,
+             std::get<0>(OffsetsSizes[i]), std::get<1>(OffsetsSizes[i]),
+             (unsigned)ai.type, (unsigned)ai.space, ai.size);
+
+    if (ai.type == OCLType::Pointer) {
+      // TODO: sync with ExecItem's solution   
+      assert(ai.size == sizeof(void *));
+    } else {
+      size_t size = std::get<1>(OffsetsSizes[i]);
+      size_t offs = std::get<0>(OffsetsSizes[i]);
+      const void* value = (void*)(start + offs);
+      logDebug("setArg {} size {} offs {}\n", i, size, offs);
+      ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(), i, size, value);
+
+      if (status != ZE_RESULT_SUCCESS) {
+        logDebug("clSetKernelArg failed with error {}\n", err);
+        return CL_INVALID_VALUE;
+      }
+    }
+  }
+
+  return CL_SUCCESS;
 }
 
 // Create Level-0 kernel 

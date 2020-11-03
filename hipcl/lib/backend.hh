@@ -168,7 +168,7 @@ protected:
   cl::Context Context;
   cl::Device Device;
   std::vector<hipFunction_t> Kernels;
-  OpenCLFunctionInfoMap FuncInfo;
+  OpenCLFunctionInfoMap FuncInfos;
 
 public:
   ClProgram(cl::Context C, cl::Device D) : Program(), Context(C), Device(D) {}
@@ -253,7 +253,7 @@ public:
 };
 
 class ExecItem {
-
+protected:
   size_t SharedMem;
   hipStream_t Stream;
   std::vector<uint8_t> ArgData;
@@ -271,7 +271,6 @@ public:
 
   hipError_t launch(ClKernel *Kernel) { return Stream->launch(Kernel, this); }
 };
-
 
 class ClDevice;
 
@@ -390,6 +389,24 @@ public:
   bool releaseMem(size_t bytes);
 };
 
+class LZKernel;
+
+class LZExecItem : public ExecItem {
+public:
+  dim3 GridDim;
+  dim3 BlockDim;
+
+  LZExecItem(dim3 grid, dim3 block, size_t shared) : ExecItem(grid, block, shared, nullptr) {}
+
+  // Setup all arguments for HipLZ kernel funciton invocation
+  int setupAllArgs(LZKernel *kernel);
+
+  bool launch(LZKernel *Kernel) { 
+	  // return Stream->launch(Kernel, this); 
+	  return false;
+  	}
+};
+
 class LZContext;
 
 class LZDevice {
@@ -423,28 +440,40 @@ public:
 
 class LZKernel {
 protected:
+  // HipLZ kernel handle
   ze_kernel_handle_t hKernel;
+  // The function info
+  OCLFuncInfo *FuncInfo;
 
 public: 
-  LZKernel(ze_kernel_handle_t hKernel_) {
+  LZKernel(ze_kernel_handle_t hKernel_) : FuncInfo(nullptr) {
     this->hKernel = hKernel_;
   }
 
   ze_kernel_handle_t GetKernelHandle() { return this->hKernel; }
+
+  OCLFuncInfo *getFuncInfo() const { return FuncInfo; }
 };
 
 class LZModule {
 protected:
+  // HipLZ module handle
   ze_module_handle_t hModule;
+  // The name --> HipLZ kernel map
   std::map<std::string, LZKernel* > kernels;
 
 public:
   LZModule(ze_module_handle_t hModule_) {
     this->hModule = hModule_;
   };
-  
+
+  // Get HipLZ module handle  
   ze_module_handle_t GethModuleHandle() { return this->hModule; }
+
+  // Create HipLZ kernel via function name
   void CreateKernel(std::string funcName);
+
+  // Get HipLZ kernel via funciton name
   LZKernel* GetKernel(std::string funcName);
 };
 
@@ -452,18 +481,31 @@ class LZCommandList;
 
 class LZContext : public ClContext {
 protected:
+  // Lock for thread safeness
   std::mutex mtx;
+  // Reference to HipLZ device
   LZDevice* lzDevice;
+  // Reference to HipLZ module
   LZModule* lzModule;
+  // Reference to HipLZ command list
   LZCommandList* lzCommandList;
+  // HipLZ context handle
   ze_context_handle_t hContext;
+  // OpenCL function information map, this is used for presenting SPIR-V kernel funcitons' arguments
+  OpenCLFunctionInfoMap FuncInfos;
 
 public:
   LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0) {}
   LZContext(LZDevice* D, ze_context_handle_t hContext_);  
 
-  void CreateModule(uint8_t* moduleIL, size_t ilSize, std::string funcName);
+  bool CreateModule(uint8_t* moduleIL, size_t ilSize, std::string funcName);
   ze_context_handle_t GetContextHandle() { return this->hContext; }
+
+  // Configure the call for kernel
+  bool configureCall(dim3 grid, dim3 block, size_t shared);
+  
+  // Set argument
+  bool setArg(const void *arg, size_t size, size_t offset);
 
   // Launch HipLZ kernel
   bool launchHostFunc(const void* HostFunction);

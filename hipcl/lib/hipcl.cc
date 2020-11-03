@@ -1513,9 +1513,22 @@ hipError_t hipModuleLoadDataEx(hipModule_t *module, const void *image,
   return hipModuleLoadData(module, image);
 }
 
+// Here we still need to consider the context stack for thread local contexts   
+static thread_local LZContext *tls_defaultLzCtx = nullptr;
+
+static LZContext *getTlsDefaultLzCtx() {
+  if (tls_defaultLzCtx == nullptr)
+    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx();
+  return tls_defaultLzCtx;
+}
+
 hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
                             hipStream_t stream) {
-
+  // Try for HipLZ context at first , here we ignore OpenCL queue 
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  if (lzCtx->configureCall(gridDim, blockDim, sharedMem))
+    RETURN(hipSuccess);
+  
   ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
@@ -1523,20 +1536,15 @@ hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
 }
 
 hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
+  // Try for HipLZ kernel at first
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  if (lzCtx->setArg(arg, size, offset))
+    RETURN(hipSuccess);
 
   ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   RETURN(cont->setArg(arg, size, offset));
-}
-
-// Here we still need to consider the context stack for thread local contexts
-static thread_local LZContext *tls_defaultLzCtx = nullptr;
-
-static LZContext *getTlsDefaultLzCtx() {
-  if (tls_defaultLzCtx == nullptr)
-    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx();
-  return tls_defaultLzCtx;
 }
 
 hipError_t hipLaunchByPtr(const void *hostFunction) {
