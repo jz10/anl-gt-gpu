@@ -1101,9 +1101,9 @@ hipError_t hipMemPtrGetInfo(void *ptr, size_t *size) {
 hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
                           hipMemcpyKind kind, hipStream_t stream) {
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
+  /*
   if ((kind == hipMemcpyDeviceToDevice) || (kind == hipMemcpyDeviceToHost)) {
     if (!cont->hasPointer(src))
       RETURN(hipErrorInvalidDevicePointer);
@@ -1112,7 +1112,7 @@ hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
   if ((kind == hipMemcpyDeviceToDevice) || (kind == hipMemcpyHostToDevice)) {
     if (!cont->hasPointer(dst))
       RETURN(hipErrorInvalidDevicePointer);
-  }
+  }*/
 
   if (kind == hipMemcpyHostToHost) {
     memcpy(dst, src, sizeBytes);
@@ -1124,20 +1124,18 @@ hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
 
 hipError_t hipMemcpy(void *dst, const void *src, size_t sizeBytes,
                      hipMemcpyKind kind) {
-  LZContext *lzcont = getTlsDefaultLzCtx();
-  ERROR_IF((lzcont == nullptr), hipErrorInvalidDevice);
-  if (memcpy(dst, src, sizeBytes))
-    RETURN(hipSuccess);
-  
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   hipError_t e =
-      hipMemcpyAsync(dst, src, sizeBytes, kind, cont->getDefaultQueue());
+      hipMemcpyAsync(dst, src, sizeBytes, kind, NULL); //cont->getDefaultQueue());
   if (e != hipSuccess)
     return e;
 
-  cont->getDefaultQueue()->finish();
+  ze_result_t status = zeCommandQueueSynchronize(cont->hQueue, UINT64_MAX);
+  if (status != ZE_RESULT_SUCCESS) {
+	  throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+  }
   RETURN(hipSuccess);
 }
 
