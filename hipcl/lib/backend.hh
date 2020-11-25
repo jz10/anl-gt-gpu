@@ -285,7 +285,7 @@ protected:
 
   std::set<hipStream_t> Queues;
   hipStream_t DefaultQueue;
-  std::stack<ExecItem *> ExecStack;
+  std::stack<LZExecItem *> ExecStack;
 
   std::map<const void *, ClProgram *> BuiltinPrograms;
   std::set<ClProgram *> Programs;
@@ -509,6 +509,9 @@ public:
 
   // Launch HipLZ kernel
   bool launchHostFunc(const void* HostFunction);
+
+  void *allocate(size_t size);
+  bool free(void *p);
 };
 
 class LZCommandList {

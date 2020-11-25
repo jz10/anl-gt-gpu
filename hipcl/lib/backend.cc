@@ -1423,13 +1423,17 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   this->lzModule = 0;
   
   // Create command list 
-  ze_command_list_desc_t clDesc;
-  clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;                                    
-  clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour 
-  clDesc.pNext = nullptr;
+  ze_command_queue_desc_t cqDesc;
+  cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;                                    
+  cqDesc.pNext = nullptr;
+  cqDesc.ordinal = 0;
+  cqDesc.index = 0;
+  cqDesc.flags = 0; // default hehaviour
+  cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
+  cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
   
   ze_command_list_handle_t hCommandList;
-  ze_result_t status = zeCommandListCreate(this->hContext, lzDevice->GetDeviceHandle(), &clDesc, &hCommandList);
+  ze_result_t status = zeCommandListCreateImmediate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
   }
@@ -1517,10 +1521,22 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   if (!Kernel)
     throw InvalidLevel0Initialization("Hiplz no LZkernel found?");
 
+  LZExecItem *Arguments;
+  Arguments = ExecStack.top();
+  ExecStack.pop();
+
+  ze_result_t status = ZE_RESULT_SUCCESS;
+  status = zeKernelSetGroupSize(Kernel->GetKernelHandle(), Arguments.BlockDim[0], Arguments.BlockDim[1], Arguments.BlockDim[2]);
+  if (status != ZE_RESULT_SUCCESS) {
+	  throw InvalidLevel0Initialization("could not set group size!");
+  }
+
+  Arguments.setupAllArgs(Kernel); 
   // Launch kernel via Level-0 command list
-  uint32_t numGroupsX = 1;
-  uint32_t numGroupsY = 1;
-  ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, 1 };
+  uint32_t numGroupsX = Arguments.GridDim[0];
+  uint32_t numGroupsY = Arguments.GridDim[1];
+  uint32_t numGroupsz = Arguments.GridDim[2];
+  ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
   ze_event_handle_t hSignalEvent = nullptr;
   std::cout << "before launch kernel: " << Kernel->GetKernelHandle() << std::endl; 
   ze_result_t status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
@@ -1534,6 +1550,32 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   } 
 
   return true;
+}
+void * LZContext::allocate(size_t size) {
+	void *ptr;
+	ze_device_mem_alloc_desc_t dmaDesc;
+	dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
+	dmaDesc.pNext = NULL;
+	dmaDesc.flags = 0;
+	dmaDesc.ordinal = 0;
+	ze_host_mem_alloc_desc_t hmaDesc;
+	hmaDesc.stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC;
+	hmaDesc.pNext = NULL;
+	hmaDesc.flags = 0;
+	ze_result_t res = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, 0x1000, this->lzDevice->GetDeviceHandle(), &ptr);
+	if (ZE_RESULT_SUCCESS != res) {
+		throw InvalidLevel0Initialization("L0 could not allocate shared memory");
+	} else {
+		return ptr;
+	}
+}
+bool LZContext::free(void *p) {
+	ze_result_t res = zeMemFree(this->hContext, p);
+	if (ZE_RESULT_SUCCESS != res) {
+		throw InvalidLevel0Initialization("L0 could not free memory");
+	} else {
+		return true;
+	}
 }
 
 int LZExecItem::setupAllArgs(LZKernel *kernel) {
@@ -1596,7 +1638,7 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
       ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(), i, size, value);
 
       if (status != ZE_RESULT_SUCCESS) {
-        logDebug("clSetKernelArg failed with error {}\n", err);
+        logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
         return CL_INVALID_VALUE;
       }
     }

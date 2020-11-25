@@ -24,6 +24,15 @@ static ClContext *getTlsDefaultCtx() {
   return tls_defaultCtx;
 }
 
+// Here we still need to consider the context stack for thread local contexts   
+static thread_local LZContext *tls_defaultLzCtx = nullptr;
+
+static LZContext *getTlsDefaultLzCtx() {
+  if (tls_defaultLzCtx == nullptr)
+    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx(); 
+  return tls_defaultLzCtx;
+}
+
 #define RETURN(x)                                                              \
   do {                                                                         \
     hipError_t err = (x);                                                      \
@@ -844,7 +853,7 @@ hipError_t hipMalloc(void **ptr, size_t size) {
     RETURN(hipSuccess);
   }
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   void *retval = cont->allocate(size);
@@ -870,7 +879,7 @@ hipError_t hipFree(void *ptr) {
   //  if (ptr == nullptr)
   //    RETURN(hipSuccess);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   if (cont->free(ptr))
@@ -1515,15 +1524,6 @@ hipError_t hipModuleLoadDataEx(hipModule_t *module, const void *image,
                                unsigned int numOptions, hipJitOption *options,
                                void **optionValues) {
   return hipModuleLoadData(module, image);
-}
-
-// Here we still need to consider the context stack for thread local contexts   
-static thread_local LZContext *tls_defaultLzCtx = nullptr;
-
-static LZContext *getTlsDefaultLzCtx() {
-  if (tls_defaultLzCtx == nullptr)
-    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx(); 
-  return tls_defaultLzCtx;
 }
 
 hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
