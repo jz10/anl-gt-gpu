@@ -1457,7 +1457,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
   }
 
   logDebug("LZ PARSE SPIR {} ", funcName);
-  
+ 
   if (!this->lzModule) {
     // Create module 
     ze_module_desc_t moduleDesc = {
@@ -1481,7 +1481,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
   }
   
   // Create kernel object
-  this->lzModule->CreateKernel(funcName);
+  this->lzModule->CreateKernel(funcName, FuncInfos);
 
   return true;
 }
@@ -1534,7 +1534,8 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   }
 
   
-  Arguments->setupAllArgs(Kernel); 
+  Arguments->setupAllArgs(Kernel);
+ 
   // Launch kernel via Level-0 command list
   uint32_t numGroupsX = Arguments->GridDim.x;
   uint32_t numGroupsY = Arguments->GridDim.y;
@@ -1584,13 +1585,14 @@ bool LZContext::free(void *p) {
 int LZExecItem::setupAllArgs(LZKernel *kernel) {
   OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
   size_t NumLocals = 0;
+ 
   for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
     if (FuncInfo->ArgTypeInfo[i].space == OCLSpace::Local)
       ++ NumLocals;
   }
   // there can only be one dynamic shared mem variable, per cuda spec 
   assert(NumLocals <= 1);
-
+  
   if ((OffsetsSizes.size()+NumLocals) != FuncInfo->ArgTypeInfo.size()) {
     logError("Some arguments are still unset\n");
     return CL_INVALID_VALUE;
@@ -1605,7 +1607,7 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
     logError("Invalid offset/size\n");
     return CL_INVALID_VALUE;
   }
-
+  
   // check args are set  
   if (OffsetsSizes.size() > 1) {
     for (size_t i = 1; i < OffsetsSizes.size(); ++i) {
@@ -1633,6 +1635,7 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
     if (ai.type == OCLType::Pointer) {
       // TODO: sync with ExecItem's solution   
       assert(ai.size == sizeof(void *));
+      
     } else {
       size_t size = std::get<1>(OffsetsSizes[i]);
       size_t offs = std::get<0>(OffsetsSizes[i]);
@@ -1651,7 +1654,7 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
 }
 
 // Create Level-0 kernel 
-void LZModule::CreateKernel(std::string funcName) {
+void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInfos) {
   if (this->kernels.find(funcName) != this->kernels.end())
     return;
 
@@ -1669,7 +1672,9 @@ void LZModule::CreateKernel(std::string funcName) {
   }
 
   // Register kernel
-  this->kernels[funcName] = new LZKernel(hKernel);
+  if (FuncInfos.find(funcName) == FuncInfos.end())
+    throw InvalidLevel0Initialization("HipLZ could not find function information " + funcName);
+  this->kernels[funcName] = new LZKernel(hKernel, FuncInfos[funcName]);
 }
 
 // Get Level-0 kernel

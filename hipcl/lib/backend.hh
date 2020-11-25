@@ -447,7 +447,7 @@ protected:
   OCLFuncInfo *FuncInfo;
 
 public: 
-  LZKernel(ze_kernel_handle_t hKernel_) : FuncInfo(nullptr) {
+  LZKernel(ze_kernel_handle_t hKernel_, OCLFuncInfo *FuncInfo_) : FuncInfo(FuncInfo_) {
     this->hKernel = hKernel_;
   }
 
@@ -472,7 +472,7 @@ public:
   ze_module_handle_t GethModuleHandle() { return this->hModule; }
 
   // Create HipLZ kernel via function name
-  void CreateKernel(std::string funcName);
+  void CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInfos);
 
   // Get HipLZ kernel via funciton name
   LZKernel* GetKernel(std::string funcName);
