@@ -1537,7 +1537,7 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
 
   ze_result_t status = ZE_RESULT_SUCCESS;
   status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
-				Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
+		Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("could not set group size!");
   }
@@ -1644,7 +1644,17 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
     if (ai.type == OCLType::Pointer) {
       // TODO: sync with ExecItem's solution   
       assert(ai.size == sizeof(void *));
-      
+      assert(std::get<1>(OffsetsSizes[i]) == ai.size);
+      size_t size = std::get<1>(OffsetsSizes[i]);
+      size_t offs = std::get<0>(OffsetsSizes[i]);
+      const void* value = (void*)(start + offs);
+      logDebug("setArg SVM {} to {}\n", i, p);
+      ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(), i, size, value);
+
+      if (status != ZE_RESULT_SUCCESS) {
+        logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
+        return CL_INVALID_VALUE;
+      }
     } else {
       size_t size = std::get<1>(OffsetsSizes[i]);
       size_t offs = std::get<0>(OffsetsSizes[i]);
