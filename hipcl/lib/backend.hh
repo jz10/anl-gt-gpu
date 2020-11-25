@@ -100,6 +100,10 @@ void logCritical(const char *fmt, const Args &... args) {
 #pragma GCC visibility push(hidden)
 #endif
 
+class InvalidLevel0Initialization : public std::out_of_range {
+  using std::out_of_range::out_of_range;
+};
+
 class ClEvent {
 protected:
   std::mutex EventMutex;
@@ -488,6 +492,7 @@ protected:
   LZDevice* lzDevice;
   // Reference to HipLZ module
   LZModule* lzModule;
+
   // Reference to HipLZ command list
   LZCommandList* lzCommandList;
   // HipLZ context handle
@@ -496,6 +501,9 @@ protected:
   OpenCLFunctionInfoMap FuncInfos;
 
 public:
+  // LZ queue handle
+  ze_command_queue_handle_t hQueue;
+
   LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0) {}
   LZContext(LZDevice* D, ze_context_handle_t hContext_);  
 
@@ -513,6 +521,7 @@ public:
 
   void *allocate(size_t size);
   bool free(void *p);
+  hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
 };
 
 class LZCommandList {

@@ -1361,10 +1361,6 @@ static std::vector<LZDevice *> HipLZDevices INIT_PRIORITY(120);
 
 size_t NumLZDevices = 1;
 
-class InvalidLevel0Initialization : public std::out_of_range {
-  using std::out_of_range::out_of_range;
-};
-
 LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
   this->hDevice = hDevice_;
   this->hDriver = hDriver_;
@@ -1418,6 +1414,15 @@ std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
   return HostPtrToNameMap[HostFunction];
 }
 
+hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
+  ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src, sizeBytes,
+		  NULL, 0, NULL);
+  if (status != ZE_RESULT_SUCCESS) {
+	  throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+  }
+  return hipSuccess;
+}
+
 LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 0) {
   this->lzDevice = D;
   this->hContext = hContext_;
@@ -1437,6 +1442,10 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   ze_result_t status = zeCommandListCreateImmediate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+  }
+  status = zeCommandQueueCreate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hQueue);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate with return code " + std::to_string(status));
   }
   logDebug("LZ COMMAND LIST {} ", status);
   this->lzCommandList = new LZCommandList(this, hCommandList);
