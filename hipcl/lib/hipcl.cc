@@ -1124,6 +1124,11 @@ hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
 
 hipError_t hipMemcpy(void *dst, const void *src, size_t sizeBytes,
                      hipMemcpyKind kind) {
+  LZContext *lzcont = getTlsDefaultLzCtx();
+  ERROR_IF((lzcont == nullptr), hipErrorInvalidDevice);
+  if (memcpy(dst, src, sizeBytes))
+    RETURN(hipSuccess);
+  
   ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 

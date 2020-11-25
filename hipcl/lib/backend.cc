@@ -920,8 +920,9 @@ hipError_t ClContext::configureCall(dim3 grid, dim3 block, size_t shared,
                                     hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
 
-  ExecItem *NewItem = new ExecItem(grid, block, shared, Queue);
-  ExecStack.push(NewItem);
+  // Disable the origin configureCall and ExecItem stack push
+  // ExecItem *NewItem = new ExecItem(grid, block, shared, Queue);
+  // ExecStack.push(NewItem);
 
   return hipSuccess;
 }
@@ -1488,7 +1489,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
 // Configure the call to LZ kernel, here we ignore OpenCL queue but using LZ command list
 bool LZContext::configureCall(dim3 grid, dim3 block, size_t shared) {
   // TODO: make thread safeness
-  ExecItem *NewItem = new ExecItem(grid, block, shared, nullptr);
+  LZExecItem *NewItem = new LZExecItem(grid, block, shared);
   // Here we reuse the execution item stack from super class, i.e. OpenCL context 
   ExecStack.push(NewItem);
 
@@ -1526,25 +1527,27 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   ExecStack.pop();
 
   ze_result_t status = ZE_RESULT_SUCCESS;
-  status = zeKernelSetGroupSize(Kernel->GetKernelHandle(), Arguments.BlockDim[0], Arguments.BlockDim[1], Arguments.BlockDim[2]);
+  status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
+				Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
   if (status != ZE_RESULT_SUCCESS) {
-	  throw InvalidLevel0Initialization("could not set group size!");
+    throw InvalidLevel0Initialization("could not set group size!");
   }
 
-  Arguments.setupAllArgs(Kernel); 
+  
+  Arguments->setupAllArgs(Kernel); 
   // Launch kernel via Level-0 command list
-  uint32_t numGroupsX = Arguments.GridDim[0];
-  uint32_t numGroupsY = Arguments.GridDim[1];
-  uint32_t numGroupsz = Arguments.GridDim[2];
+  uint32_t numGroupsX = Arguments->GridDim.x;
+  uint32_t numGroupsY = Arguments->GridDim.y;
+  uint32_t numGroupsz = Arguments->GridDim.z;
   ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
   ze_event_handle_t hSignalEvent = nullptr;
   std::cout << "before launch kernel: " << Kernel->GetKernelHandle() << std::endl; 
-  ze_result_t status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
-						       Kernel->GetKernelHandle(), 
-						       &hLaunchFuncArgs, 
-						       hSignalEvent, 
-						       0, 
-						       nullptr);
+  status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
+					   Kernel->GetKernelHandle(), 
+					   &hLaunchFuncArgs, 
+					   hSignalEvent, 
+					   0, 
+					   nullptr);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
   } 
@@ -1552,22 +1555,22 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   return true;
 }
 void * LZContext::allocate(size_t size) {
-	void *ptr;
-	ze_device_mem_alloc_desc_t dmaDesc;
-	dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
-	dmaDesc.pNext = NULL;
-	dmaDesc.flags = 0;
-	dmaDesc.ordinal = 0;
-	ze_host_mem_alloc_desc_t hmaDesc;
-	hmaDesc.stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC;
-	hmaDesc.pNext = NULL;
-	hmaDesc.flags = 0;
-	ze_result_t res = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, 0x1000, this->lzDevice->GetDeviceHandle(), &ptr);
-	if (ZE_RESULT_SUCCESS != res) {
-		throw InvalidLevel0Initialization("L0 could not allocate shared memory");
-	} else {
-		return ptr;
-	}
+  void *ptr;
+  ze_device_mem_alloc_desc_t dmaDesc;
+  dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
+  dmaDesc.pNext = NULL;
+  dmaDesc.flags = 0;
+  dmaDesc.ordinal = 0;
+  ze_host_mem_alloc_desc_t hmaDesc;
+  hmaDesc.stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC;
+  hmaDesc.pNext = NULL;
+  hmaDesc.flags = 0;
+  ze_result_t res = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, 0x1000, this->lzDevice->GetDeviceHandle(), &ptr);
+  if (ZE_RESULT_SUCCESS != res) {
+    throw InvalidLevel0Initialization("L0 could not allocate shared memory");
+  } else {
+    return ptr;
+  }
 }
 bool LZContext::free(void *p) {
 	ze_result_t res = zeMemFree(this->hContext, p);

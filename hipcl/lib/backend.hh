@@ -273,6 +273,7 @@ public:
 };
 
 class ClDevice;
+class LZExecItem;
 
 class ClContext {
 protected:
