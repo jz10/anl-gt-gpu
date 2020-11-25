@@ -6,6 +6,8 @@
 #include "ze_api.h"
 #include "backend.hh"
 
+#include <iostream>
+
 static thread_local hipError_t tls_LastError = hipSuccess;
 
 static thread_local ClContext *tls_defaultCtx = nullptr;
@@ -135,6 +137,7 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 
   // Here we initialize HipLZ device as well, but does not actually return device properties
   // TODO: make a real properties retrieving function
+  std::cout << "Initialize HipLZ" << std::endl;
   InitializeHipLZ();
 
   ERROR_CHECK_DEVNUM(deviceId);
@@ -1485,6 +1488,7 @@ hipError_t hipMemcpy3D(const struct hipMemcpy3DParms *p) {
 
 hipError_t hipInit(unsigned int flags) {
   InitializeOpenCL();
+  InitializeHipLZ();
   RETURN(hipSuccess);
 }
 
@@ -1518,7 +1522,7 @@ static thread_local LZContext *tls_defaultLzCtx = nullptr;
 
 static LZContext *getTlsDefaultLzCtx() {
   if (tls_defaultLzCtx == nullptr)
-    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx();
+    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx(); 
   return tls_defaultLzCtx;
 }
 
@@ -1648,7 +1652,8 @@ static unsigned binaries_loaded = 0;
 
 extern "C" void **__hipRegisterFatBinary(const void *data) {
   InitializeOpenCL();
-
+  InitializeHipLZ();
+  
   const __CudaFatBinaryWrapper *fbwrapper =
       reinterpret_cast<const __CudaFatBinaryWrapper *>(data);
   if (fbwrapper->magic != __hipFatMAGIC2 || fbwrapper->version != 1) {
@@ -1707,6 +1712,11 @@ extern "C" void **__hipRegisterFatBinary(const void *data) {
     CLDeviceById(deviceId).registerModule(module);
   }
 
+  // Register HipLZ Module
+  for (size_t deviceId = 0; deviceId < NumLZDevices; ++deviceId) {
+    HipLZDeviceById(deviceId).registerModule(module);
+  }
+
   ++binaries_loaded;
   logDebug("__hipRegisterFatBinary {}\n", binaries_loaded);
 
@@ -1731,7 +1741,6 @@ extern "C" void __hipUnregisterFatBinary(void *data) {
   delete module;
 }
 
-#include <iostream>
 
 extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
                                       char *deviceFunction,
@@ -1742,8 +1751,9 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   InitializeOpenCL();
   
   std::string devFunc = deviceFunction;
-  std::cout << "Register function: " << std::endl; // devFunc << std::endl;
-			  
+  // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution)
+  InitializeHipLZ();
+	
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterFunction on module {}\n", (void *)module);
   

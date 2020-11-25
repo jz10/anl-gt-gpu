@@ -674,6 +674,11 @@ ClContext::ClContext(ClDevice *D, unsigned f) {
   Flags = f;
   int err;
 
+  if (!D) {
+    logDebug("CL CONTEXT WAS NOT INITIALIZED");
+    return;
+  }
+  
   if (D->supportsIntelDiag()) {
     logDebug("creating context with Intel Debugging\n");
     cl_bitfield vl =
@@ -1374,7 +1379,7 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
   if(status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeContextCreate Failed with return code " + std::to_string(status));
   }
-
+  logDebug("LZ CONTEXT {}", status);
   this->lzContext = new LZContext(this, hContext);
 }
 
@@ -1387,6 +1392,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
 				const char *FunctionName) {
   std::lock_guard<std::mutex> Lock(this->mtx);
 
+  logDebug("LZ REGISER FUCNTION {}", FunctionName);
   auto it = std::find(Modules.begin(), Modules.end(), module);
   if (it == Modules.end()) {
     logError("HipLZ Module PTR not FOUND: {}\n", (void *)module);
@@ -1414,6 +1420,7 @@ std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
 LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 0) {
   this->lzDevice = D;
   this->hContext = hContext_;
+  this->lzModule = 0;
   
   // Create command list 
   ze_command_list_desc_t clDesc;
@@ -1425,11 +1432,13 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   ze_result_t status = zeCommandListCreate(this->hContext, lzDevice->GetDeviceHandle(), &clDesc, &hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
-  } 
+  }
+  logDebug("LZ COMMAND LIST {} ", status);
   this->lzCommandList = new LZCommandList(this, hCommandList);
 }
 
 bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
+  logDebug("LZ CREATE MODULE {} ", funcName);
   // Parse the SPIR-V fat binary to retrieve kernel function information
   size_t numWords = ilSize / 4;
   int32_t * binarydata = new int32_t[numWords + 1];
@@ -1442,6 +1451,8 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
     return false;
   }
 
+  logDebug("LZ PARSE SPIR {} ", funcName);
+  
   if (!this->lzModule) {
     // Create module 
     ze_module_desc_t moduleDesc = {
@@ -1459,6 +1470,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
       throw InvalidLevel0Initialization("Hiplz zeModuleCreate FAILED with return code  " + std::to_string(status));
     } 
 
+    logDebug("LZ CREATE MODULE {} ", status);
     // Create module object
     this->lzModule = new LZModule(hModule);
   }
@@ -1492,19 +1504,25 @@ bool LZContext::setArg(const void *arg, size_t size, size_t offset) {
 bool LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(this->mtx);
   LZKernel* Kernel = 0;
+  logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
   if (!this->lzModule) {
+    
     throw InvalidLevel0Initialization("Hiplz LZModule was not created before invoking kernel?");
   }
 
   std::string HostFunctionName = this->lzDevice->GetHostFunctionName(HostFunction);
   Kernel = this->lzModule->GetKernel(HostFunctionName);
-
+  logDebug("LAUNCH HOST FUNCTION {} - {} ", HostFunctionName,  Kernel != nullptr);
+  
   if (!Kernel)
     throw InvalidLevel0Initialization("Hiplz no LZkernel found?");
 
   // Launch kernel via Level-0 command list
-  ze_group_count_t hLaunchFuncArgs;
-  ze_event_handle_t hSignalEvent;
+  uint32_t numGroupsX = 1;
+  uint32_t numGroupsY = 1;
+  ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, 1 };
+  ze_event_handle_t hSignalEvent = nullptr;
+  std::cout << "before launch kernel: " << Kernel->GetKernelHandle() << std::endl; 
   ze_result_t status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
 						       Kernel->GetKernelHandle(), 
 						       &hLaunchFuncArgs, 
@@ -1629,7 +1647,8 @@ static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeDeviceGet FAILED with return code " + std::to_string(status));
   }
-
+  logDebug("GET DRIVER'S DEVICE COUNT -  {} ", deviceCount);
+ 
   ze_device_handle_t found = nullptr;
   // For each device, find the first one matching the type
   for (uint32_t device = 0; device < deviceCount; ++device) {
@@ -1641,7 +1660,8 @@ static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device
     if (status != ZE_RESULT_SUCCESS) {
       throw InvalidLevel0Initialization("HipLZ zeDeviceGetProperties FAILED with return code " + std::to_string(status));
     }
-     
+    logDebug("GET DEVICE PROPERTY {} ", type == device_properties.type);
+    
     if (type == device_properties.type) {
       found = phDevice;
       break;
@@ -1659,6 +1679,8 @@ static void InitializeHipLZCallOnce() {
     exit(1);
   }
 
+  logDebug("INITIALIZE LEVEL-0 {}\n", status);
+  
   const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
   ze_driver_handle_t pDriver = nullptr;
   ze_device_handle_t pDevice = nullptr;
@@ -1689,9 +1711,11 @@ static void InitializeHipLZCallOnce() {
   // Manully set the number of HipLZ devices, this is just a temproary solution
   NumLZDevices = 1;
 
+  logDebug("GET DEVICES {}", pDevice != nullptr);
   if (pDevice) {
     LZDevice* lzDevice = new LZDevice(pDevice, pDriver);
     HipLZDevices.emplace_back(lzDevice);
+    logDebug("LZ DEVICES {}", HipLZDevices.size());
   } else {
     throw InvalidLevel0Initialization("HipLZ can not find device ");
   }
@@ -1702,7 +1726,9 @@ void InitializeHipLZ() {
   std::call_once(HipLZInitialized, InitializeHipLZCallOnce);
 }
 
-LZDevice &HipLZDeviceById(int deviceId) { return *HipLZDevices.at(deviceId); }
+LZDevice &HipLZDeviceById(int deviceId) {
+  return *HipLZDevices.at(deviceId);
+}
 
 /***********************************************************************/
 
