@@ -1551,7 +1551,7 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   uint32_t numGroupsz = Arguments->GridDim.z;
   ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
   ze_event_handle_t hSignalEvent = nullptr;
-  std::cout << "before launch kernel: " << Kernel->GetKernelHandle() << std::endl; 
+  // std::cout << "before launch kernel: " << Kernel->GetKernelHandle() << std::endl; 
   status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
 					   Kernel->GetKernelHandle(), 
 					   &hLaunchFuncArgs, 

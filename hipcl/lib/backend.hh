@@ -401,7 +401,10 @@ public:
   dim3 GridDim;
   dim3 BlockDim;
 
-  LZExecItem(dim3 grid, dim3 block, size_t shared) : ExecItem(grid, block, shared, nullptr) {}
+  LZExecItem(dim3 grid, dim3 block, size_t shared) : ExecItem(grid, block, shared, nullptr) {
+    GridDim = grid;
+    BlockDim = block;
+  }
 
   // Setup all arguments for HipLZ kernel funciton invocation
   int setupAllArgs(LZKernel *kernel);
