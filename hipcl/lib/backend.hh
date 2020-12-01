@@ -441,7 +441,7 @@ public:
 
   // Get host function pointer's corresponding name
   std::string GetHostFunctionName(const void* HostFunction);
-
+  
   // Get primary context
   LZContext* getPrimaryCtx() { return this->lzContext; };
 };
@@ -486,6 +486,7 @@ public:
 };
 
 class LZCommandList;
+class LZQueue;
 
 class LZContext : public ClContext {
 protected:
@@ -498,21 +499,27 @@ protected:
 
   // Reference to HipLZ command list
   LZCommandList* lzCommandList;
+  // Reference to HipLZ queue
+  LZQueue* lzQueue;
+  
   // HipLZ context handle
   ze_context_handle_t hContext;
   // OpenCL function information map, this is used for presenting SPIR-V kernel funcitons' arguments
   OpenCLFunctionInfoMap FuncInfos;
 
 public:
-  // LZ queue handle
-  ze_command_queue_handle_t hQueue;
-
-  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0) {}
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0), lzCommandList(0), lzQueue(0) {}
   LZContext(LZDevice* D, ze_context_handle_t hContext_);  
 
+  // Create SPIR-V module
   bool CreateModule(uint8_t* moduleIL, size_t ilSize, std::string funcName);
+
+  // Get Level-0 handle for context
   ze_context_handle_t GetContextHandle() { return this->hContext; }
 
+  // Get Level-0 device object
+  LZDevice* GetDevice() { return this->lzDevice; };
+  
   // Configure the call for kernel
   bool configureCall(dim3 grid, dim3 block, size_t shared);
   
@@ -522,9 +529,15 @@ public:
   // Launch HipLZ kernel
   bool launchHostFunc(const void* HostFunction);
 
+  // Memory allocation
   void *allocate(size_t size);
+
+  // Memory free
   bool free(void *p);
+
+  // Memory copy
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
+  hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
 };
 
 class LZCommandList {
@@ -537,8 +550,31 @@ public:
     this->lzContext = lzContext_;
     this->hCommandList = hCommandList_;
   };
+  LZCommandList(LZContext* lzContext_);
 
+  // Get command list handler
   ze_command_list_handle_t GetCommandListHandle() { return this->hCommandList; }
+
+  // Execute Level-0 kernel
+  bool ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments);
+  
+  // Execute HipLZ memory copy command 
+  bool ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
+  
+  // Execute HipLZ command list 
+  bool Execute(LZQueue* lzQueue);
+};
+
+class LZQueue {
+protected:
+  LZContext* lzContext;
+  ze_command_queue_handle_t hQueue;
+
+public:
+  LZQueue(LZContext* lzContext);
+
+  // Get Level-0 queue handler
+  ze_command_queue_handle_t GetQueueHandle() { return this->hQueue; }
 };
 
 LZDevice &HipLZDeviceById(int deviceId);

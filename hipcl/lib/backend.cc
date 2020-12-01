@@ -864,10 +864,10 @@ hipError_t ClContext::eventElapsedTime(float *ms, hipEvent_t start,
     Elapsed = Started - Finished;
   } else
     Elapsed = Finished - Started;
-  uint64_t MS = (Elapsed / NANOSECS)*1000;
+  uint64_t S = Elapsed / NANOSECS;
   uint64_t NS = Elapsed % NANOSECS;
   float FractInMS = ((float)NS) / 1000000.0f;
-  *ms = (float)MS + FractInMS;
+  *ms = (float)S + FractInMS;
   return hipSuccess;
 }
 
@@ -904,7 +904,6 @@ bool ClContext::finishAll() {
     for (hipStream_t I : Queues) {
       Copies.push_back(I->getQueue());
     }
-    Copies.push_back(DefaultQueue->getQueue());
   }
 
   for (cl::CommandQueue &I : Copies) {
@@ -1417,10 +1416,20 @@ std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
   ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src, sizeBytes,
-		  NULL, 0, NULL);
+						     NULL, 0, NULL);
   if (status != ZE_RESULT_SUCCESS) {
-	  throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+    throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
   }
+  // Execute memory copy
+  lzCommandList->Execute(lzQueue);
+
+  return hipSuccess;
+}
+
+hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes) {
+  // Execute memory copy
+  lzCommandList->ExecuteMemCopy(lzQueue, dst, src, sizeBytes);
+
   return hipSuccess;
 }
 
@@ -1430,26 +1439,32 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   this->lzModule = 0;
   
   // Create command list 
-  ze_command_queue_desc_t cqDesc;
-  cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;                                    
-  cqDesc.pNext = nullptr;
-  cqDesc.ordinal = 0;
-  cqDesc.index = 0;
-  cqDesc.flags = 0; // default hehaviour
-  cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
-  cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
+  // ze_command_queue_desc_t cqDesc;
+  // cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;                                    
+  // cqDesc.pNext = nullptr;
+  // cqDesc.ordinal = 0;
+  // cqDesc.index = 0;
+  //  cqDesc.flags = 0; // default hehaviour
+  // cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
+  // cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
   
-  ze_command_list_handle_t hCommandList;
-  ze_result_t status = zeCommandListCreateImmediate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hCommandList);
-  if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
-  }
-  status = zeCommandQueueCreate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hQueue);
-  if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate with return code " + std::to_string(status));
-  }
-  logDebug("LZ COMMAND LIST {} ", status);
-  this->lzCommandList = new LZCommandList(this, hCommandList);
+  // ze_command_list_handle_t hCommandList;
+  // ze_result_t status = zeCommandListCreateImmediate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hCommandList);
+  // if (status != ZE_RESULT_SUCCESS) {
+  //   throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+    // }
+  // Create the Level-0 queue
+  // ze_command_queue_handle_t hQueue;
+  // status = zeCommandQueueCreate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hQueue);
+
+  this->lzQueue = new LZQueue(this);
+  this->lzCommandList = new LZCommandList(this);
+  
+  // if (status != ZE_RESULT_SUCCESS) {
+  //   throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate with return code " + std::to_string(status));
+  //  }
+  // logDebug("LZ COMMAND LIST {} ", status);
+  // this->lzCommandList = new LZCommandList(this, hCommandList);
 }
 
 bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
@@ -1536,34 +1551,36 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   Arguments = ExecStack.top();
   ExecStack.pop();
 
-  ze_result_t status = ZE_RESULT_SUCCESS;
-  status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
-		Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
-  if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("could not set group size!");
-  }
-
+  // ze_result_t status = ZE_RESULT_SUCCESS;
+  // status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
+  // 				Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
+  // if (status != ZE_RESULT_SUCCESS) {
+  //    throw InvalidLevel0Initialization("could not set group size!");
+  //  }
   
-  Arguments->setupAllArgs(Kernel);
+  
+  // Arguments->setupAllArgs(Kernel);
  
   // Launch kernel via Level-0 command list
-  uint32_t numGroupsX = Arguments->GridDim.x;
-  uint32_t numGroupsY = Arguments->GridDim.y;
-  uint32_t numGroupsz = Arguments->GridDim.z;
-  ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
-  ze_event_handle_t hSignalEvent = nullptr;
-  // std::cout << "before launch kernel: " << Kernel->GetKernelHandle() << std::endl; 
-  status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
-					   Kernel->GetKernelHandle(), 
-					   &hLaunchFuncArgs, 
-					   hSignalEvent, 
-					   0, 
-					   nullptr);
-  if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
-  } 
+  // uint32_t numGroupsX = Arguments->GridDim.x;
+  // uint32_t numGroupsY = Arguments->GridDim.y;
+  // uint32_t numGroupsz = Arguments->GridDim.z;
+  // ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
+  // ze_event_handle_t hSignalEvent = nullptr;
+  // status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(), 
+  // 					   Kernel->GetKernelHandle(), 
+  //					   &hLaunchFuncArgs, 
+  // 					   hSignalEvent, 
+  // 					   0, 
+  // 					   nullptr);
+  // if (status != ZE_RESULT_SUCCESS) {
+  //   throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
+  // } 
 
-  return true;
+  // Execute kernel
+  // lzCommandList->Execute(lzQueue);
+  
+  return lzCommandList->ExecuteKernel(lzQueue, Kernel, Arguments);
 }
 void * LZContext::allocate(size_t size) {
   void *ptr;
@@ -1583,13 +1600,124 @@ void * LZContext::allocate(size_t size) {
     return ptr;
   }
 }
+
 bool LZContext::free(void *p) {
-	ze_result_t res = zeMemFree(this->hContext, p);
-	if (ZE_RESULT_SUCCESS != res) {
-		throw InvalidLevel0Initialization("L0 could not free memory");
-	} else {
-		return true;
-	}
+  ze_result_t res = zeMemFree(this->hContext, p);
+  if (ZE_RESULT_SUCCESS != res) {
+    throw InvalidLevel0Initialization("L0 could not free memory");
+  } else {
+    return true;
+  }
+}
+
+LZQueue::LZQueue(LZContext* lzContext_) {
+  this->lzContext = lzContext_;
+  
+  ze_command_queue_desc_t cqDesc;
+  cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
+  cqDesc.pNext = nullptr;
+  cqDesc.ordinal = 0;
+  cqDesc.index = 0;
+  cqDesc.flags = 0; // default hehaviour 
+  cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
+  cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
+
+  // Create the Level-0 queue  
+  ze_result_t status = zeCommandQueueCreate(lzContext->GetContextHandle(),
+					    lzContext->GetDevice()->GetDeviceHandle(), &cqDesc, &hQueue);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate FAILED with return code " + std::to_string(status));
+  }
+}
+
+// Execute the Level-0 kernel
+bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments) {
+  // Set group size
+  ze_result_t status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
+					    Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("could not set group size!");
+  }
+
+  // Set all kernel function arguments
+  Arguments->setupAllArgs(Kernel);
+  
+  // Launch kernel via Level-0 command list
+  uint32_t numGroupsX = Arguments->GridDim.x;
+  uint32_t numGroupsY = Arguments->GridDim.y;
+  uint32_t numGroupsz = Arguments->GridDim.z;
+  ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
+  ze_event_handle_t hSignalEvent = nullptr;
+  status = zeCommandListAppendLaunchKernel(hCommandList,
+                                           Kernel->GetKernelHandle(),
+                                           &hLaunchFuncArgs,
+                                           hSignalEvent,
+                                           0,
+                                           nullptr);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
+  }
+
+  // Execute kernel  
+  return Execute(lzQueue);
+}
+
+// Execute HipLZ memory copy command
+bool LZCommandList::ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes) {
+  ze_result_t status = zeCommandListAppendMemoryCopy(hCommandList, dst, src, sizeBytes,
+                                                     NULL, 0, NULL);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+  }
+  // Execute memory copy  
+  return Execute(lzQueue);
+}
+
+// Execute HipLZ command list  
+bool LZCommandList::Execute(LZQueue* lzQueue) {
+  // Finished appending commands (typically done on another thread)
+  ze_result_t status = zeCommandListClose(hCommandList);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandListClose FAILED with return code " + std::to_string(status));
+  }
+ 
+  // Execute command list in command queue
+  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
+  }
+  
+  // Synchronize host with device kernel execution
+  status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT32_MAX);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+  }
+
+  // Reset (recycle) command list for new commands
+  status = zeCommandListReset(hCommandList);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandListReset FAILED with return code " + std::to_string(status));
+  }
+  
+  return true;
+}
+
+LZCommandList::LZCommandList(LZContext* lzContext_) {
+  this->lzContext = lzContext_;
+
+  // Create the command list                                                
+  ze_command_list_desc_t clDesc;
+  clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;
+  clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour   
+  clDesc.pNext = nullptr;
+  ze_result_t status = zeCommandListCreate(lzContext->GetContextHandle(), lzContext->GetDevice()->GetDeviceHandle(),
+					   &clDesc, &hCommandList);
+
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+  }
+
+  
 }
 
 int LZExecItem::setupAllArgs(LZKernel *kernel) {
