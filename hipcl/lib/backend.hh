@@ -276,6 +276,8 @@ public:
   hipError_t launch(ClKernel *Kernel) { return Stream->launch(Kernel, this); }
 };
 
+enum class LZMemoryType : unsigned { Host = 0, Device = 1, Shared = 2};
+
 class ClDevice;
 class LZExecItem;
 
@@ -506,6 +508,10 @@ protected:
   ze_context_handle_t hContext;
   // OpenCL function information map, this is used for presenting SPIR-V kernel funcitons' arguments
   OpenCLFunctionInfoMap FuncInfos;
+
+protected:
+  // Allocate memory via Level-0 runtime
+  void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
 
 public:
   LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0), lzCommandList(0), lzQueue(0) {}

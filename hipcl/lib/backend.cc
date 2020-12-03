@@ -1582,23 +1582,47 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   
   return lzCommandList->ExecuteKernel(lzQueue, Kernel, Arguments);
 }
-void * LZContext::allocate(size_t size) {
-  void *ptr;
-  ze_device_mem_alloc_desc_t dmaDesc;
-  dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
-  dmaDesc.pNext = NULL;
-  dmaDesc.flags = 0;
-  dmaDesc.ordinal = 0;
-  ze_host_mem_alloc_desc_t hmaDesc;
-  hmaDesc.stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC;
-  hmaDesc.pNext = NULL;
-  hmaDesc.flags = 0;
-  ze_result_t res = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, 0x1000, this->lzDevice->GetDeviceHandle(), &ptr);
-  if (ZE_RESULT_SUCCESS != res) {
-    throw InvalidLevel0Initialization("L0 could not allocate shared memory");
-  } else {
+
+// Allocate memory via Level-0 runtime  
+void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
+  void *ptr = 0;
+  if (memTy == LZMemoryType::Shared) {
+    ze_device_mem_alloc_desc_t dmaDesc;
+    dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
+    dmaDesc.pNext = NULL;
+    dmaDesc.flags = 0;
+    dmaDesc.ordinal = 0;
+    ze_host_mem_alloc_desc_t hmaDesc;
+    hmaDesc.stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC;
+    hmaDesc.pNext = NULL;
+    hmaDesc.flags = 0;
+    ze_result_t status = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, alignment,
+					  this->lzDevice->GetDeviceHandle(), &ptr);
+    if (ZE_RESULT_SUCCESS != status) {
+      throw InvalidLevel0Initialization("L0 could not allocate shared memory");
+    }
+    
+    return ptr;
+  } else if (memTy == LZMemoryType::Device) {
+    ze_device_mem_alloc_desc_t dmaDesc;
+    dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
+    dmaDesc.pNext = NULL;
+    dmaDesc.flags = 0;
+    dmaDesc.ordinal = 0;
+    ze_result_t status = zeMemAllocDevice(this->hContext, &dmaDesc, size, alignment,
+					  this->lzDevice->GetDeviceHandle(), &ptr);
+    if (ZE_RESULT_SUCCESS != status) {
+      throw InvalidLevel0Initialization("L0 could not allocate device memory");
+    }
+
     return ptr;
   }
+
+  throw InvalidLevel0Initialization("L0 could not recognize allocation options");
+}
+
+void * LZContext::allocate(size_t size) {
+  return allocate(size, 0x1000, LZMemoryType::Device); // Shared);
 }
 
 bool LZContext::free(void *p) {
