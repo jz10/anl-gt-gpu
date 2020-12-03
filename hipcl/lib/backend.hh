@@ -581,6 +581,9 @@ public:
 
   // Get Level-0 queue handler
   ze_command_queue_handle_t GetQueueHandle() { return this->hQueue; }
+
+  // Queue synchronous support
+  bool finish();
 };
 
 LZDevice &HipLZDeviceById(int deviceId);

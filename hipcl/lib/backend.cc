@@ -1654,6 +1654,17 @@ LZQueue::LZQueue(LZContext* lzContext_) {
   }
 }
 
+// Queue synchronous support                                                                           
+bool LZQueue::finish() {
+  // Synchronize host with device kernel execution 
+  ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT32_MAX);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+  }
+
+  return true;
+}
+
 // Execute the Level-0 kernel
 bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments) {
   // Set group size
