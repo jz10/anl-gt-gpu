@@ -1635,8 +1635,15 @@ bool LZContext::free(void *p) {
 }
 
 LZQueue::LZQueue(LZContext* lzContext_) {
+  // Initialize super class fields, i.e. ClQueue
+  this->LastEvent = nullptr;
+  this->Flags = 0;
+  this->Priority = 0;
+
+  // Initialize Level-0 related class fields
   this->lzContext = lzContext_;
-  
+
+  // Create a Level-0 command queue
   ze_command_queue_desc_t cqDesc;
   cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
   cqDesc.pNext = nullptr;
@@ -1663,6 +1670,46 @@ bool LZQueue::finish() {
   }
 
   return true;
+}
+
+// Get OpenCL command queue  
+cl::CommandQueue& LZQueue::getQueue() {
+  throw InvalidLevel0Initialization("Not support LZQueue::getQueue!");
+}
+
+// Enqueue barrier for event 
+bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
+  throw InvalidLevel0Initialization("Not support LZQueue::enqueueBarrierForEvent yet!");
+}
+
+// Add call back     
+bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
+  throw InvalidLevel0Initialization("Not support LZQueue::addCallback yet!");
+}
+
+// Record event
+bool LZQueue::recordEvent(hipEvent_t e) {
+  throw InvalidLevel0Initialization("Not support LZQueue::recordEvent yet!");
+}
+
+// Memory copy support   
+hipError_t LZQueue::memCopy(void *dst, const void *src, size_t size) {
+  throw InvalidLevel0Initialization("Not support LZQueue:memCoopyh yet!");;
+}
+
+// Memory fill support  
+hipError_t LZQueue::memFill(void *dst, size_t size, void *pattern, size_t pat_size) {
+    throw InvalidLevel0Initialization("Not support LZQueue::memFill yet!");
+  }
+
+// Launch kernel support 
+hipError_t LZQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
+  throw InvalidLevel0Initialization("Not support LZQueue::launch3 yet!");
+}
+
+// Launch kernel support 
+hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
+  throw InvalidLevel0Initialization("Not support LZQueue::launch yet!");
 }
 
 // Execute the Level-0 kernel

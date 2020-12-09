@@ -1,4 +1,3 @@
-
 #include <list>
 #include <map>
 #include <set>
@@ -227,6 +226,9 @@ public:
   ClQueue(cl::CommandQueue q, unsigned int f, int p)
     : Queue(q), LastEvent(nullptr), Flags(f), Priority(p) {}
 
+  // Here we add default constructor to enable sub-class for HipLZ
+  ClQueue() : LastEvent(nullptr), Flags(0), Priority(0) {}
+
   ~ClQueue() {
     if (LastEvent) {
       logDebug("~ClQueue: Releasing last event {}", (void*)LastEvent);
@@ -241,19 +243,19 @@ public:
     Queue = std::move(rhs.Queue);
   }
 
-  cl::CommandQueue &getQueue() { return Queue; }
-  unsigned int getFlags() const { return Flags; }
-  int getPriority() const { return Priority; }
+  virtual cl::CommandQueue &getQueue() { return Queue; }
+  virtual unsigned int getFlags() const { return Flags; }
+  virtual int getPriority() const { return Priority; }
+  
+  virtual bool finish();
+  virtual bool enqueueBarrierForEvent(hipEvent_t event);
+  virtual bool addCallback(hipStreamCallback_t callback, void *userData);
+  virtual bool recordEvent(hipEvent_t e);
 
-  bool finish();
-  bool enqueueBarrierForEvent(hipEvent_t event);
-  bool addCallback(hipStreamCallback_t callback, void *userData);
-  bool recordEvent(hipEvent_t e);
-
-  hipError_t memCopy(void *dst, const void *src, size_t size);
-  hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size);
-  hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
-  hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
+  virtual hipError_t memCopy(void *dst, const void *src, size_t size);
+  virtual hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size);
+  virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
+  virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
 };
 
 class ExecItem {
@@ -571,7 +573,7 @@ public:
   bool Execute(LZQueue* lzQueue);
 };
 
-class LZQueue {
+class LZQueue : public ClQueue {
 protected:
   LZContext* lzContext;
   ze_command_queue_handle_t hQueue;
@@ -582,8 +584,31 @@ public:
   // Get Level-0 queue handler
   ze_command_queue_handle_t GetQueueHandle() { return this->hQueue; }
 
-  // Queue synchronous support
-  bool finish();
+  // Get OpenCL command queue
+  virtual cl::CommandQueue &getQueue();
+  // Get queue flags
+  virtual unsigned int getFlags() const { return Flags; }
+  // Get queue priority
+  virtual int getPriority() const { return Priority; }
+
+  // Queue synchronous support 
+  virtual bool finish();
+  // Enqueue barrier for event
+  virtual bool enqueueBarrierForEvent(hipEvent_t event);
+  // Add call back
+  virtual bool addCallback(hipStreamCallback_t callback, void *userData);
+  // Record event
+  virtual bool recordEvent(hipEvent_t e);
+
+  // Memory copy support
+  virtual hipError_t memCopy(void *dst, const void *src, size_t size);
+  // Memory fill support
+  virtual hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size);
+  // Launch kernel support
+  virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
+  // Launch kernel support
+  virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
+  
 };
 
 LZDevice &HipLZDeviceById(int deviceId);
