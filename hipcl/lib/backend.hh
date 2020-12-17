@@ -149,6 +149,8 @@ protected:
 public:
   ClKernel(cl::Context &C, cl::Kernel &&K)
       : Kernel(K), Name(), FuncInfo(nullptr), TotalArgSize(0), Context(C) {}
+  ClKernel() : Kernel(nullptr), Name(), FuncInfo(nullptr), TotalArgSize(0), Context(nullptr) {
+  }
   ~ClKernel() {}
   bool setup(size_t Index, OpenCLFunctionInfoMap &FuncInfoMap);
 
@@ -159,9 +161,12 @@ public:
 
   int setAllArgs(void **args, size_t shared);
   int setAllArgs(void *args, size_t size, size_t shared);
-  size_t getTotalArgSize() const { return TotalArgSize; }
+  size_t getTotalArgSize() const { return TotalArgSize; };
 
+  // If this kernel object support HipLZ
+  virtual bool SupportLZ() { return false; };
 };
+
 
 /********************************/
 
@@ -256,6 +261,9 @@ public:
   virtual hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size);
   virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
   virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
+
+  // If this queue object support HipLZ 
+  virtual bool SupportLZ() { return false; };
 };
 
 class ExecItem {
@@ -276,6 +284,9 @@ public:
   int setupAllArgs(ClKernel *kernel);
 
   hipError_t launch(ClKernel *Kernel) { return Stream->launch(Kernel, this); }
+
+  // If this execution item object support HipLZ
+  virtual bool SupportLZ() { return false; };
 };
 
 enum class LZMemoryType : unsigned { Host = 0, Device = 1, Shared = 2};
@@ -312,7 +323,7 @@ public:
 
   hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
   ClEvent *createEvent(unsigned Flags);
-  bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
+  virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
   bool releaseQueue(hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t size,
                      hipStream_t stream);
@@ -414,9 +425,12 @@ public:
   int setupAllArgs(LZKernel *kernel);
 
   bool launch(LZKernel *Kernel) { 
-	  // return Stream->launch(Kernel, this); 
-	  return false;
-  	}
+    // return Stream->launch(Kernel, this); 
+    return false;
+  };
+
+  // If this execution item support HipLZ
+  virtual bool SupportLZ() { return true; };
 };
 
 class LZContext;
@@ -450,7 +464,7 @@ public:
   LZContext* getPrimaryCtx() { return this->lzContext; };
 };
 
-class LZKernel {
+class LZKernel : public ClKernel {
 protected:
   // HipLZ kernel handle
   ze_kernel_handle_t hKernel;
@@ -465,6 +479,9 @@ public:
   ze_kernel_handle_t GetKernelHandle() { return this->hKernel; }
 
   OCLFuncInfo *getFuncInfo() const { return FuncInfo; }
+
+  // If this kernel support HipLZ
+  virtual bool SupportLZ() { return true; };
 };
 
 class LZModule {
@@ -546,6 +563,9 @@ public:
   // Memory copy
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
+
+  // Create stream/queue
+  virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
 };
 
 class LZCommandList {
@@ -575,11 +595,18 @@ public:
 
 class LZQueue : public ClQueue {
 protected:
+  // Level-0 context reference
   LZContext* lzContext;
+  
+  // Level-0 handler
   ze_command_queue_handle_t hQueue;
 
+  // Default command list
+  LZCommandList* defaultCmdList;
+  
 public:
   LZQueue(LZContext* lzContext);
+  LZQueue(LZContext* lzContext, LZCommandList* lzCmdList); 
 
   // Get Level-0 queue handler
   ze_command_queue_handle_t GetQueueHandle() { return this->hQueue; }
@@ -608,7 +635,13 @@ public:
   virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
   // Launch kernel support
   virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
+
+  //If this queue support HipLZ
+  virtual bool SupportLZ() { return true; };
   
+protected:
+  // Initialize Level-0 queue
+  void initializeQueue(LZContext* lzContext);
 };
 
 LZDevice &HipLZDeviceById(int deviceId);

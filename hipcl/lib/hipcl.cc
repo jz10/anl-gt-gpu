@@ -486,14 +486,21 @@ hipError_t hipStreamCreateWithPriority(hipStream_t *stream, unsigned int flags,
                                        int priority) {
   ERROR_IF((stream == nullptr), hipErrorInvalidResourceHandle);
 
-  // TODO priority & flags require an OpenCL extensions
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
   if (cont->createQueue(stream, flags, priority))
-    RETURN(hipSuccess);
+     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+  
+  // TODO priority & flags require an OpenCL extensions
+  // ClContext *cont = getTlsDefaultCtx();
+  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  // if (cont->createQueue(stream, flags, priority))
+  //   RETURN(hipSuccess);
+  // else
+  //   RETURN(hipErrorInvalidValue);
 }
 
 hipError_t hipDeviceGetStreamPriorityRange(int *leastPriority,

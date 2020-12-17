@@ -1634,6 +1634,15 @@ bool LZContext::free(void *p) {
   }
 }
 
+// Create stream/queue
+bool LZContext::createQueue(hipStream_t *stream, unsigned int Flags, int priority) {
+  hipStream_t Ptr = new LZQueue(this);
+  Queues.insert(Ptr);
+  *stream = Ptr;
+  
+  return true;
+}
+
 LZQueue::LZQueue(LZContext* lzContext_) {
   // Initialize super class fields, i.e. ClQueue
   this->LastEvent = nullptr;
@@ -1642,7 +1651,14 @@ LZQueue::LZQueue(LZContext* lzContext_) {
 
   // Initialize Level-0 related class fields
   this->lzContext = lzContext_;
+  this->defaultCmdList = nullptr;
 
+  // Initialize Level-0 queue
+  initializeQueue(lzContext);
+}
+
+// Initialize Level-0 queue
+void LZQueue::initializeQueue(LZContext* lzContext) {
   // Create a Level-0 command queue
   ze_command_queue_desc_t cqDesc;
   cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
@@ -1659,6 +1675,20 @@ LZQueue::LZQueue(LZContext* lzContext_) {
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate FAILED with return code " + std::to_string(status));
   }
+}
+
+LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
+   // Initialize super class fields, i.e. ClQueue
+  this->LastEvent = nullptr;
+  this->Flags = 0;
+  this->Priority = 0;
+
+  // Initialize Level-0 related class fields
+  this->lzContext = lzContext_;
+  this->defaultCmdList = lzCmdList;
+
+  // Initialize Level-0 queue
+  initializeQueue(lzContext);
 }
 
 // Queue synchronous support                                                                           
@@ -1694,7 +1724,13 @@ bool LZQueue::recordEvent(hipEvent_t e) {
 
 // Memory copy support   
 hipError_t LZQueue::memCopy(void *dst, const void *src, size_t size) {
-  throw InvalidLevel0Initialization("Not support LZQueue:memCoopyh yet!");;
+  if (this->defaultCmdList == nullptr) {
+    throw InvalidLevel0Initialization("Invalid command list");
+  } else {
+    this->defaultCmdList->ExecuteMemCopy(this, dst, src, size); 
+  }
+
+  return hipSuccess;
 }
 
 // Memory fill support  
@@ -1709,6 +1745,13 @@ hipError_t LZQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
 
 // Launch kernel support 
 hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
+  if (this->defaultCmdList == nullptr) {
+    throw InvalidLevel0Initialization("Invalid command list");
+  } else {
+    if (Kernel->SupportLZ() && Arguments->SupportLZ())
+      this->defaultCmdList->ExecuteKernel(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
+  }
+  
   throw InvalidLevel0Initialization("Not support LZQueue::launch yet!");
 }
 
@@ -1888,11 +1931,11 @@ void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInf
   if (this->kernels.find(funcName) != this->kernels.end())
     return;
 
-  // Create kernel                                                                                                  
+  // Create kernel
   ze_kernel_desc_t kernelDesc = {
     ZE_STRUCTURE_TYPE_KERNEL_DESC,
     nullptr,
-    0, // flags                                                                                                     
+    0, // flags 
     funcName.c_str()
   };
   ze_kernel_handle_t hKernel;
