@@ -1373,10 +1373,10 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
   };
   ze_context_handle_t hContext;
   ze_result_t status = zeContextCreate(this->hDriver, &ctxtDesc, &hContext);
-  if(status != ZE_RESULT_SUCCESS) {
+  if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeContextCreate Failed with return code " + std::to_string(status));
   }
-  logDebug("LZ CONTEXT {}", status);
+  logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
   this->lzContext = new LZContext(this, hContext);
 }
 
@@ -1420,6 +1420,7 @@ hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipS
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
   }
+  logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
   // Execute memory copy
   lzCommandList->Execute(lzQueue);
 
@@ -1500,7 +1501,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
       throw InvalidLevel0Initialization("Hiplz zeModuleCreate FAILED with return code  " + std::to_string(status));
     } 
 
-    logDebug("LZ CREATE MODULE {} ", status);
+    logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
     // Create module object
     this->lzModule = new LZModule(hModule);
   }
@@ -1601,6 +1602,7 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     if (ZE_RESULT_SUCCESS != status) {
       throw InvalidLevel0Initialization("L0 could not allocate shared memory");
     }
+    logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocShared {} ", status);
     
     return ptr;
   } else if (memTy == LZMemoryType::Device) {
@@ -1614,7 +1616,8 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     if (ZE_RESULT_SUCCESS != status) {
       throw InvalidLevel0Initialization("L0 could not allocate device memory");
     }
-
+    logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocDevice {} ", status);
+    
     return ptr;
   }
 
@@ -1675,6 +1678,7 @@ void LZQueue::initializeQueue(LZContext* lzContext) {
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate FAILED with return code " + std::to_string(status));
   }
+  logDebug("LZ QUEUE INITIALIZATION via calling zeCommandQueueCreate {} ", status);
 }
 
 LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
@@ -1698,7 +1702,8 @@ bool LZQueue::finish() {
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
   }
-
+  logDebug("LZ COMMAND EXECUTION FINISH via calling zeCommandQueueSynchronize {} ", status);
+  
   return true;
 }
 
@@ -1764,6 +1769,8 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
     throw InvalidLevel0Initialization("could not set group size!");
   }
 
+  logDebug("LZ KERNEL EXECUTION via calling zeKernelSetGroupSize {} ", status);
+  
   // Set all kernel function arguments
   Arguments->setupAllArgs(Kernel);
   
@@ -1783,6 +1790,8 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
     throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
   }
 
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandListAppendLaunchKernel {} ", status);
+  
   // Execute kernel  
   return Execute(lzQueue);
 }
@@ -1805,12 +1814,16 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandListClose FAILED with return code " + std::to_string(status));
   }
- 
+
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
+    
   // Execute command list in command queue
   status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
   }
+
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
   
   // Synchronize host with device kernel execution
   status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT32_MAX);
@@ -1818,11 +1831,15 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
   }
 
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
+  
   // Reset (recycle) command list for new commands
   status = zeCommandListReset(hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandListReset FAILED with return code " + std::to_string(status));
   }
+
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
   
   return true;
 }
@@ -1842,7 +1859,7 @@ LZCommandList::LZCommandList(LZContext* lzContext_) {
     throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
   }
 
-  
+  logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreate {} ", status);
 }
 
 int LZExecItem::setupAllArgs(LZKernel *kernel) {
@@ -1909,6 +1926,8 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
         logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
         return CL_INVALID_VALUE;
       }
+
+      logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
     } else {
       size_t size = std::get<1>(OffsetsSizes[i]);
       size_t offs = std::get<0>(OffsetsSizes[i]);
@@ -1920,6 +1939,8 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
         logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
         return CL_INVALID_VALUE;
       }
+
+      logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
     }
   }
 
@@ -1944,6 +1965,8 @@ void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInf
     throw InvalidLevel0Initialization("HipLZ zeKernelCreate FAILED with return code " + std::to_string(status));
   }
 
+  logDebug("LZ KERNEL CREATION via calling zeKernelCreate {} ", status);
+  
   // Register kernel
   if (FuncInfos.find(funcName) == FuncInfos.end())
     throw InvalidLevel0Initialization("HipLZ could not find function information " + funcName);
@@ -1970,7 +1993,7 @@ static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeDeviceGet FAILED with return code " + std::to_string(status));
   }
-  logDebug("GET DRIVER'S DEVICE COUNT -  {} ", deviceCount);
+  logDebug("GET DRIVER'S DEVICE COUNT (via calling zeDeviceGet) -  {} ", deviceCount);
  
   ze_device_handle_t found = nullptr;
   // For each device, find the first one matching the type
@@ -1983,7 +2006,7 @@ static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device
     if (status != ZE_RESULT_SUCCESS) {
       throw InvalidLevel0Initialization("HipLZ zeDeviceGetProperties FAILED with return code " + std::to_string(status));
     }
-    logDebug("GET DEVICE PROPERTY {} ", type == device_properties.type);
+    logDebug("GET DEVICE PROPERTY (via calling zeDeviceGetProperties) {} ", type == device_properties.type);
     
     if (type == device_properties.type) {
       found = phDevice;
@@ -2002,7 +2025,7 @@ static void InitializeHipLZCallOnce() {
     exit(1);
   }
 
-  logDebug("INITIALIZE LEVEL-0 {}\n", status);
+  logDebug("INITIALIZE LEVEL-0 (via calling zeInit) {}\n", status);
   
   const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
   ze_driver_handle_t pDriver = nullptr;
@@ -2014,14 +2037,16 @@ static void InitializeHipLZCallOnce() {
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeDriverGet FAILED with return code " + std::to_string(status));
   }
-
+  logDebug("HipLZ GET DRIVER via calling zeDriverGet {}\n", status);
+ 
   // Get drivers
   std::vector<ze_driver_handle_t> drivers(driverCount);
   status = zeDriverGet(&driverCount, drivers.data());
   if(status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeDriverGet Failed with return code " + std::to_string(status));
   }
-
+  logDebug("HipLZ GET DRIVER COUNT via calling zeDriverGet {}\n", status);
+ 
   // Find the level-0 device, here we just pick up the 1st one
   for (uint32_t driver = 0; driver < driverCount; ++ driver) {
     pDriver = drivers[driver];
