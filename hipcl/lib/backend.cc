@@ -1,3 +1,4 @@
+
 #include <algorithm>
 #include <cassert>
 #include <fstream>
@@ -407,23 +408,7 @@ static void notifyOpenCLevent(cl_event event, cl_int status, void *data) {
 }
 
 bool ClQueue::addCallback(hipStreamCallback_t callback, void *userData) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-
-  int err;
-  if (LastEvent == nullptr) {
-    callback(this, hipSuccess, userData);
-    return true;
-  }
-
-  hipStreamCallbackData *Data = new hipStreamCallbackData{};
-  Data->Stream = this;
-  Data->Callback = callback;
-  Data->UserData = userData;
-  Data->Status = hipSuccess;
-  err = ::clSetEventCallback(LastEvent, CL_COMPLETE, notifyOpenCLevent, Data);
-  if (err != CL_SUCCESS)
-    logError("clSetEventCallback failed with error {}\n", err);
-  return (err == CL_SUCCESS);
+  throw InvalidLevel0Initialization("Supported in LZQueue::addCallback!");   
 }
 
 bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
@@ -453,43 +438,7 @@ bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
 }
 
 bool ClQueue::recordEvent(hipEvent_t event) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-
-  /* slightly tricky WRT refcounts.
-   * if LastEvents != NULL, it should have refcount 1.
-   * if NULL, enqueue a marker here;
-   * libOpenCL will process it & decrease refc to 1;
-   * we retain it here because d-tor is called at } and releases it.
-   *
-   * in both cases, event->recordStream should Retain */
-  if (LastEvent == nullptr) {
-    cl::Event MarkerEvent;
-    int err = Queue.enqueueMarkerWithWaitList(nullptr, &MarkerEvent);
-    if (err) {
-      logError ("enqueueMarkerWithWaitList FAILED with {}\n", err);
-      return false;
-    } else {
-      LastEvent = MarkerEvent();
-      clRetainEvent(LastEvent);
-    }
-  }
-
-  logDebug("record Event: {} on Queue: {}\n", (void *)(LastEvent),
-           (void *)(Queue()));
-
-  cl_uint refc1, refc2;
-  int err =
-      ::clGetEventInfo(LastEvent, CL_EVENT_REFERENCE_COUNT, 4, &refc1, NULL);
-  assert(err == CL_SUCCESS);
-  // can be >1 because recordEvent can be called >1 on the same event
-  assert(refc1 >= 1);
-
-  return event->recordStream(this, LastEvent);
-
-  err = ::clGetEventInfo(LastEvent, CL_EVENT_REFERENCE_COUNT, 4, &refc2, NULL);
-  assert(err == CL_SUCCESS);
-  assert(refc2 >= 2);
-  assert(refc2 == (refc1 + 1));
+  throw InvalidLevel0Initialization("Supported inLZQueue::recordEvent!");
 }
 
 hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
@@ -651,6 +600,10 @@ int ExecItem::setupAllArgs(ClKernel *kernel) {
   return setLocalSize(SharedMem, FuncInfo, kernel->get().get());
 }
 
+inline hipError_t ExecItem::launch(ClKernel *Kernel) {
+  return Stream->launch(Kernel, this);
+}
+
 /***********************************************************************/
 
 /* errinfo is a pointer to an error string.
@@ -702,7 +655,7 @@ ClContext::ClContext(ClDevice *D, unsigned f) {
                             CL_QUEUE_PROFILING_ENABLE, &err);
   assert(err == CL_SUCCESS);
 
-  DefaultQueue = new ClQueue(CmdQueue, 0, 0);
+  DefaultQueue = new LZQueue(CmdQueue, 0, 0); // new ClQueue(CmdQueue, 0, 0);
 
   Memory.init(Context);
 }
@@ -725,7 +678,7 @@ void ClContext::reset() {
                             CL_QUEUE_PROFILING_ENABLE, &err);
   assert(err == CL_SUCCESS);
 
-  DefaultQueue = new ClQueue(CmdQueue, 0, 0);
+  DefaultQueue = new LZQueue(CmdQueue, 0, 0); // ClQueue(CmdQueue, 0, 0);
 }
 
 ClContext::~ClContext() {
@@ -879,7 +832,7 @@ bool ClContext::createQueue(hipStream_t *stream, unsigned flags, int priority) {
                             CL_QUEUE_PROFILING_ENABLE, &err);
   assert(err == CL_SUCCESS);
 
-  hipStream_t Ptr = new ClQueue(NewQueue, flags, priority);
+  hipStream_t Ptr = new LZQueue(NewQueue, flags, priority); // new ClQueue(NewQueue, flags, priority);
   Queues.insert(Ptr);
   *stream = Ptr;
   return true;
@@ -1719,12 +1672,70 @@ bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
 
 // Add call back     
 bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
-  throw InvalidLevel0Initialization("Not support LZQueue::addCallback yet!");
+  std::lock_guard<std::mutex> Lock(QueueMutex);
+
+  int err;
+  if (LastEvent == nullptr) {
+    callback(this, hipSuccess, userData);
+    return true;
+  }
+
+  hipStreamCallbackData *Data = new hipStreamCallbackData{};
+  Data->Stream = this;
+  Data->Callback = callback;
+  Data->UserData = userData;
+  Data->Status = hipSuccess;
+  err = ::clSetEventCallback(LastEvent, CL_COMPLETE, notifyOpenCLevent, Data);
+  if (err != CL_SUCCESS)
+    logError("clSetEventCallback failed with error {}\n", err);
+  return (err == CL_SUCCESS);
+  
+  // throw InvalidLevel0Initialization("Not support LZQueue::addCallback yet!");
 }
 
 // Record event
-bool LZQueue::recordEvent(hipEvent_t e) {
-  throw InvalidLevel0Initialization("Not support LZQueue::recordEvent yet!");
+bool LZQueue::recordEvent(hipEvent_t event) {
+  std::lock_guard<std::mutex> Lock(QueueMutex);
+
+  /* slightly tricky WRT refcounts.
+   * if LastEvents != NULL, it should have refcount 1.
+   *  if NULL, enqueue a marker here; 
+   * libOpenCL will process it & decrease refc to 1;
+   * we retain it here because d-tor is called at } and releases it.  
+   * 
+   * in both cases, event->recordStream should Retain */
+
+  if (LastEvent == nullptr) {
+    cl::Event MarkerEvent;
+    int err = Queue.enqueueMarkerWithWaitList(nullptr, &MarkerEvent);
+    if (err) {
+      logError ("enqueueMarkerWithWaitList FAILED with {}\n", err);
+      return false;
+    } else {
+      LastEvent = MarkerEvent();
+      clRetainEvent(LastEvent);
+    }
+  }
+
+  logDebug("record Event: {} on Queue: {}\n", (void *)(LastEvent),
+           (void *)(Queue()));
+
+  cl_uint refc1, refc2;
+  int err =
+      ::clGetEventInfo(LastEvent, CL_EVENT_REFERENCE_COUNT, 4, &refc1, NULL);
+  assert(err == CL_SUCCESS);
+  // can be >1 because recordEvent can be called >1 on the same event
+  assert(refc1 >= 1);
+
+  return event->recordStream(this, LastEvent);
+
+  err = ::clGetEventInfo(LastEvent, CL_EVENT_REFERENCE_COUNT, 4, &refc2, NULL);
+  assert(err == CL_SUCCESS);
+  assert(refc2 >= 2);
+  assert(refc2 == (refc1 + 1));
+
+
+  // throw InvalidLevel0Initialization("Not support LZQueue::recordEvent yet!");
 }
 
 // Memory copy support   
@@ -1844,22 +1855,45 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   return true;
 }
 
-LZCommandList::LZCommandList(LZContext* lzContext_) {
+LZCommandList::LZCommandList(LZContext* lzContext_, bool immediate) {
   this->lzContext = lzContext_;
 
-  // Create the command list                                                
-  ze_command_list_desc_t clDesc;
-  clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;
-  clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour   
-  clDesc.pNext = nullptr;
-  ze_result_t status = zeCommandListCreate(lzContext->GetContextHandle(), lzContext->GetDevice()->GetDeviceHandle(),
-					   &clDesc, &hCommandList);
+  if (immediate) {
+    // Create command list via immidiately associated with a queue
+    ze_command_queue_desc_t cqDesc;
+    cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
+    cqDesc.pNext = nullptr;
+    cqDesc.ordinal = 0;
+    cqDesc.index = 0;
+    cqDesc.flags = 0;
+    cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
+    cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL; 
 
-  if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+    ze_result_t status = zeCommandListCreateImmediate(this->lzContext->GetContextHandle(),
+						      this->lzContext->GetDevice()->GetDeviceHandle(),
+						      &cqDesc, &hCommandList);
+     if (status != ZE_RESULT_SUCCESS) {
+       throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+     }
+    
+    logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreateImmediate {} ", status);
+  }  else {
+    // Default command list creation, i.e. w/o immediately associated with a  queue
+    
+    // Create the command list                                                
+    ze_command_list_desc_t clDesc;
+    clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;
+    clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour   
+    clDesc.pNext = nullptr;
+    ze_result_t status = zeCommandListCreate(lzContext->GetContextHandle(), lzContext->GetDevice()->GetDeviceHandle(),
+					     &clDesc, &hCommandList);
+    
+    if (status != ZE_RESULT_SUCCESS) {
+      throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+    }
+  
+    logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreate {} ", status);
   }
-
-  logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreate {} ", status);
 }
 
 int LZExecItem::setupAllArgs(LZKernel *kernel) {

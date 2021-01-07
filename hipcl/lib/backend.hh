@@ -283,7 +283,7 @@ public:
   void setArg(const void *arg, size_t size, size_t offset);
   int setupAllArgs(ClKernel *kernel);
 
-  hipError_t launch(ClKernel *Kernel) { return Stream->launch(Kernel, this); }
+  virtual hipError_t launch(ClKernel *Kernel);  //  { return Stream->launch(Kernel, this); }
 
   // If this execution item object support HipLZ
   virtual bool SupportLZ() { return false; };
@@ -424,7 +424,7 @@ public:
   // Setup all arguments for HipLZ kernel funciton invocation
   int setupAllArgs(LZKernel *kernel);
 
-  bool launch(LZKernel *Kernel) { 
+  virtual bool launch(LZKernel *Kernel) { 
     // return Stream->launch(Kernel, this); 
     return false;
   };
@@ -507,7 +507,7 @@ public:
 };
 
 class LZCommandList;
-class LZQueue;
+// class LZQueue;
 
 class LZContext : public ClContext {
 protected:
@@ -578,7 +578,7 @@ public:
     this->lzContext = lzContext_;
     this->hCommandList = hCommandList_;
   };
-  LZCommandList(LZContext* lzContext_);
+  LZCommandList(LZContext* lzContext_, bool immediate = false);
 
   // Get command list handler
   ze_command_list_handle_t GetCommandListHandle() { return this->hCommandList; }
@@ -605,6 +605,10 @@ protected:
   LZCommandList* defaultCmdList;
   
 public:
+  LZQueue(cl::CommandQueue q, unsigned int f, int p) :  ClQueue(q, f, p) {
+    lzContext = nullptr;
+    defaultCmdList = nullptr;
+  };
   LZQueue(LZContext* lzContext);
   LZQueue(LZContext* lzContext, LZCommandList* lzCmdList); 
 

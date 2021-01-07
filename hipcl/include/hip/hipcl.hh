@@ -602,7 +602,11 @@ typedef ClProgram *hipModule_t;
 
 class ClQueue;
 
-typedef ClQueue *hipStream_t;
+typedef ClQueue *hipStream_t_xxx;
+
+class LZQueue;
+
+typedef LZQueue *hipStream_t;
 
 class ClContext;
 
