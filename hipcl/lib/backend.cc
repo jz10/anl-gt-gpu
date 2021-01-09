@@ -1831,6 +1831,23 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Execute command list in command queue
   status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
   if (status != ZE_RESULT_SUCCESS) {
+    if (status == ZE_RESULT_ERROR_UNINITIALIZED) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_UNINITIALIZED) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_DEVICE_LOST) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_DEVICE_LOST) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_NULL_HANDLE ) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_NULL_HANDLE) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_NULL_POINTER) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_NULL_POINTER) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_SIZE) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_SIZE) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else
+      logDebug("LZ KERNEL EXECUTION failed via calling zeCommandQueueExecuteCommandLists {} ", status);
+
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
   }
 
@@ -1883,7 +1900,8 @@ LZCommandList::LZCommandList(LZContext* lzContext_, bool immediate) {
     // Create the command list                                                
     ze_command_list_desc_t clDesc;
     clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;
-    clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour   
+    clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour 
+    clDesc.commandQueueGroupOrdinal = 0;
     clDesc.pNext = nullptr;
     ze_result_t status = zeCommandListCreate(lzContext->GetContextHandle(), lzContext->GetDevice()->GetDeviceHandle(),
 					     &clDesc, &hCommandList);
