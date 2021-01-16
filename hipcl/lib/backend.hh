@@ -330,7 +330,7 @@ public:
   hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size,
                      hipStream_t stream);
   hipError_t recordEvent(hipStream_t stream, hipEvent_t event);
-  bool finishAll();
+  virtual bool finishAll();
 
   void *allocate(size_t size);
   bool free(void *p);
@@ -566,6 +566,9 @@ public:
 
   // Create stream/queue
   virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
+
+  // Synchronize all streams
+  virtual bool finishAll();
 };
 
 class LZCommandList {

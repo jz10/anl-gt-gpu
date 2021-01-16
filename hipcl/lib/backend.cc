@@ -1,4 +1,3 @@
-
 #include <algorithm>
 #include <cassert>
 #include <fstream>
@@ -857,6 +856,8 @@ bool ClContext::finishAll() {
     for (hipStream_t I : Queues) {
       Copies.push_back(I->getQueue());
     }
+    // Note that this does not really go through due to the subclass : LZQueue
+    Copies.push_back(DefaultQueue->getQueue());
   }
 
   for (cl::CommandQueue &I : Copies) {
@@ -1411,7 +1412,7 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   // ze_command_queue_handle_t hQueue;
   // status = zeCommandQueueCreate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hQueue);
 
-  this->lzQueue = new LZQueue(this);
+  this->lzQueue = this->DefaultQueue = new LZQueue(this);
   this->lzCommandList = new LZCommandList(this);
   
   // if (status != ZE_RESULT_SUCCESS) {
@@ -1599,6 +1600,28 @@ bool LZContext::createQueue(hipStream_t *stream, unsigned int Flags, int priorit
   return true;
 }
 
+// The synchronious among all HipLZ queues
+bool LZContext::finishAll() {
+  std::cout << "call lz context finish all " << Queues.size() << std::endl; 
+  std::set<hipStream_t> Copies;
+  {
+    std::lock_guard<std::mutex> Lock(ContextMutex);
+    for (hipStream_t I : Queues) {
+      Copies.insert(I);
+    }
+    Copies.insert(DefaultQueue);   
+  }
+
+  for (hipStream_t I : Copies) {
+    bool err = I->finish();
+    if (!err) {
+      logError("HipLZ Finish() failed with error {}\n", err);
+      return false;
+    }
+  }
+  return true;
+}
+
 LZQueue::LZQueue(LZContext* lzContext_) {
   // Initialize super class fields, i.e. ClQueue
   this->LastEvent = nullptr;
@@ -1650,6 +1673,9 @@ LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
 
 // Queue synchronous support                                                                           
 bool LZQueue::finish() {
+  if (this->lzContext == nullptr) {
+    throw InvalidLevel0Initialization("HipLZ LZQueue was not associated with a LZContext!");
+  }
   // Synchronize host with device kernel execution 
   ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT32_MAX);
   if (status != ZE_RESULT_SUCCESS) {

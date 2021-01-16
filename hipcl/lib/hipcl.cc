@@ -89,6 +89,12 @@ hipError_t hipSetDevice(int deviceId) {
 }
 
 hipError_t hipDeviceSynchronize(void) {
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  // Synchronize among HipLZ queues
+  if (cont->finishAll())
+    RETURN(hipSuccess);
+  
   getTlsDefaultCtx()->finishAll();
   RETURN(hipSuccess);
 }
