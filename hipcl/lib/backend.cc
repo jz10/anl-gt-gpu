@@ -872,13 +872,14 @@ bool ClContext::finishAll() {
 
 hipError_t ClContext::configureCall(dim3 grid, dim3 block, size_t shared,
                                     hipStream_t stream) {
-  FIND_QUEUE_LOCKED(stream);
+  throw InvalidLevel0Initialization("HipLZ should not use ClContext to configureCall");;
+  // FIND_QUEUE_LOCKED(stream);
 
   // Disable the origin configureCall and ExecItem stack push
   // ExecItem *NewItem = new ExecItem(grid, block, shared, Queue);
   // ExecStack.push(NewItem);
 
-  return hipSuccess;
+  // return hipSuccess;
 }
 
 hipError_t ClContext::setArg(const void *arg, size_t size, size_t offset) {
@@ -1369,14 +1370,20 @@ std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
-  ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src, sizeBytes,
-						     NULL, 0, NULL);
-  if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+  if (stream == nullptr) {
+    // Here we use default queue in  LZ context to do the synchronous copy
+    ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src,
+						       sizeBytes, NULL, 0, NULL);
+    if (status != ZE_RESULT_SUCCESS) {
+      throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+    }
+    logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
+
+    // Execute memory copy asynchronously via lz context's default command list
+    lzCommandList->Execute(lzQueue);
+  } else {
+    stream->memCoypAsync(dst, src, sizeBytes);
   }
-  logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
-  // Execute memory copy
-  lzCommandList->Execute(lzQueue);
 
   return hipSuccess;
 }
@@ -1412,8 +1419,9 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   // ze_command_queue_handle_t hQueue;
   // status = zeCommandQueueCreate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hQueue);
 
-  this->lzQueue = this->DefaultQueue = new LZQueue(this);
+  // TODO: just use DefaultQueue to maintain the context local queu and command list?
   this->lzCommandList = new LZCommandList(this);
+  this->lzQueue = this->DefaultQueue = new LZQueue(this, this->lzCommandList);
   
   // if (status != ZE_RESULT_SUCCESS) {
   //   throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate with return code " + std::to_string(status));
@@ -1467,12 +1475,14 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
 }
 
 // Configure the call to LZ kernel, here we ignore OpenCL queue but using LZ command list
-bool LZContext::configureCall(dim3 grid, dim3 block, size_t shared) {
+bool LZContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
   // TODO: make thread safeness
-  LZExecItem *NewItem = new LZExecItem(grid, block, shared);
+  if (stream == nullptr)
+    stream = this->DefaultQueue;
+  LZExecItem *NewItem = new LZExecItem(grid, block, shared, stream);
   // Here we reuse the execution item stack from super class, i.e. OpenCL context 
   ExecStack.push(NewItem);
-
+  
   return true;
 }
 
@@ -1491,7 +1501,6 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   LZKernel* Kernel = 0;
   logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
   if (!this->lzModule) {
-    
     throw InvalidLevel0Initialization("Hiplz LZModule was not created before invoking kernel?");
   }
 
@@ -1534,8 +1543,8 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
 
   // Execute kernel
   // lzCommandList->Execute(lzQueue);
-  
-  return lzCommandList->ExecuteKernel(lzQueue, Kernel, Arguments);
+
+  return Arguments->launch(Kernel);
 }
 
 // Allocate memory via Level-0 runtime  
@@ -1593,7 +1602,7 @@ bool LZContext::free(void *p) {
 
 // Create stream/queue
 bool LZContext::createQueue(hipStream_t *stream, unsigned int Flags, int priority) {
-  hipStream_t Ptr = new LZQueue(this);
+  hipStream_t Ptr = new LZQueue(this, true);
   Queues.insert(Ptr);
   *stream = Ptr;
   
@@ -1602,7 +1611,6 @@ bool LZContext::createQueue(hipStream_t *stream, unsigned int Flags, int priorit
 
 // The synchronious among all HipLZ queues
 bool LZContext::finishAll() {
-  std::cout << "call lz context finish all " << Queues.size() << std::endl; 
   std::set<hipStream_t> Copies;
   {
     std::lock_guard<std::mutex> Lock(ContextMutex);
@@ -1622,7 +1630,7 @@ bool LZContext::finishAll() {
   return true;
 }
 
-LZQueue::LZQueue(LZContext* lzContext_) {
+LZQueue::LZQueue(LZContext* lzContext_, bool needDefaultCmdList) {
   // Initialize super class fields, i.e. ClQueue
   this->LastEvent = nullptr;
   this->Flags = 0;
@@ -1633,11 +1641,11 @@ LZQueue::LZQueue(LZContext* lzContext_) {
   this->defaultCmdList = nullptr;
 
   // Initialize Level-0 queue
-  initializeQueue(lzContext);
+  initializeQueue(lzContext, needDefaultCmdList);
 }
 
 // Initialize Level-0 queue
-void LZQueue::initializeQueue(LZContext* lzContext) {
+void LZQueue::initializeQueue(LZContext* lzContext, bool needDefaultCmdList) {
   // Create a Level-0 command queue
   ze_command_queue_desc_t cqDesc;
   cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
@@ -1655,6 +1663,10 @@ void LZQueue::initializeQueue(LZContext* lzContext) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate FAILED with return code " + std::to_string(status));
   }
   logDebug("LZ QUEUE INITIALIZATION via calling zeCommandQueueCreate {} ", status);
+
+  if (needDefaultCmdList) {
+    this->defaultCmdList = new LZCommandList(this->lzContext);
+  }
 }
 
 LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
@@ -1790,11 +1802,23 @@ hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
   if (this->defaultCmdList == nullptr) {
     throw InvalidLevel0Initialization("Invalid command list");
   } else {
-    if (Kernel->SupportLZ() && Arguments->SupportLZ())
+    if (Kernel->SupportLZ() && Arguments->SupportLZ()) {
       this->defaultCmdList->ExecuteKernel(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
+    } else
+      throw InvalidLevel0Initialization("Not support LZQueue::launch yet!"); 
+  }
+
+  return hipSuccess;
+  // throw InvalidLevel0Initialization("Not support LZQueue::launch yet!");
+}
+
+// The asynchronously memory copy support 
+bool LZQueue::memCoypAsync(void *dst, const void *src, size_t sizeBytes) {
+  if (this->defaultCmdList == nullptr) {
+    throw InvalidLevel0Initialization("No default command list setup in current HipLZ queue yet!");
   }
   
-  throw InvalidLevel0Initialization("Not support LZQueue::launch yet!");
+  return this->defaultCmdList->ExecuteMemCopyAsync(this, dst, src, sizeBytes);
 }
 
 // Execute the Level-0 kernel
@@ -1828,7 +1852,7 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListAppendLaunchKernel {} ", status);
-  
+
   // Execute kernel  
   return Execute(lzQueue);
 }
@@ -1844,6 +1868,17 @@ bool LZCommandList::ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src,
   return Execute(lzQueue);
 }
 
+// Execute HipLZ memory copy command asynchronously
+bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes) {
+  ze_result_t status = zeCommandListAppendMemoryCopy(hCommandList, dst, src, sizeBytes,
+                                                     NULL, 0, NULL);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+  }
+  // Execute memory copy asynchronously
+  return ExecuteAsync(lzQueue);
+}
+
 // Execute HipLZ command list  
 bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Finished appending commands (typically done on another thread)
@@ -1853,7 +1888,7 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
-    
+  
   // Execute command list in command queue
   status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
   if (status != ZE_RESULT_SUCCESS) {
@@ -1878,13 +1913,13 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
-  
+
   // Synchronize host with device kernel execution
   status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT32_MAX);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
   }
-
+  
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
   
   // Reset (recycle) command list for new commands
@@ -1894,6 +1929,44 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
+  
+  return true;
+}
+
+// Execute HipLZ command list asynchronously
+bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
+  // Finished appending commands (typically done on another thread)  
+  ze_result_t status = zeCommandListClose(hCommandList);
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeCommandListClose FAILED with return code " + std::to_string(status));
+  }
+
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
+
+  // Execute command list in command queue  
+  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
+  if (status != ZE_RESULT_SUCCESS) {
+    if (status == ZE_RESULT_ERROR_UNINITIALIZED) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_UNINITIALIZED) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_DEVICE_LOST) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_DEVICE_LOST) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_NULL_HANDLE ) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_NULL_HANDLE) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_NULL_POINTER) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_NULL_POINTER) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_SIZE) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_SIZE) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else if (status == ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT) {
+      logDebug("LZ KERNEL EXECUTION failed (ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT) via calling zeCommandQueueExecuteCommandLists {} ", status);
+    } else
+      logDebug("LZ KERNEL EXECUTION failed via calling zeCommandQueueExecuteCommandLists {} ", status);
+
+    throw InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
+  }
+
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
   
   return true;
 }
@@ -2024,6 +2097,10 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
 
   return CL_SUCCESS;
 }
+
+bool LZExecItem::launch(LZKernel *Kernel) {
+  return Stream->launch(Kernel, this) == hipSuccess;  
+};
 
 // Create Level-0 kernel 
 void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInfos) {

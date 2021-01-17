@@ -1131,7 +1131,7 @@ hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
     memcpy(dst, src, sizeBytes);
     RETURN(hipSuccess);
   } else {
-    RETURN(cont->memCopy(dst, src, sizeBytes)); // , stream));
+    RETURN(cont->memCopy(dst, src, sizeBytes, stream));
   }
 }
 
@@ -1546,7 +1546,7 @@ hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
                             hipStream_t stream) {
   // Try for HipLZ context at first , here we ignore OpenCL queue 
   LZContext* lzCtx = getTlsDefaultLzCtx();
-  if (lzCtx->configureCall(gridDim, blockDim, sharedMem))
+  if (lzCtx->configureCall(gridDim, blockDim, sharedMem, stream))
     RETURN(hipSuccess);
   
   ClContext *cont = getTlsDefaultCtx();

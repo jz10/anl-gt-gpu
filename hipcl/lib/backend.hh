@@ -416,7 +416,7 @@ public:
   dim3 GridDim;
   dim3 BlockDim;
 
-  LZExecItem(dim3 grid, dim3 block, size_t shared) : ExecItem(grid, block, shared, nullptr) {
+  LZExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t stream) : ExecItem(grid, block, shared, stream) {
     GridDim = grid;
     BlockDim = block;
   }
@@ -424,10 +424,7 @@ public:
   // Setup all arguments for HipLZ kernel funciton invocation
   int setupAllArgs(LZKernel *kernel);
 
-  virtual bool launch(LZKernel *Kernel) { 
-    // return Stream->launch(Kernel, this); 
-    return false;
-  };
+  virtual bool launch(LZKernel *Kernel);
 
   // If this execution item support HipLZ
   virtual bool SupportLZ() { return true; };
@@ -507,7 +504,6 @@ public:
 };
 
 class LZCommandList;
-// class LZQueue;
 
 class LZContext : public ClContext {
 protected:
@@ -546,7 +542,7 @@ public:
   LZDevice* GetDevice() { return this->lzDevice; };
   
   // Configure the call for kernel
-  bool configureCall(dim3 grid, dim3 block, size_t shared);
+  bool configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
   
   // Set argument
   bool setArg(const void *arg, size_t size, size_t offset);
@@ -591,9 +587,15 @@ public:
   
   // Execute HipLZ memory copy command 
   bool ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
+
+  // Execute HipLZ memory copy command asynchronously
+  bool ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
   
   // Execute HipLZ command list 
   bool Execute(LZQueue* lzQueue);
+
+  // Execute HipLZ command list asynchronously
+  bool ExecuteAsync(LZQueue* lzQueue);
 };
 
 class LZQueue : public ClQueue {
@@ -612,7 +614,7 @@ public:
     lzContext = nullptr;
     defaultCmdList = nullptr;
   };
-  LZQueue(LZContext* lzContext);
+  LZQueue(LZContext* lzContext, bool needDefaultCmdList = false);
   LZQueue(LZContext* lzContext, LZCommandList* lzCmdList); 
 
   // Get Level-0 queue handler
@@ -643,12 +645,15 @@ public:
   // Launch kernel support
   virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
 
-  //If this queue support HipLZ
+  // If this queue support HipLZ
   virtual bool SupportLZ() { return true; };
+
+  // The asynchronously memory copy support
+  bool memCoypAsync(void *dst, const void *src, size_t sizeBytes);
   
 protected:
   // Initialize Level-0 queue
-  void initializeQueue(LZContext* lzContext);
+  void initializeQueue(LZContext* lzContext, bool needDefaultCmdList = false);
 };
 
 LZDevice &HipLZDeviceById(int deviceId);
