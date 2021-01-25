@@ -321,7 +321,7 @@ public:
   hipStream_t getDefaultQueue() { return DefaultQueue; }
   void reset();
 
-  hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
+  virtual hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
   ClEvent *createEvent(unsigned Flags);
   virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
   bool releaseQueue(hipStream_t stream);
@@ -435,7 +435,7 @@ class LZContext;
 class LZDevice {
 protected:
   std::mutex mtx;
-  LZContext* lzContext;
+  LZContext* defaultContext;
   ze_device_handle_t hDevice;
   ze_driver_handle_t hDriver;
 
@@ -458,7 +458,7 @@ public:
   std::string GetHostFunctionName(const void* HostFunction);
   
   // Get primary context
-  LZContext* getPrimaryCtx() { return this->lzContext; };
+  LZContext* getPrimaryCtx() { return this->defaultContext; };
 };
 
 class LZKernel : public ClKernel {
@@ -503,6 +503,95 @@ public:
   LZKernel* GetKernel(std::string funcName);
 };
 
+class LZEventPool;
+
+class LZEvent {
+protected:
+  // The mutual exclusion support
+  std::mutex EventMutex;
+  // cl::Event *Event;
+  // Associated stream
+  hipStream_t Stream;
+  // Status
+  event_status_e Status;
+  // Flags
+  unsigned Flags;
+  // cl::Context Context;
+
+  // The associated HipLZ context
+  LZContext* cont;
+  
+  // The handler of HipLZ event
+  ze_event_handle_t hEvent;
+
+  // The timestamp value
+  uint64_t timestamp;
+
+public:
+  LZEvent(LZContext* c, unsigned flags, LZEventPool* eventPool);
+
+  ~LZEvent() {
+   
+  }
+
+  // The memory space for global timestamp
+  alignas(8) char timestamp_buf[32];
+
+  uint64_t getFinishTime();
+  
+  // Get the event object? this is only for OpenCL 
+  cl::Event getEvent();
+
+  // Check if the event is from same cl::Context? this is only for OpenCL
+  bool isFromContext(cl::Context &Other);
+
+  // Check if the event is from same stream
+  bool isFromStream(hipStream_t &Other) { return (Stream == Other); }
+
+  // Check if the event has been finished
+  bool isFinished() const { return (Status == EVENT_STATUS_RECORDED); }
+
+  // Check if the event is during recording or has been recorded
+  bool isRecordingOrRecorded() const { return (Status >= EVENT_STATUS_RECORDING); }
+
+  // Record the event to stream
+  bool recordStream(hipStream_t S, cl_event E);
+
+  // Update event's finish status
+  bool updateFinishStatus();
+
+  // Wait on event get finished
+  bool wait();
+
+  // Get current event handler
+  ze_event_handle_t GetEventHandler() { return this->hEvent; };  
+
+  // Record the time stamp
+  void recordTimeStamp(uint64_t value) { this->timestamp = value; };
+
+  // Get the time stamp
+  uint64_t getTimeStamp() { return this->timestamp; };
+};
+
+class LZEventPool {
+protected:
+  // The thread-safe event pool management
+  std::mutex PoolMutex;
+  // The associated HipLZ context
+  LZContext* lzContext;
+  // The handler of event pool
+  ze_event_pool_handle_t hEventPool;
+
+public:
+  LZEventPool(LZContext* c);
+
+  // Create new event
+  LZEvent* createEvent(unsigned flags);
+
+  // Get the handler of event pool
+  ze_event_pool_handle_t GetEventPoolHandler() { return this->hEventPool; };
+};
+
 class LZCommandList;
 
 class LZContext : public ClContext {
@@ -518,18 +607,17 @@ protected:
   LZCommandList* lzCommandList;
   // Reference to HipLZ queue
   LZQueue* lzQueue;
-  
+  // The default event ppol
+  LZEventPool* defaultEventPool;
+
   // HipLZ context handle
   ze_context_handle_t hContext;
   // OpenCL function information map, this is used for presenting SPIR-V kernel funcitons' arguments
   OpenCLFunctionInfoMap FuncInfos;
 
-protected:
-  // Allocate memory via Level-0 runtime
-  void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
-
 public:
-  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0), lzCommandList(0), lzQueue(0) {}
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0), lzCommandList(0), 
+				       lzQueue(0), defaultEventPool(0) {}
   LZContext(LZDevice* D, ze_context_handle_t hContext_);  
 
   // Create SPIR-V module
@@ -560,22 +648,38 @@ public:
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
 
+  // Cteate HipLZ event
+  LZEvent* createEvent(unsigned flags);
+  
   // Create stream/queue
   virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
 
+  // Get the elapse between two events
+  virtual hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
+
   // Synchronize all streams
   virtual bool finishAll();
+
+  // Allocate memory via Level-0 runtime
+  void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
 };
 
 class LZCommandList {
 protected:
+  // Current associated HipLZ context
   LZContext* lzContext;
+
+  // HipLZ command list handler
   ze_command_list_handle_t hCommandList;
+
+  // The shared memory buffer
+  void* shared_buf;
 
 public:
   LZCommandList(LZContext* lzContext_, ze_command_list_handle_t hCommandList_) {
     this->lzContext = lzContext_;
     this->hCommandList = hCommandList_;
+    this->shared_buf = nullptr;
   };
   LZCommandList(LZContext* lzContext_, bool immediate = false);
 
@@ -591,11 +695,21 @@ public:
   // Execute HipLZ memory copy command asynchronously
   bool ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
   
+  // Execute HipLZ write global timestamp  
+  uint64_t ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue);
+
   // Execute HipLZ command list 
   bool Execute(LZQueue* lzQueue);
 
   // Execute HipLZ command list asynchronously
   bool ExecuteAsync(LZQueue* lzQueue);
+
+protected:
+  // Get the potential signal event 
+  ze_event_handle_t GetSignalEvent(LZQueue* lzQueue);
+
+  // Get the potential elapse time event 
+  LZEvent* GetTimeStampEvent(LZQueue* lzQueue);
 };
 
 class LZQueue : public ClQueue {
@@ -609,10 +723,14 @@ protected:
   // Default command list
   LZCommandList* defaultCmdList;
   
+  // The current HipLZ event, currently, we only maintain one event for each queue
+  LZEvent* currentEvent;
+
 public:
   LZQueue(cl::CommandQueue q, unsigned int f, int p) :  ClQueue(q, f, p) {
     lzContext = nullptr;
     defaultCmdList = nullptr;
+    currentEvent = nullptr;
   };
   LZQueue(LZContext* lzContext, bool needDefaultCmdList = false);
   LZQueue(LZContext* lzContext, LZCommandList* lzCmdList); 
@@ -651,6 +769,12 @@ public:
   // The asynchronously memory copy support
   bool memCoypAsync(void *dst, const void *src, size_t sizeBytes);
   
+  // The set the current event
+  bool SetEvent(LZEvent* event);
+
+  // Get and clear current event
+  LZEvent* GetAndClearEvent();
+
 protected:
   // Initialize Level-0 queue
   void initializeQueue(LZContext* lzContext, bool needDefaultCmdList = false);

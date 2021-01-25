@@ -799,7 +799,8 @@ hipError_t hipEventCreate(hipEvent_t *event) {
 }
 
 hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext* cont = getTlsDefaultLzCtx();
+  // ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -813,7 +814,8 @@ hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
 }
 
 hipError_t hipEventRecord(hipEvent_t event, hipStream_t stream) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext* cont = getTlsDefaultLzCtx();
+  // ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -840,7 +842,8 @@ hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
   ERROR_IF((start == nullptr), hipErrorInvalidValue);
   ERROR_IF((stop == nullptr), hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext* cont = getTlsDefaultLzCtx();
+  // ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   RETURN(cont->eventElapsedTime(ms, start, stop));

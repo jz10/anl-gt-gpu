@@ -590,7 +590,9 @@ typedef enum {
 
 class ClEvent;
 
-typedef ClEvent *hipEvent_t;
+class LZEvent;
+
+typedef LZEvent *hipEvent_t;
 
 class ClKernel;
 
