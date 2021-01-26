@@ -1319,6 +1319,13 @@ size_t NumLZDevices = 1;
 LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
   this->hDevice = hDevice_;
   this->hDriver = hDriver_;
+  ze_result_t status = ZE_RESULT_SUCCESS;
+
+  // Query device properties
+  status = zeDeviceGetProperties(this->hDevice, &(this->deviceProps));
+  if (status != ZE_RESULT_SUCCESS) {
+    throw InvalidLevel0Initialization("HipLZ zeDeviceGetProperties Failed with return code " + std::to_string(status));
+  }
 
   // Create Level-0 context  
   ze_context_desc_t ctxtDesc = {
@@ -1327,7 +1334,7 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
     0
   };
   ze_context_handle_t hContext;
-  ze_result_t status = zeContextCreate(this->hDriver, &ctxtDesc, &hContext);
+  status = zeContextCreate(this->hDriver, &ctxtDesc, &hContext);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeContextCreate Failed with return code " + std::to_string(status));
   }
@@ -1641,6 +1648,18 @@ hipError_t LZContext::eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t s
   uint64_t Started = start->getFinishTime();
   uint64_t Finished = stop->getFinishTime();
 
+  uint64_t timerResolution    = this->GetDevice()->deviceProps.timerResolution;
+  uint32_t timestampValidBits = this->GetDevice()->deviceProps.timestampValidBits;
+
+  logDebug("EventElapsedTime: Started {} Finished {} timerResolution {} timestampValidBits {}\n", Started, Finished, timerResolution, timestampValidBits);
+
+  Started = (Started & (((uint64_t)1 << timestampValidBits) - 1));
+  Finished = (Finished & (((uint64_t)1 << timestampValidBits) - 1));
+  if (Started > Finished)
+    Finished = Finished + ((uint64_t)1 << timestampValidBits) - Started;
+  Started *= timerResolution;
+  Finished *= timerResolution;
+
   logDebug("EventElapsedTime: STARTED {} / {} FINISHED {} / {} \n",
            (void *)start, Started, (void *)stop, Finished);
 
@@ -1648,8 +1667,7 @@ hipError_t LZContext::eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t s
   // assert(Finished >= Started);   
   uint64_t Elapsed;
   if (Finished < Started) {
-    logWarn("Finished < Started\n");
-    Elapsed = Started - Finished;
+    throw InvalidLevel0Initialization("Invalid timmestamp values\n");
   } else
     Elapsed = Finished - Started;
   uint64_t MS = (Elapsed / NANOSECS)*1000;

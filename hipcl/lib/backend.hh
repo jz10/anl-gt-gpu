@@ -444,6 +444,7 @@ protected:
   std::map<const void *, std::string> HostPtrToNameMap;
 
 public:
+  ze_device_properties_t deviceProps;
   LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_);
   
   ze_device_handle_t GetDeviceHandle() { return this->hDevice; };
