@@ -72,7 +72,7 @@ set(SAMPLES
     5_2dshfl
 #    6_dynamic_shared
 #    hipInfo
-#    7_streams
+    7_streams
     9_unroll
 )
 
