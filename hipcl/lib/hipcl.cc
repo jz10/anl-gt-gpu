@@ -152,7 +152,7 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 
   // Here we initialize HipLZ device as well, but does not actually return device properties
   // TODO: make a real properties retrieving function
-  std::cout << "Initialize HipLZ" << std::endl;
+  
   InitializeHipLZ();
 
   ERROR_CHECK_DEVNUM(deviceId);
