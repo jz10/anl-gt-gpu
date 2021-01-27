@@ -1382,14 +1382,19 @@ hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipS
     ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src,
 						       sizeBytes, NULL, 0, NULL);
     if (status != ZE_RESULT_SUCCESS) {
-      throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+      // throw InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+      logError("HipLZ zeCommandListAppendMemoryCopy FAILED with return code {}\n", status);
+
+      return hipErrorInvalidDevice;
     }
     logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
 
     // Execute memory copy asynchronously via lz context's default command list
-    lzCommandList->Execute(lzQueue);
+    if (!lzCommandList->Execute(lzQueue))
+      return hipErrorInvalidDevice;
   } else {
-    stream->memCoypAsync(dst, src, sizeBytes);
+    if (!stream->memCoypAsync(dst, src, sizeBytes))
+      return hipErrorInvalidDevice;
   }
 
   return hipSuccess;
@@ -2030,7 +2035,10 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Finished appending commands (typically done on another thread)
   ze_result_t status = zeCommandListClose(hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeCommandListClose FAILED with return code " + std::to_string(status));
+    // throw InvalidLevel0Initialization("HipLZ zeCommandListClose FAILED with return code " + std::to_string(status));
+    logError("HipLZ zeCommandListClose FAILED with return code {}\n", status);
+
+    return false;
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
@@ -2055,7 +2063,10 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
     } else
       logDebug("LZ KERNEL EXECUTION failed via calling zeCommandQueueExecuteCommandLists {} ", status);
 
-    throw InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
+    // throw InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
+    logError("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code {}\n", status);
+
+    return false;
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
@@ -2063,7 +2074,10 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Synchronize host with device kernel execution
   status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT32_MAX);
   if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+    //  throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+    logError("HipLZ zeCommandQueueSynchronize FAILED with return code {}\n", status);
+
+    return false;
   }
   
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
@@ -2071,7 +2085,10 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Reset (recycle) command list for new commands
   status = zeCommandListReset(hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeCommandListReset FAILED with return code " + std::to_string(status));
+    // throw InvalidLevel0Initialization("HipLZ zeCommandListReset FAILED with return code " + std::to_string(status));
+    logError("HipLZ zeCommandListReset FAILED with return code {}\n", status);
+    
+    return false;
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
