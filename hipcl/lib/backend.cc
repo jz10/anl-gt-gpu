@@ -2450,7 +2450,7 @@ bool LZEvent::isFromContext(cl::Context &Other) {
   throw InvalidLevel0Initialization("HipLZ does not support cl::Context!");
 }
 
-static hipError_t lzConvertResult(ze_result_t status) {
+hipError_t lzConvertResult(ze_result_t status) {
   switch (status) {
   case ZE_RESULT_SUCCESS:
     return hipSuccess;
@@ -2531,7 +2531,7 @@ static hipError_t lzConvertResult(ze_result_t status) {
   }
 }
 
-static const char * lzResultToString(ze_result_t status) {
+const char * lzResultToString(ze_result_t status) {
   switch (status) {
   case ZE_RESULT_SUCCESS:
     return "ZE_RESULT_SUCCESS";

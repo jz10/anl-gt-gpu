@@ -106,7 +106,7 @@ const char * lzResultToString(ze_result_t status);
 
 #define LZ_PROCESS_ERROR_MSG(msg, status) do {\
   if (status != ZE_RESULT_SUCCESS && status != ZE_RESULT_NOT_READY) { \
-    logError("{} ({}) in {}\n", msg, lzResultToString(status), __func__); \
+    logError("{} ({}) in {}:{}:{}\n", msg, lzResultToString(status), __FILE__, __LINE__, __func__); \
     throw status; \
   } \
 } while(0)
@@ -115,7 +115,7 @@ const char * lzResultToString(ze_result_t status);
 
 #define HIP_PROCESS_ERROR_MSG(msg, status) do {\
   if (status != hipSuccess && status != hipErrorNotReady) { \
-    logError("{} ({}) in {}\n", msg, hipGetErrorName(status), __func__); \
+    logError("{} ({}) in {}:{}:{}\n", msg, hipGetErrorName(status), __FILE__, __LINE__, __func__); \
     throw status; \
   } \
 } while(0)
