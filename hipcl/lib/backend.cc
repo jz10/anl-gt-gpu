@@ -816,10 +816,10 @@ hipError_t ClContext::eventElapsedTime(float *ms, hipEvent_t start,
     Elapsed = Started - Finished;
   } else
     Elapsed = Finished - Started;
-  uint64_t S = Elapsed / NANOSECS;
+  uint64_t MS = (Elapsed / NANOSECS)*1000;
   uint64_t NS = Elapsed % NANOSECS;
   float FractInMS = ((float)NS) / 1000000.0f;
-  *ms = (float)S + FractInMS;
+  *ms = (float)MS + FractInMS;
   return hipSuccess;
 }
 
@@ -1068,7 +1068,8 @@ void ClDevice::setupProperties(int index) {
   Properties.maxThreadsDim[1] = wi[1];
   Properties.maxThreadsDim[2] = wi[2];
 
-  Properties.clockRate = Dev.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>();
+  // Maximum configured clock frequency of the device in MHz.
+  Properties.clockRate = 1000 * Dev.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>();
 
   Properties.multiProcessorCount = Dev.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
   Properties.l2CacheSize = Dev.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
@@ -1078,23 +1079,49 @@ void ClDevice::setupProperties(int index) {
 
   // totally made up
   Properties.regsPerBlock = 64;
-  // intel GPU uses minimum 8, so for now set this to 8.
-  // TODO should be properly detected and/or workarounds for __shfl should exist.
-  Properties.warpSize = 8;
+
+  // The minimum subgroup size on an intel GPU
+  if (Dev.getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU) {
+    std::vector<uint> sg = Dev.getInfo<CL_DEVICE_SUB_GROUP_SIZES_INTEL>();
+    if (sg.begin() != sg.end())
+      Properties.warpSize = *std::min_element(sg.begin(), sg.end());
+  }
   Properties.maxGridSize[0] = Properties.maxGridSize[1] =
       Properties.maxGridSize[2] = 65536;
   Properties.memoryClockRate = 1000;
   Properties.memoryBusWidth = 256;
   Properties.major = 2;
   Properties.minor = 0;
+
   Properties.maxThreadsPerMultiProcessor = 10;
 
   Properties.computeMode = 0;
   Properties.arch = {};
-  Properties.arch.hasGlobalInt32Atomics = 1;
-  Properties.arch.hasSharedInt32Atomics = 1;
-  Properties.arch.hasGlobalInt64Atomics = 1;
-  Properties.arch.hasSharedInt64Atomics = 1;
+
+  Temp = Dev.getInfo<CL_DEVICE_EXTENSIONS>();
+  if (Temp.find("cl_khr_global_int32_base_atomics") != std::string::npos)
+    Properties.arch.hasGlobalInt32Atomics = 1;
+  else
+    Properties.arch.hasGlobalInt32Atomics = 0;
+
+  if (Temp.find("cl_khr_local_int32_base_atomics") != std::string::npos)
+    Properties.arch.hasSharedInt32Atomics = 1;
+  else
+    Properties.arch.hasSharedInt32Atomics = 0;
+
+  if (Temp.find("cl_khr_int64_base_atomics") != std::string::npos) {
+    Properties.arch.hasGlobalInt64Atomics = 1;
+    Properties.arch.hasSharedInt64Atomics = 1;
+  }
+  else {
+    Properties.arch.hasGlobalInt64Atomics = 1;
+    Properties.arch.hasSharedInt64Atomics = 1;
+  }
+
+  if (Temp.find("cl_khr_fp64") != std::string::npos) 
+    Properties.arch.hasDoubles = 1;
+  else
+    Properties.arch.hasDoubles = 0;
 
   Properties.clockInstructionRate = 2465;
   Properties.concurrentKernels = 1;
