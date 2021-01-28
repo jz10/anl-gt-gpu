@@ -661,6 +661,9 @@ public:
 
   // Get Level-0 device object
   LZDevice* GetDevice() { return this->lzDevice; };
+
+  // Get Level-0 queue object
+  LZQueue*  GetQueue() { return this->lzQueue; };
   
   // Configure the call for kernel
   bool configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
