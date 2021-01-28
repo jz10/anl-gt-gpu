@@ -456,7 +456,8 @@ const char *hipGetErrorName(hipError_t hip_error) {
     return "hipErrorNoDevice";
   case hipErrorPeerAccessAlreadyEnabled:
     return "hipErrorPeerAccessAlreadyEnabled";
-
+  case hipErrorNotSupported:
+    return "hipErrorNotSupported";
   case hipErrorPeerAccessNotEnabled:
     return "hipErrorPeerAccessNotEnabled";
   case hipErrorRuntimeMemory:
@@ -1515,8 +1516,10 @@ hipError_t hipMemcpy3D(const struct hipMemcpy3DParms *p) {
 /********************************************************************/
 
 hipError_t hipInit(unsigned int flags) {
+  LZ_TRY
   InitializeOpenCL();
   InitializeHipLZ();
+  LZ_CATCH
   RETURN(hipSuccess);
 }
 

@@ -1765,7 +1765,7 @@ bool LZQueue::finish() {
     throw InvalidLevel0Initialization("HipLZ LZQueue was not associated with a LZContext!");
   }
   // Synchronize host with device kernel execution 
-  ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT32_MAX);
+  ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT64_MAX);
   if (status != ZE_RESULT_SUCCESS) {
     throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
   }
@@ -2072,7 +2072,7 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
 
   // Synchronize host with device kernel execution
-  status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT32_MAX);
+  status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT64_MAX);
   if (status != ZE_RESULT_SUCCESS) {
     //  throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
     logError("HipLZ zeCommandQueueSynchronize FAILED with return code {}\n", status);
@@ -2415,7 +2415,7 @@ bool LZEvent::updateFinishStatus() {
 
   if (!Stream) {
     // Here we use this protocol: Stream == nullptr ==> event is associated with a queue operation 
-    ze_result_t status = zeEventHostSynchronize(this->hEvent, 1000);
+    ze_result_t status = zeEventHostSynchronize(this->hEvent, UINT64_MAX);
     if (status != ZE_RESULT_SUCCESS)
       throw InvalidLevel0Initialization("HipLZ event synchronization error!");
   }
@@ -2431,7 +2431,7 @@ bool LZEvent::wait() {
 
   if (!Stream) {
     // Here we use this protocol: Stream == nullptr ==> event is associated with a queue operation
-    ze_result_t status = zeEventHostSynchronize(this->hEvent, 1000);
+    ze_result_t status = zeEventHostSynchronize(this->hEvent, UINT64_MAX);
     if (status != ZE_RESULT_SUCCESS) 
       throw InvalidLevel0Initialization("HipLZ event synchronization error!");
   }
@@ -2450,14 +2450,172 @@ bool LZEvent::isFromContext(cl::Context &Other) {
   throw InvalidLevel0Initialization("HipLZ does not support cl::Context!");
 }
 
+hipError_t lzConvertResult(ze_result_t status) {
+  switch (status) {
+  case ZE_RESULT_SUCCESS:
+    return hipSuccess;
+  case ZE_RESULT_NOT_READY:
+    return hipErrorNotReady;
+  case ZE_RESULT_ERROR_DEVICE_LOST:
+    return hipErrorOperatingSystem;
+  case ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY:
+    return hipErrorMemoryAllocation;
+  case ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY:
+    return hipErrorMemoryAllocation;
+  case ZE_RESULT_ERROR_MODULE_BUILD_FAILURE:
+    return hipErrorInvalidSource;
+  case ZE_RESULT_ERROR_MODULE_LINK_FAILURE:
+    return hipErrorInvalidImage;
+  case ZE_RESULT_ERROR_INSUFFICIENT_PERMISSIONS:
+    return hipErrorOperatingSystem;
+  case ZE_RESULT_ERROR_NOT_AVAILABLE:
+    return hipErrorAlreadyAcquired;
+  case ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE:
+    return hipErrorInitializationError;
+  case ZE_RESULT_ERROR_UNINITIALIZED:
+    return hipErrorInitializationError;
+  case ZE_RESULT_ERROR_UNSUPPORTED_VERSION:
+    return hipErrorInsufficientDriver;
+  case ZE_RESULT_ERROR_UNSUPPORTED_FEATURE:
+    return hipErrorNotSupported;
+  case ZE_RESULT_ERROR_INVALID_ARGUMENT:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_INVALID_NULL_HANDLE:
+    return hipErrorInvalidResourceHandle;
+  case ZE_RESULT_ERROR_HANDLE_OBJECT_IN_USE:
+    return hipErrorInvalidResourceHandle;
+  case ZE_RESULT_ERROR_INVALID_NULL_POINTER:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_INVALID_SIZE:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_UNSUPPORTED_SIZE:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_UNSUPPORTED_ALIGNMENT:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT:
+    return hipErrorInvalidResourceHandle;
+  case ZE_RESULT_ERROR_INVALID_ENUMERATION:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_UNSUPPORTED_ENUMERATION:
+    return hipErrorNotSupported;
+  case ZE_RESULT_ERROR_UNSUPPORTED_IMAGE_FORMAT:
+    return hipErrorNotSupported;
+  case ZE_RESULT_ERROR_INVALID_NATIVE_BINARY:
+    return hipErrorInvalidImage;
+  case ZE_RESULT_ERROR_INVALID_GLOBAL_NAME:
+    return hipErrorInvalidSymbol;
+  case ZE_RESULT_ERROR_INVALID_KERNEL_NAME:
+    return hipErrorInvalidDeviceFunction;
+  case ZE_RESULT_ERROR_INVALID_FUNCTION_NAME:
+    return hipErrorInvalidDeviceFunction;
+  case ZE_RESULT_ERROR_INVALID_GROUP_SIZE_DIMENSION:
+    return hipErrorInvalidConfiguration;
+  case ZE_RESULT_ERROR_INVALID_GLOBAL_WIDTH_DIMENSION:
+    return hipErrorInvalidConfiguration;
+  case ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_INDEX:
+    return hipErrorInvalidConfiguration;
+  case ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_SIZE:
+    return hipErrorInvalidConfiguration;
+  case ZE_RESULT_ERROR_INVALID_KERNEL_ATTRIBUTE_VALUE:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_INVALID_MODULE_UNLINKED:
+    return hipErrorInvalidImage;
+  case ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE:
+    return hipErrorInvalidResourceHandle;
+  case ZE_RESULT_ERROR_OVERLAPPING_REGIONS:
+    return hipErrorInvalidValue;
+  case ZE_RESULT_ERROR_UNKNOWN:
+    return hipErrorUnknown;
+  default:
+    return hipErrorUnknown;
+  }
+}
+
+const char * lzResultToString(ze_result_t status) {
+  switch (status) {
+  case ZE_RESULT_SUCCESS:
+    return "ZE_RESULT_SUCCESS";
+  case ZE_RESULT_NOT_READY:
+    return "ZE_RESULT_NOT_READY";
+  case ZE_RESULT_ERROR_DEVICE_LOST:
+    return "ZE_RESULT_ERROR_DEVICE_LOST";
+  case ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY:
+    return "ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY";
+  case ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY:
+    return "ZE_RESULT_ERROR_OUT_OF_DEVICE_MEMORY";
+  case ZE_RESULT_ERROR_MODULE_BUILD_FAILURE:
+    return "ZE_RESULT_ERROR_MODULE_BUILD_FAILURE";
+  case ZE_RESULT_ERROR_MODULE_LINK_FAILURE:
+    return "ZE_RESULT_ERROR_MODULE_LINK_FAILURE";
+  case ZE_RESULT_ERROR_INSUFFICIENT_PERMISSIONS:
+    return "ZE_RESULT_ERROR_INSUFFICIENT_PERMISSIONS";
+  case ZE_RESULT_ERROR_NOT_AVAILABLE:
+    return "ZE_RESULT_ERROR_NOT_AVAILABLE";
+  case ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE:
+    return "ZE_RESULT_ERROR_DEPENDENCY_UNAVAILABLE";
+  case ZE_RESULT_ERROR_UNINITIALIZED:
+    return "ZE_RESULT_ERROR_UNINITIALIZED";
+  case ZE_RESULT_ERROR_UNSUPPORTED_VERSION:
+    return "ZE_RESULT_ERROR_UNSUPPORTED_VERSION";
+  case ZE_RESULT_ERROR_UNSUPPORTED_FEATURE:
+    return "ZE_RESULT_ERROR_UNSUPPORTED_FEATURE";
+  case ZE_RESULT_ERROR_INVALID_ARGUMENT:
+    return "ZE_RESULT_ERROR_INVALID_ARGUMENT";
+  case ZE_RESULT_ERROR_INVALID_NULL_HANDLE:
+    return "ZE_RESULT_ERROR_INVALID_NULL_HANDLE";
+  case ZE_RESULT_ERROR_HANDLE_OBJECT_IN_USE:
+    return "ZE_RESULT_ERROR_HANDLE_OBJECT_IN_USE";
+  case ZE_RESULT_ERROR_INVALID_NULL_POINTER:
+    return "ZE_RESULT_ERROR_INVALID_NULL_POINTER";
+  case ZE_RESULT_ERROR_INVALID_SIZE:
+    return "ZE_RESULT_ERROR_INVALID_SIZE";
+  case ZE_RESULT_ERROR_UNSUPPORTED_SIZE:
+    return "ZE_RESULT_ERROR_UNSUPPORTED_SIZE";
+  case ZE_RESULT_ERROR_UNSUPPORTED_ALIGNMENT:
+    return "ZE_RESULT_ERROR_UNSUPPORTED_ALIGNMENT";
+  case ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT:
+    return "ZE_RESULT_ERROR_INVALID_SYNCHRONIZATION_OBJECT";
+  case ZE_RESULT_ERROR_INVALID_ENUMERATION:
+    return "ZE_RESULT_ERROR_INVALID_ENUMERATION";
+  case ZE_RESULT_ERROR_UNSUPPORTED_ENUMERATION:
+    return "ZE_RESULT_ERROR_UNSUPPORTED_ENUMERATION";
+  case ZE_RESULT_ERROR_UNSUPPORTED_IMAGE_FORMAT:
+    return "ZE_RESULT_ERROR_UNSUPPORTED_IMAGE_FORMAT";
+  case ZE_RESULT_ERROR_INVALID_NATIVE_BINARY:
+    return "ZE_RESULT_ERROR_INVALID_NATIVE_BINARY";
+  case ZE_RESULT_ERROR_INVALID_GLOBAL_NAME:
+    return "ZE_RESULT_ERROR_INVALID_GLOBAL_NAME";
+  case ZE_RESULT_ERROR_INVALID_KERNEL_NAME:
+    return "ZE_RESULT_ERROR_INVALID_KERNEL_NAME";
+  case ZE_RESULT_ERROR_INVALID_FUNCTION_NAME:
+    return "ZE_RESULT_ERROR_INVALID_FUNCTION_NAME";
+  case ZE_RESULT_ERROR_INVALID_GROUP_SIZE_DIMENSION:
+    return "ZE_RESULT_ERROR_INVALID_GROUP_SIZE_DIMENSION";
+  case ZE_RESULT_ERROR_INVALID_GLOBAL_WIDTH_DIMENSION:
+    return "ZE_RESULT_ERROR_INVALID_GLOBAL_WIDTH_DIMENSION";
+  case ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_INDEX:
+    return "ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_INDEX";
+  case ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_SIZE:
+    return "ZE_RESULT_ERROR_INVALID_KERNEL_ARGUMENT_SIZE";
+  case ZE_RESULT_ERROR_INVALID_KERNEL_ATTRIBUTE_VALUE:
+    return "ZE_RESULT_ERROR_INVALID_KERNEL_ATTRIBUTE_VALUE";
+  case ZE_RESULT_ERROR_INVALID_MODULE_UNLINKED:
+    return "ZE_RESULT_ERROR_INVALID_MODULE_UNLINKED";
+  case ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE:
+    return "ZE_RESULT_ERROR_INVALID_COMMAND_LIST_TYPE";
+  case ZE_RESULT_ERROR_OVERLAPPING_REGIONS:
+    return "ZE_RESULT_ERROR_OVERLAPPING_REGIONS";
+  case ZE_RESULT_ERROR_UNKNOWN:
+    return "ZE_RESULT_ERROR_UNKNOWN";
+  default:
+    return "Unknown Error Code";
+  }
+}
+
 static void InitializeHipLZCallOnce() {
   // Initialize the driver 
   ze_result_t status = zeInit(0);
-  if (status != ZE_RESULT_SUCCESS) {
-    logDebug("INITIALIZE LEVEL-0 ERROR {}", status);
-    exit(1);
-  }
-
+  LZ_PROCESS_ERROR(status);
   logDebug("INITIALIZE LEVEL-0 (via calling zeInit) {}\n", status);
   
   const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
@@ -2467,17 +2625,13 @@ static void InitializeHipLZCallOnce() {
   // Get driver count
   uint32_t driverCount = 0;
   status = zeDriverGet(&driverCount, nullptr);
-  if (status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeDriverGet FAILED with return code " + std::to_string(status));
-  }
+  LZ_PROCESS_ERROR(status);
   logDebug("HipLZ GET DRIVER via calling zeDriverGet {}\n", status);
  
   // Get drivers
   std::vector<ze_driver_handle_t> drivers(driverCount);
   status = zeDriverGet(&driverCount, drivers.data());
-  if(status != ZE_RESULT_SUCCESS) {
-    throw InvalidLevel0Initialization("HipLZ zeDriverGet Failed with return code " + std::to_string(status));
-  }
+  LZ_PROCESS_ERROR(status);
   logDebug("HipLZ GET DRIVER COUNT via calling zeDriverGet {}\n", status);
  
   // Find the level-0 device, here we just pick up the 1st one
@@ -2498,7 +2652,7 @@ static void InitializeHipLZCallOnce() {
     HipLZDevices.emplace_back(lzDevice);
     logDebug("LZ DEVICES {}", HipLZDevices.size());
   } else {
-    throw InvalidLevel0Initialization("HipLZ can not find device ");
+    HIP_PROCESS_ERROR(hipErrorNoDevice);
   }
 }
 

@@ -99,6 +99,36 @@ void logCritical(const char *fmt, const Args &... args) {
 #pragma GCC visibility push(hidden)
 #endif
 
+
+hipError_t lzConvertResult(ze_result_t status);
+const char * lzResultToString(ze_result_t status);
+
+
+#define LZ_PROCESS_ERROR_MSG(msg, status) do {\
+  if (status != ZE_RESULT_SUCCESS && status != ZE_RESULT_NOT_READY) { \
+    logError("{} ({}) in {}:{}:{}\n", msg, lzResultToString(status), __FILE__, __LINE__, __func__); \
+    throw status; \
+  } \
+} while(0)
+
+#define LZ_PROCESS_ERROR(status) LZ_PROCESS_ERROR_MSG("Level Zero Error", status)
+
+#define HIP_PROCESS_ERROR_MSG(msg, status) do {\
+  if (status != hipSuccess && status != hipErrorNotReady) { \
+    logError("{} ({}) in {}:{}:{}\n", msg, hipGetErrorName(status), __FILE__, __LINE__, __func__); \
+    throw status; \
+  } \
+} while(0)
+
+#define HIP_PROCESS_ERROR(status) HIP_PROCESS_ERROR_MSG("HIP Error", status)
+
+#define LZ_TRY try {
+#define LZ_CATCH } catch (ze_result_t status) { \
+  RETURN(lzConvertResult(status)); \
+} catch (hipError_t status) { \
+  RETURN(status); \
+}
+
 class InvalidLevel0Initialization : public std::out_of_range {
   using std::out_of_range::out_of_range;
 };

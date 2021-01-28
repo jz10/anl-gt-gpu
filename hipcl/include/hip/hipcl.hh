@@ -383,6 +383,7 @@ typedef enum __HIP_NODISCARD hipError_t {
   hipErrorNotFound = 500,
   hipErrorIllegalAddress = 700,
   hipErrorInvalidSymbol = 701,
+  hipErrorNotSupported = 801,
   // Runtime Error Codes start here.
   hipErrorMissingConfiguration = 1001,
   hipErrorMemoryAllocation = 1002, ///< Memory allocation error.
