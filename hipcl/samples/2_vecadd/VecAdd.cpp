@@ -4,7 +4,7 @@
 #include <functional>
 #include <cassert>
 #include <chrono>
- 
+
 // hip header file
 #include "hip/hip_runtime.h"
 
@@ -29,6 +29,7 @@ VecADD (const T * __restrict A, const T * __restrict B, T * __restrict C, const 
 
 
 /*****************************************************************************/
+
 template <typename T>
 __host__
 void ArrayMADcpuReference(const T* __restrict A,

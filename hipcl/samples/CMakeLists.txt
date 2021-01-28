@@ -47,7 +47,7 @@ function(add_hipcl_binary EXEC_NAME)
     set_target_properties("${EXEC_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
 
     
-    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl")
+    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl" "OpenCL" "ze_loader")
 
     install(TARGETS "${EXEC_NAME}"
             RUNTIME DESTINATION "${HIPCL_SAMPLE_BINDIR}")
@@ -71,9 +71,10 @@ set(SAMPLES
     4_shfl
     5_2dshfl
 #    6_dynamic_shared
-#    hipInfo
+    hipInfo
     7_streams
     9_unroll
+    10_memcpy3D
 )
 
 foreach (SAMPLE ${SAMPLES})
