@@ -1149,7 +1149,9 @@ hipError_t hipMemcpy(void *dst, const void *src, size_t sizeBytes,
   if (e != hipSuccess)
     return e;
 
-  // ze_result_t status = zeCommandQueueSynchronize(cont->hQueue, UINT64_MAX);
+  ze_result_t status = zeCommandQueueSynchronize(cont->GetQueue()->GetQueueHandle(), UINT64_MAX);
+  if (status != ZE_RESULT_SUCCESS)
+    RETURN(lzConvertResult(status));
   // if (status != ZE_RESULT_SUCCESS) {
   // 	  throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
   // }
