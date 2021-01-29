@@ -1135,7 +1135,7 @@ hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
     memcpy(dst, src, sizeBytes);
     RETURN(hipSuccess);
   } else {
-    RETURN(cont->memCopy(dst, src, sizeBytes, stream));
+    RETURN(cont->memCopyAsync(dst, src, sizeBytes, stream));
   }
 }
 
@@ -1144,18 +1144,18 @@ hipError_t hipMemcpy(void *dst, const void *src, size_t sizeBytes,
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  hipError_t e =
-      hipMemcpyAsync(dst, src, sizeBytes, kind, NULL); //cont->getDefaultQueue());
-  if (e != hipSuccess)
-    return e;
-
-  ze_result_t status = zeCommandQueueSynchronize(cont->GetQueue()->GetQueueHandle(), UINT64_MAX);
-  if (status != ZE_RESULT_SUCCESS)
-    RETURN(lzConvertResult(status));
+  if (kind == hipMemcpyHostToHost) {
+    memcpy(dst, src, sizeBytes);
+    RETURN(hipSuccess);
+  } else {
+    RETURN(cont->memCopy(dst, src, sizeBytes, nullptr));
+  }
+  
+  // ze_result_t status = zeCommandQueueSynchronize(cont->hQueue, UINT64_MAX);
   // if (status != ZE_RESULT_SUCCESS) {
   // 	  throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
   // }
-  RETURN(hipSuccess);
+  // RETURN(hipSuccess);
 }
 
 hipError_t hipMemcpyDtoDAsync(hipDeviceptr_t dst, hipDeviceptr_t src,

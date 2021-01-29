@@ -684,6 +684,9 @@ public:
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
 
+  // Asynchronous memory copy
+  hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
+  
   // Cteate HipLZ event
   LZEvent* createEvent(unsigned flags);
   
@@ -803,7 +806,7 @@ public:
   virtual bool SupportLZ() { return true; };
 
   // The asynchronously memory copy support
-  bool memCoypAsync(void *dst, const void *src, size_t sizeBytes);
+  bool memCopyAsync(void *dst, const void *src, size_t sizeBytes);
   
   // The set the current event
   bool SetEvent(LZEvent* event);

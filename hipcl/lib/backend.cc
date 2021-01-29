@@ -407,7 +407,7 @@ static void notifyOpenCLevent(cl_event event, cl_int status, void *data) {
 }
 
 bool ClQueue::addCallback(hipStreamCallback_t callback, void *userData) {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("Supported in LZQueue::addCallback!");   
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::addCallback!", hipErrorNotSupported);   
 }
 
 bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
@@ -437,7 +437,7 @@ bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
 }
 
 bool ClQueue::recordEvent(hipEvent_t event) {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("Supported inLZQueue::recordEvent!");
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::recordEvent!", hipErrorNotSupported);
 }
 
 hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
@@ -872,14 +872,7 @@ bool ClContext::finishAll() {
 
 hipError_t ClContext::configureCall(dim3 grid, dim3 block, size_t shared,
                                     hipStream_t stream) {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("HipLZ should not use ClContext to configureCall");;
-  // FIND_QUEUE_LOCKED(stream);
-
-  // Disable the origin configureCall and ExecItem stack push
-  // ExecItem *NewItem = new ExecItem(grid, block, shared, Queue);
-  // ExecStack.push(NewItem);
-
-  // return hipSuccess;
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to configureCall", hipErrorNotSupported);
 }
 
 hipError_t ClContext::setArg(const void *arg, size_t size, size_t offset) {
@@ -1351,7 +1344,7 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
   // Query device properties
   status = zeDeviceGetProperties(this->hDevice, &(this->deviceProps));
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeDeviceGetProperties Failed with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties Failed with return code ", status);
   }
 
   // Create Level-0 context  
@@ -1363,7 +1356,7 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
   ze_context_handle_t hContext;
   status = zeContextCreate(this->hDriver, &ctxtDesc, &hContext);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeContextCreate Failed with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
   }
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
   this->defaultContext = new LZContext(this, hContext);
@@ -1398,7 +1391,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
 // Get host function pointer's corresponding name 
 std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
   if (HostPtrToNameMap.find(HostFunction) == HostPtrToNameMap.end())
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("HipLZ no corresponding host function name found");
+    HIP_PROCESS_ERROR_MSG("HipLZ no corresponding host function name found", hipErrorInitializationError);
 
   return HostPtrToNameMap[HostFunction];
 }
@@ -1409,10 +1402,7 @@ hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipS
     ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src,
 						       sizeBytes, NULL, 0, NULL);
     if (status != ZE_RESULT_SUCCESS) {
-      throw status; // InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
-      // logError("HipLZ zeCommandListAppendMemoryCopy FAILED with return code {}\n", status);
-
-      return hipErrorInvalidDevice;
+      LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
     }
     logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
 
@@ -1420,7 +1410,28 @@ hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipS
     if (!lzCommandList->Execute(lzQueue))
       return hipErrorInvalidDevice;
   } else {
-    if (!stream->memCoypAsync(dst, src, sizeBytes))
+    if (!stream->memCopy(dst, src, sizeBytes))
+      return hipErrorInvalidDevice;
+  }
+
+  return hipSuccess;
+}
+
+hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
+  if (stream == nullptr) {
+    // Here we use default queue in  LZ context to do the synchronous copy
+    ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src,
+                                                       sizeBytes, NULL, 0, NULL);
+    if (status != ZE_RESULT_SUCCESS) {
+      LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
+    }
+    logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
+
+    // Execute memory copy asynchronously via lz context's default command list     
+    if (!lzCommandList->ExecuteAsync(lzQueue))
+      return hipErrorInvalidDevice;
+  } else {
+    if (!stream->memCopyAsync(dst, src, sizeBytes))
       return hipErrorInvalidDevice;
   }
 
@@ -1503,7 +1514,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
     ze_module_handle_t hModule;
     ze_result_t status = zeModuleCreate(hContext, lzDevice->GetDeviceHandle(), &moduleDesc, &hModule, nullptr);
     if (status != ZE_RESULT_SUCCESS) {
-      throw status; // InvalidLevel0Initialization("Hiplz zeModuleCreate FAILED with return code  " + std::to_string(status));
+      LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
     } 
 
     logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
@@ -1544,7 +1555,7 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   LZKernel* Kernel = 0;
   logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
   if (!this->lzModule) {
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("Hiplz LZModule was not created before invoking kernel?");
+    HIP_PROCESS_ERROR_MSG("Hiplz LZModule was not created before invoking kernel?", hipErrorInitializationError);
   }
 
   std::string HostFunctionName = this->lzDevice->GetHostFunctionName(HostFunction);
@@ -1552,7 +1563,7 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   logDebug("LAUNCH HOST FUNCTION {} - {} ", HostFunctionName,  Kernel != nullptr);
   
   if (!Kernel)
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("Hiplz no LZkernel found?");
+    HIP_PROCESS_ERROR_MSG("Hiplz no LZkernel found?", hipErrorInitializationError);
 
   LZExecItem *Arguments;
   Arguments = ExecStack.top();
@@ -1606,7 +1617,7 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     ze_result_t status = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, alignment,
 					  this->lzDevice->GetDeviceHandle(), &ptr);
     if (ZE_RESULT_SUCCESS != status) {
-      throw status; // InvalidLevel0Initialization("L0 could not allocate shared memory");
+      LZ_PROCESS_ERROR_MSG("HipLZ could not allocate shared memory with error code: ", status);
     }
     logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocShared {} ", status);
     
@@ -1620,14 +1631,14 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     ze_result_t status = zeMemAllocDevice(this->hContext, &dmaDesc, size, alignment,
 					  this->lzDevice->GetDeviceHandle(), &ptr);
     if (ZE_RESULT_SUCCESS != status) {
-      throw status; //  InvalidLevel0Initialization("L0 could not allocate device memory");
+      LZ_PROCESS_ERROR_MSG("HipLZ could not allocate device memory with error code: ", status);
     }
     logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocDevice {} ", status);
     
     return ptr;
   }
 
-  throw hipErrorNotSupported; //  InvalidLevel0Initialization("L0 could not recognize allocation options");
+  HIP_PROCESS_ERROR_MSG("HipLZ could not recognize allocation options", hipErrorNotSupported);
 }
 
 void * LZContext::allocate(size_t size) {
@@ -1637,10 +1648,12 @@ void * LZContext::allocate(size_t size) {
 bool LZContext::free(void *p) {
   ze_result_t status = zeMemFree(this->hContext, p);
   if (ZE_RESULT_SUCCESS != status) {
-    throw status; // InvalidLevel0Initialization("L0 could not free memory");
-  } else {
-    return true;
+    LZ_PROCESS_ERROR_MSG("HipLZ could not free memory with error code: ", status);
+ 
+    return false;
   }
+
+  return true;
 }
 
 // Create stream/queue
@@ -1655,7 +1668,7 @@ bool LZContext::createQueue(hipStream_t *stream, unsigned int Flags, int priorit
 // Create HipLZ event 
 LZEvent* LZContext::createEvent(unsigned flags) {
   if (!this->defaultEventPool)
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("L0 could not get event pool in current context");
+    HIP_PROCESS_ERROR_MSG("HipLZ could not get event pool in current context", hipErrorInitializationError);
 
   // std::lock_guard<std::mutex> Lock(ContextMutex); 
 
@@ -1699,7 +1712,7 @@ hipError_t LZContext::eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t s
   // assert(Finished >= Started);   
   uint64_t Elapsed;
   if (Finished < Started) {
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("Invalid timmestamp values\n");
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid timmestamp values ", hipErrorInitializationError);
   } else
     Elapsed = Finished - Started;
   uint64_t MS = (Elapsed / NANOSECS)*1000;
@@ -1762,7 +1775,7 @@ void LZQueue::initializeQueue(LZContext* lzContext, bool needDefaultCmdList) {
   ze_result_t status = zeCommandQueueCreate(lzContext->GetContextHandle(),
 					    lzContext->GetDevice()->GetDeviceHandle(), &cqDesc, &hQueue);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandQueueCreate FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueCreate FAILED with return code ", status);
   }
   logDebug("LZ QUEUE INITIALIZATION via calling zeCommandQueueCreate {} ", status);
 
@@ -1789,12 +1802,12 @@ LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
 // Queue synchronous support                                                                           
 bool LZQueue::finish() {
   if (this->lzContext == nullptr) {
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("HipLZ LZQueue was not associated with a LZContext!");
+    HIP_PROCESS_ERROR_MSG("HipLZ LZQueue was not associated with a LZContext!", hipErrorInitializationError);
   }
   // Synchronize host with device kernel execution 
   ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT64_MAX);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueSynchronize FAILED with return code ", status);
   }
   logDebug("LZ COMMAND EXECUTION FINISH via calling zeCommandQueueSynchronize {} ", status);
   
@@ -1803,12 +1816,12 @@ bool LZQueue::finish() {
 
 // Get OpenCL command queue  
 cl::CommandQueue& LZQueue::getQueue() {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("Not support LZQueue::getQueue!");
+  HIP_PROCESS_ERROR_MSG("Not support LZQueue::getQueue!", hipErrorNotSupported);
 }
 
 // Enqueue barrier for event 
 bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("Not support LZQueue::enqueueBarrierForEvent yet!");
+  HIP_PROCESS_ERROR_MSG("Not support LZQueue::enqueueBarrierForEvent yet!", hipErrorNotSupported);
 }
 
 // Add call back     
@@ -1829,9 +1842,10 @@ bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   err = ::clSetEventCallback(LastEvent, CL_COMPLETE, notifyOpenCLevent, Data);
   if (err != CL_SUCCESS)
     logError("clSetEventCallback failed with error {}\n", err);
+
   return (err == CL_SUCCESS);
   
-  // throw InvalidLevel0Initialization("Not support LZQueue::addCallback yet!");
+  // LZ_PROCESS_ERROR_MSG("Not support LZQueue::addCallback yet!", hipErrorNotSupported);
 }
 
 // Record event
@@ -1876,17 +1890,16 @@ bool LZQueue::recordEvent(hipEvent_t event) {
   // assert(refc2 == (refc1 + 1));
 
   if (event == nullptr)
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("HipLZ get null Event recorded?");
+    HIP_PROCESS_ERROR_MSG("HipLZ get null Event recorded?", hipErrorInitializationError);
 
   if (this->defaultCmdList == nullptr) 
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("Invalid command list during event recording");
+    HIP_PROCESS_ERROR_MSG("Invalid command list during event recording", hipErrorInitializationError);
   
   // Record event to stream
   event->recordStream(this, nullptr);
   
   // Record timestamp got from execution write global timestamp from command list
   event->recordTimeStamp(this->defaultCmdList->ExecuteWriteGlobalTimeStamp(this));
-  // throw InvalidLevel0Initialization("Not support LZQueue::recordEvent yet!");
 
   return true;
 }
@@ -1894,7 +1907,7 @@ bool LZQueue::recordEvent(hipEvent_t event) {
 // Memory copy support   
 hipError_t LZQueue::memCopy(void *dst, const void *src, size_t size) {
   if (this->defaultCmdList == nullptr) {
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("Invalid command list");
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
   } else {
     this->defaultCmdList->ExecuteMemCopy(this, dst, src, size); 
   }
@@ -1904,33 +1917,32 @@ hipError_t LZQueue::memCopy(void *dst, const void *src, size_t size) {
 
 // Memory fill support  
 hipError_t LZQueue::memFill(void *dst, size_t size, void *pattern, size_t pat_size) {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("Not support LZQueue::memFill yet!");
-  }
+  HIP_PROCESS_ERROR_MSG("Not support LZQueue::memFill yet!", hipErrorNotSupported);
+}
 
 // Launch kernel support 
 hipError_t LZQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("Not support LZQueue::launch3 yet!");
+  HIP_PROCESS_ERROR_MSG("Not support LZQueue::launch3 yet!", hipErrorNotSupported);
 }
 
 // Launch kernel support 
 hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
   if (this->defaultCmdList == nullptr) {
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("Invalid command list");
+    HIP_PROCESS_ERROR_MSG("Invalid command list", hipErrorInitializationError);
   } else {
     if (Kernel->SupportLZ() && Arguments->SupportLZ()) {
       this->defaultCmdList->ExecuteKernel(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
     } else
-      throw hipErrorNotSupported; // InvalidLevel0Initialization("Not support LZQueue::launch yet!"); 
+      HIP_PROCESS_ERROR_MSG("Not support LZQueue::launch yet!", hipErrorNotSupported); 
   }
 
   return hipSuccess;
-  // throw InvalidLevel0Initialization("Not support LZQueue::launch yet!");
 }
 
 // The asynchronously memory copy support 
-bool LZQueue::memCoypAsync(void *dst, const void *src, size_t sizeBytes) {
+bool LZQueue::memCopyAsync(void *dst, const void *src, size_t sizeBytes) {
   if (this->defaultCmdList == nullptr) {
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("No default command list setup in current HipLZ queue yet!");
+    HIP_PROCESS_ERROR_MSG("No default command list setup in current HipLZ queue yet!", hipErrorInitializationError);
   }
   
   return this->defaultCmdList->ExecuteMemCopyAsync(this, dst, src, sizeBytes);
@@ -1939,7 +1951,7 @@ bool LZQueue::memCoypAsync(void *dst, const void *src, size_t sizeBytes) {
 // The set the current event  
 bool LZQueue::SetEvent(LZEvent* event) {
   if (this->currentEvent != nullptr) 
-    throw hipErrorInitializationError; // InvalidLevel0Initialization("There has been one event there!");
+    HIP_PROCESS_ERROR_MSG("There has been one event there!", hipErrorInitializationError);
 
   this->currentEvent = event;
   
@@ -1975,7 +1987,7 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
   ze_result_t status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
 					    Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("could not set group size!");
+    LZ_PROCESS_ERROR_MSG("could not set group size! ", status);
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeKernelSetGroupSize {} ", status);
@@ -1999,7 +2011,7 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
                                            0,
                                            nullptr);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  ", status);
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListAppendLaunchKernel {} ", status);
@@ -2016,7 +2028,7 @@ bool LZCommandList::ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src,
   ze_result_t status = zeCommandListAppendMemoryCopy(hCommandList, dst, src, sizeBytes,
                                                      hSignalEvent, 0, NULL);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
   }
   // Execute memory copy  
   return Execute(lzQueue);
@@ -2030,7 +2042,7 @@ bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void 
   ze_result_t status = zeCommandListAppendMemoryCopy(hCommandList, dst, src, sizeBytes,
                                                      hSignalEvent, 0, NULL);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandListAppendMemoryCopy FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
   }
   // Execute memory copy asynchronously
   return ExecuteAsync(lzQueue);
@@ -2048,7 +2060,7 @@ uint64_t LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue) {
 		 
   ze_result_t status = zeCommandListAppendWriteGlobalTimestamp(hCommandList, (uint64_t*)(shared_buf), nullptr, 0, nullptr);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandListAppendWriteGlobalTimestamp FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendWriteGlobalTimestamp FAILED with return code ", status);
   }
   Execute(lzQueue);
 
@@ -2062,10 +2074,7 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Finished appending commands (typically done on another thread)
   ze_result_t status = zeCommandListClose(hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandListClose FAILED with return code " + std::to_string(status));
-    // logError("HipLZ zeCommandListClose FAILED with return code {}\n", status);
-
-    return false;
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
@@ -2073,8 +2082,7 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Execute command list in command queue
   status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; //  InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
-    // logError("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code {}\n", status);
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
@@ -2082,8 +2090,7 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Synchronize host with device kernel execution
   status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT64_MAX);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
-    // logError("HipLZ zeCommandQueueSynchronize FAILED with return code {}\n", status);
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueSynchronize FAILED with return code ", status);
   }
   
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
@@ -2091,9 +2098,7 @@ bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Reset (recycle) command list for new commands
   status = zeCommandListReset(hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandListReset FAILED with return code " + std::to_string(status));
-    // logError("HipLZ zeCommandListReset FAILED with return code {}\n", status);
-    
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
@@ -2106,7 +2111,7 @@ bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
   // Finished appending commands (typically done on another thread)  
   ze_result_t status = zeCommandListClose(hCommandList);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandListClose FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
@@ -2114,7 +2119,7 @@ bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
   // Execute command list in command queue  
   status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
   }
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
@@ -2145,7 +2150,7 @@ LZCommandList::LZCommandList(LZContext* lzContext_, bool immediate) {
 						      this->lzContext->GetDevice()->GetDeviceHandle(),
 						      &cqDesc, &hCommandList);
      if (status != ZE_RESULT_SUCCESS) {
-       throw status; // InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+       LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListCreate FAILED with return code ", status);
      }
     
     logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreateImmediate {} ", status);
@@ -2162,7 +2167,7 @@ LZCommandList::LZCommandList(LZContext* lzContext_, bool immediate) {
 					     &clDesc, &hCommandList);
     
     if (status != ZE_RESULT_SUCCESS) {
-      throw status; // InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
+      LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListCreate FAILED with return code ", status);
     }
   
     logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreate {} ", status);
@@ -2273,14 +2278,14 @@ void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInf
   ze_kernel_handle_t hKernel;
   ze_result_t status = zeKernelCreate(this->hModule, &kernelDesc, &hKernel);
   if (status != ZE_RESULT_SUCCESS) {
-    throw status;; // InvalidLevel0Initialization("HipLZ zeKernelCreate FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeKernelCreate FAILED with return code ", status);
   }
 
   logDebug("LZ KERNEL CREATION via calling zeKernelCreate {} ", status);
   
   // Register kernel
   if (FuncInfos.find(funcName) == FuncInfos.end())
-    throw status; // InvalidLevel0Initialization("HipLZ could not find function information " + funcName);
+    HIP_PROCESS_ERROR_MSG("HipLZ could not find function information ", hipErrorInitializationError);
   this->kernels[funcName] = new LZKernel(hKernel, FuncInfos[funcName]);
 }
 
@@ -2302,7 +2307,7 @@ static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device
   ze_device_handle_t devices_[10]; // Set initial number of devices as 10
   ze_result_t status = zeDeviceGet(pDriver, &deviceCount, devices.data());
   if (status != ZE_RESULT_SUCCESS) {
-    throw status; // InvalidLevel0Initialization("HipLZ zeDeviceGet FAILED with return code " + std::to_string(status));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGet FAILED with return code ", status);
   }
   logDebug("GET DRIVER'S DEVICE COUNT (via calling zeDeviceGet) -  {} ", deviceCount);
  
@@ -2315,7 +2320,7 @@ static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device
     
     status = zeDeviceGetProperties(phDevice, &device_properties);
     if (status != ZE_RESULT_SUCCESS) {
-      throw status; // InvalidLevel0Initialization("HipLZ zeDeviceGetProperties FAILED with return code " + std::to_string(status));
+      LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties FAILED with return code " ,status);
     }
     logDebug("GET DEVICE PROPERTY (via calling zeDeviceGetProperties) {} ", type == device_properties.type);
     
@@ -2342,7 +2347,7 @@ LZEventPool::LZEventPool(LZContext* c) {
   
   ze_result_t status = zeEventPoolCreate(this->lzContext->GetContextHandle(), &eventPoolDesc, 0, nullptr, &hEventPool);
   if (status != ZE_RESULT_SUCCESS)
-    throw status; //  InvalidLevel0Initialization("HipLZ event pool creation fail!");
+    LZ_PROCESS_ERROR_MSG("HipLZ event pool creation fail! ", status);
 }
 
 // Create HipLZ event from event pool
@@ -2368,7 +2373,7 @@ LZEvent::LZEvent(LZContext* c, unsigned flags, LZEventPool* eventPool) {
  
   ze_result_t status = zeEventCreate(eventPool->GetEventPoolHandler(), &eventDesc, &hEvent);
   if (status != ZE_RESULT_SUCCESS)
-    throw status; // InvalidLevel0Initialization("HipLZ event creation fail!");
+    LZ_PROCESS_ERROR_MSG("HipLZ event creation fail! ", status);
 }
 
 // Get the finish time of the event associated operation
@@ -2405,7 +2410,7 @@ bool LZEvent::updateFinishStatus() {
     // Here we use this protocol: Stream == nullptr ==> event is associated with a queue operation 
     ze_result_t status = zeEventHostSynchronize(this->hEvent, UINT64_MAX);
     if (status != ZE_RESULT_SUCCESS)
-      throw status; // InvalidLevel0Initialization("HipLZ event synchronization error!");
+      LZ_PROCESS_ERROR_MSG("HipLZ event synchronization error! ", status);
   }
 
   Status = EVENT_STATUS_RECORDED;
@@ -2421,7 +2426,7 @@ bool LZEvent::wait() {
     // Here we use this protocol: Stream == nullptr ==> event is associated with a queue operation
     ze_result_t status = zeEventHostSynchronize(this->hEvent, UINT64_MAX);
     if (status != ZE_RESULT_SUCCESS) 
-      throw status; // InvalidLevel0Initialization("HipLZ event synchronization error!");
+      LZ_PROCESS_ERROR_MSG("HipLZ event synchronization error! ", status);
   }
 
   Status = EVENT_STATUS_RECORDED;
@@ -2430,12 +2435,12 @@ bool LZEvent::wait() {
 
 // Get the event object? this is only for OpenCL  
 cl::Event LZEvent::getEvent() { 
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("HipLZ does not support cl::Event!");
+  HIP_PROCESS_ERROR_MSG("HipLZ does not support cl::Event! ", hipErrorNotSupported);
 }
 
 // Check if the event is from same cl::Context? this is only for OpenCL 
 bool LZEvent::isFromContext(cl::Context &Other) {
-  throw hipErrorNotSupported; // InvalidLevel0Initialization("HipLZ does not support cl::Context!");
+  HIP_PROCESS_ERROR_MSG("HipLZ does not support cl::Context! ", hipErrorNotSupported);
 }
 
 hipError_t lzConvertResult(ze_result_t status) {
