@@ -94,10 +94,7 @@ hipError_t hipDeviceSynchronize(void) {
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   // Synchronize among HipLZ queues
-  if (cont->finishAll())
-    RETURN(hipSuccess);
-  
-  getTlsDefaultCtx()->finishAll();
+  cont->finishAll();
   RETURN(hipSuccess);
 
   LZ_CATCH
@@ -1573,18 +1570,17 @@ hipError_t hipModuleLoadDataEx(hipModule_t *module, const void *image,
 hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
                             hipStream_t stream) {
   LZ_TRY
-  
-  // Try for HipLZ context at first , here we ignore OpenCL queue 
-  LZContext* lzCtx = getTlsDefaultLzCtx();
-  if (lzCtx->configureCall(gridDim, blockDim, sharedMem, stream))
-    RETURN(hipSuccess);
-  
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  RETURN(cont->configureCall(gridDim, blockDim, sharedMem, stream));
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
+  RETURN(lzCtx->configureCall(gridDim, blockDim, sharedMem, stream));
 
   LZ_CATCH
+    
+  // ClContext *cont = getTlsDefaultCtx();
+  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  // RETURN(cont->configureCall(gridDim, blockDim, sharedMem, stream));
 }
 
 hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
@@ -1592,15 +1588,15 @@ hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
 
   // Try for HipLZ kernel at first
   LZContext* lzCtx = getTlsDefaultLzCtx();
-  if (lzCtx->setArg(arg, size, offset))
-    RETURN(hipSuccess);
-
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  RETURN(cont->setArg(arg, size, offset));
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);  
+  RETURN(lzCtx->setArg(arg, size, offset));
 
   LZ_CATCH
+
+  // ClContext *cont = getTlsDefaultCtx();
+  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  // RETURN(cont->setArg(arg, size, offset));
 }
 
 hipError_t hipLaunchByPtr(const void *hostFunction) {
@@ -1608,15 +1604,18 @@ hipError_t hipLaunchByPtr(const void *hostFunction) {
 
   // Try for HipLZ kernel at first
   LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
   if (lzCtx->launchHostFunc(hostFunction)) 
     RETURN(hipSuccess);
-
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  RETURN(cont->launchHostFunc(hostFunction));
+  else
+    RETURN(hipErrorLaunchFailure);
 
   LZ_CATCH
+    
+  // ClContext *cont = getTlsDefaultCtx();
+  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  // RETURN(cont->launchHostFunc(hostFunction));
 }
 
 /********************************************************************/

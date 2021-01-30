@@ -692,10 +692,10 @@ public:
   LZQueue*  GetQueue() { return this->lzQueue; };
   
   // Configure the call for kernel
-  bool configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
+  hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
   
   // Set argument
-  bool setArg(const void *arg, size_t size, size_t offset);
+  hipError_t setArg(const void *arg, size_t size, size_t offset);
 
   // Launch HipLZ kernel
   bool launchHostFunc(const void* HostFunction);

@@ -1519,7 +1519,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
 }
 
 // Configure the call to LZ kernel, here we ignore OpenCL queue but using LZ command list
-bool LZContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
+hipError_t LZContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
   // TODO: make thread safeness
   if (stream == nullptr)
     stream = this->DefaultQueue;
@@ -1527,16 +1527,16 @@ bool LZContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t 
   // Here we reuse the execution item stack from super class, i.e. OpenCL context 
   ExecStack.push(NewItem);
   
-  return true;
+  return hipSuccess;
 }
 
 // Set argument
-bool LZContext::setArg(const void *arg, size_t size, size_t offset) {
+hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
   std::lock_guard<std::mutex> Lock(this->mtx);
   LZExecItem* lzExecItem = (LZExecItem* )this->ExecStack.top();
   lzExecItem->setArg(arg, size, offset);
 
-  return true;
+  return hipSuccess;
 }
 
 // Launch HipLZ kernel 
