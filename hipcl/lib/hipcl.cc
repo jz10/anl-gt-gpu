@@ -963,7 +963,7 @@ static hipError_t hipMallocPitch3D(void **ptr, size_t *pitch, size_t width,
   *pitch = ((((int)width - 1) / SVM_ALIGNMENT) + 1) * SVM_ALIGNMENT;
   const size_t sizeBytes = (*pitch) * height * ((depth == 0) ? 1 : depth);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   void *retval = cont->allocate(sizeBytes);
@@ -1083,7 +1083,7 @@ hipError_t hipFreeArray(hipArray *array) {
 }
 
 hipError_t hipMalloc3D(hipPitchedPtr *pitchedDevPtr, hipExtent extent) {
-
+  LZ_TRY
   ERROR_IF((extent.width == 0 || extent.height == 0), hipErrorInvalidValue);
   ERROR_IF((pitchedDevPtr == nullptr), hipErrorInvalidValue);
 
@@ -1098,6 +1098,7 @@ hipError_t hipMalloc3D(hipPitchedPtr *pitchedDevPtr, hipExtent extent) {
     pitchedDevPtr->ysize = extent.height;
   }
   RETURN(hip_status);
+  LZ_CATCH
 }
 
 hipError_t hipMemGetInfo(size_t *free, size_t *total) {
