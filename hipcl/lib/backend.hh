@@ -272,7 +272,7 @@ public:
   bool pointerSize(void *ptr, size_t *size);
   bool pointerInfo(void *ptr, void **pbase, size_t *psize);
   int memCopy(void *dst, const void *src, size_t size, cl::CommandQueue &queue);
-  int memFill(void *dst, size_t size, void *pattern, size_t patt_size,
+  int memFill(void *dst, size_t size, const void *pattern, size_t patt_size,
               cl::CommandQueue &queue);
   void clear();
 };
@@ -316,7 +316,7 @@ public:
   virtual bool recordEvent(hipEvent_t e);
 
   virtual hipError_t memCopy(void *dst, const void *src, size_t size);
-  virtual hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size);
+  virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pat_size);
   virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
   virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
 
@@ -385,7 +385,7 @@ public:
   bool releaseQueue(hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t size,
                      hipStream_t stream);
-  hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size,
+  hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pat_size,
                      hipStream_t stream);
   hipError_t recordEvent(hipStream_t stream, hipEvent_t event);
   virtual bool finishAll();
@@ -715,7 +715,14 @@ public:
 
   // Asynchronous memory copy
   hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
-  
+ 
+  // Memory fill
+  hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream);
+  hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size);
+
+  // Asynchronous memory fill
+  hipError_t memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream);
+
   // Cteate HipLZ event
   LZEvent* createEvent(unsigned flags);
   
@@ -762,7 +769,13 @@ public:
 
   // Execute HipLZ memory copy command asynchronously
   bool ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
-  
+ 
+  // Execute HipLZ memory fill command
+  bool ExecuteMemFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
+
+  // Execute HipLZ memory fill command asynchronously
+  bool ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
+
   // Execute HipLZ write global timestamp  
   uint64_t ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue);
 
@@ -825,7 +838,7 @@ public:
   // Memory copy support
   virtual hipError_t memCopy(void *dst, const void *src, size_t size);
   // Memory fill support
-  virtual hipError_t memFill(void *dst, size_t size, void *pattern, size_t pat_size);
+  virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size);
   // Launch kernel support
   virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
   // Launch kernel support
@@ -836,6 +849,8 @@ public:
 
   // The asynchronously memory copy support
   bool memCopyAsync(void *dst, const void *src, size_t sizeBytes);
+  // The asynchronously memory fill support
+  bool memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size);
   
   // The set the current event
   bool SetEvent(LZEvent* event);
