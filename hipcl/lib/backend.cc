@@ -370,7 +370,7 @@ hipError_t ClQueue::memCopy(void *dst, const void *src, size_t size) {
   return (retval == CL_SUCCESS) ? hipSuccess : hipErrorLaunchFailure;
 }
 
-hipError_t ClQueue::memFill(void *dst, size_t size, void *pattern,
+hipError_t ClQueue::memFill(void *dst, size_t size, const void *pattern,
                             size_t patt_size) {
   std::lock_guard<std::mutex> Lock(QueueMutex);
 
@@ -769,7 +769,7 @@ hipError_t ClContext::memCopy(void *dst, const void *src, size_t size,
     return hipErrorInvalidDevicePointer;
 }
 
-hipError_t ClContext::memFill(void *dst, size_t size, void *pattern,
+hipError_t ClContext::memFill(void *dst, size_t size, const void *pattern,
                               size_t pat_size, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
 
@@ -1411,9 +1411,48 @@ hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipS
   return hipSuccess;
 }
 
-hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
+hipError_t LZContext::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
   if (stream == nullptr) {
     // Here we use default queue in  LZ context to do the synchronous copy
+    ze_result_t status = zeCommandListAppendMemoryFill(lzCommandList->GetCommandListHandle(), dst, pattern, pattern_size, size, NULL, 0, NULL);
+    LZ_RETURN_ERROR_MSG("HipLZ zeCommandListAppendMemoryFill FAILED with return code ", status);
+    logDebug("LZ MEMFILL {} via calling zeCommandListAppendMemoryFill ", status);
+
+    if (!lzCommandList->Execute(lzQueue))
+      return hipErrorInvalidDevice;
+  } else {
+    if (!stream->memFill(dst, size, pattern, pattern_size))
+      return hipErrorInvalidDevice;
+  }
+  return hipSuccess;
+}
+
+hipError_t LZContext::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  lzCommandList->ExecuteMemFill(lzQueue, dst, size, pattern, pattern_size);
+  return hipSuccess;
+}
+
+hipError_t LZContext::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
+  if (stream == nullptr) {
+    // Here we use default queue in  LZ context to do the asynchronous copy
+    ze_result_t status = zeCommandListAppendMemoryFill(lzCommandList->GetCommandListHandle(), dst, pattern, pattern_size, size, NULL, 0, NULL);
+    logDebug("LZ MEMFILL {} via calling zeCommandListAppendMemoryFill ", status);
+
+    // Execute memory copy asynchronously via lz context's default command list
+    if (!lzCommandList->ExecuteAsync(lzQueue))
+      return hipErrorInvalidDevice;
+  } else {
+    if (!stream->memFillAsync(dst, size, pattern, pattern_size))
+      return hipErrorInvalidDevice;
+  }
+  return hipSuccess;
+}
+
+
+
+hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
+  if (stream == nullptr) {
+    // Here we use default queue in  LZ context to do the asynchronous copy
     ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src,
                                                        sizeBytes, NULL, 0, NULL);
     LZ_RETURN_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
@@ -1892,18 +1931,18 @@ bool LZQueue::recordEvent(hipEvent_t event) {
 
 // Memory copy support   
 hipError_t LZQueue::memCopy(void *dst, const void *src, size_t size) {
-  if (this->defaultCmdList == nullptr) {
+  if (this->defaultCmdList == nullptr)
     HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
-  } else {
-    this->defaultCmdList->ExecuteMemCopy(this, dst, src, size); 
-  }
-
+  this->defaultCmdList->ExecuteMemCopy(this, dst, src, size); 
   return hipSuccess;
 }
 
 // Memory fill support  
-hipError_t LZQueue::memFill(void *dst, size_t size, void *pattern, size_t pat_size) {
-  HIP_PROCESS_ERROR_MSG("Not support LZQueue::memFill yet!", hipErrorNotSupported);
+hipError_t LZQueue::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  if (this->defaultCmdList == nullptr)
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  this->defaultCmdList->ExecuteMemFill(this, dst, size, pattern, pattern_size);
+  return hipSuccess;
 }
 
 // Launch kernel support 
@@ -1927,11 +1966,18 @@ hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
 
 // The asynchronously memory copy support 
 bool LZQueue::memCopyAsync(void *dst, const void *src, size_t sizeBytes) {
-  if (this->defaultCmdList == nullptr) {
+  if (this->defaultCmdList == nullptr)
     HIP_PROCESS_ERROR_MSG("No default command list setup in current HipLZ queue yet!", hipErrorInitializationError);
-  }
   
   return this->defaultCmdList->ExecuteMemCopyAsync(this, dst, src, sizeBytes);
+}
+
+// The asynchronously memory fill support
+bool LZQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  if (this->defaultCmdList == nullptr)
+    HIP_PROCESS_ERROR_MSG("No default command list setup in current HipLZ queue yet!", hipErrorInitializationError);
+
+  return this->defaultCmdList->ExecuteMemFillAsync(this, dst, size, pattern, pattern_size);
 }
 
 // The set the current event  
@@ -2023,6 +2069,24 @@ bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void 
                                                      hSignalEvent, 0, NULL);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
   // Execute memory copy asynchronously
+  return ExecuteAsync(lzQueue);
+}
+
+// Execute HipLZ memory fill command
+bool LZCommandList::ExecuteMemFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue);
+
+  ze_result_t status = zeCommandListAppendMemoryFill(hCommandList, dst, pattern, pattern_size, size, hSignalEvent, 0, NULL);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryFill FAILED with return code ", status);
+  return Execute(lzQueue);
+}
+
+// Execute HipLZ memory fill command asynchronously
+bool LZCommandList::ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue);
+
+  ze_result_t status = zeCommandListAppendMemoryFill(hCommandList, dst, pattern, pattern_size, size, hSignalEvent, 0, NULL);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryFill FAILED with return code ", status);
   return ExecuteAsync(lzQueue);
 }
 
