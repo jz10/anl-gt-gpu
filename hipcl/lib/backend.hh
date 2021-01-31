@@ -501,6 +501,8 @@ protected:
   std::map<const void *, std::string *> HostPtrToModuleMap;
   std::map<const void *, std::string> HostPtrToNameMap;
 
+  ze_device_memory_properties_t deviceMemoryProps;
+  size_t TotalUsedMem;
 public:
   ze_device_properties_t deviceProps;
   LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_);
@@ -518,6 +520,10 @@ public:
   
   // Get primary context
   LZContext* getPrimaryCtx() { return this->defaultContext; };
+  size_t getGlobalMemSize() const { return this->deviceMemoryProps.totalSize; }
+  size_t getUsedGlobalMem() const { return TotalUsedMem; }
+  bool reserveMem(size_t bytes) { return true; };
+  bool releaseMem(size_t bytes) { return true; };
 };
 
 class LZKernel : public ClKernel {
@@ -706,7 +712,8 @@ public:
   // Memory free
   bool free(void *p);
 
-  //
+  // Get pointer info
+  bool findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase, size_t *psize);
   bool getPointerSize(void *ptr, size_t *size);
 
   // Memory copy
