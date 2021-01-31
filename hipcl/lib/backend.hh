@@ -706,6 +706,9 @@ public:
   // Memory free
   bool free(void *p);
 
+  //
+  bool getPointerSize(void *ptr, size_t *size);
+
   // Memory copy
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
