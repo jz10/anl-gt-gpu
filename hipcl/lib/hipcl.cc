@@ -1122,7 +1122,7 @@ hipError_t hipMemGetInfo(size_t *free, size_t *total) {
 }
 
 hipError_t hipMemPtrGetInfo(void *ptr, size_t *size) {
-
+  LZ_TRY
   ERROR_IF((ptr == nullptr || size == nullptr), hipErrorInvalidValue);
 
   ClContext *cont = getTlsDefaultCtx();
@@ -1132,6 +1132,7 @@ hipError_t hipMemPtrGetInfo(void *ptr, size_t *size) {
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+  LZ_CATCH
 }
 
 /********************************************************************/

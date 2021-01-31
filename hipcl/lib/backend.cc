@@ -1503,9 +1503,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
     };
     ze_module_handle_t hModule;
     ze_result_t status = zeModuleCreate(hContext, lzDevice->GetDeviceHandle(), &moduleDesc, &hModule, nullptr);
-    if (status != ZE_RESULT_SUCCESS) {
-      LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
-    } 
+    LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
 
     logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
     // Create module object
@@ -1606,9 +1604,7 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     hmaDesc.flags = 0;
     ze_result_t status = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, alignment,
 					  this->lzDevice->GetDeviceHandle(), &ptr);
-    if (ZE_RESULT_SUCCESS != status) {
-      LZ_PROCESS_ERROR_MSG("HipLZ could not allocate shared memory with error code: ", status);
-    }
+    LZ_PROCESS_ERROR_MSG("HipLZ could not allocate shared memory with error code: ", status);
     logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocShared {} ", status);
     
     return ptr;
@@ -1620,9 +1616,7 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     dmaDesc.ordinal = 0;
     ze_result_t status = zeMemAllocDevice(this->hContext, &dmaDesc, size, alignment,
 					  this->lzDevice->GetDeviceHandle(), &ptr);
-    if (ZE_RESULT_SUCCESS != status) {
-      LZ_PROCESS_ERROR_MSG("HipLZ could not allocate device memory with error code: ", status);
-    }
+    LZ_PROCESS_ERROR_MSG("HipLZ could not allocate device memory with error code: ", status);
     logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocDevice {} ", status);
     
     return ptr;
@@ -1631,17 +1625,23 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
   HIP_PROCESS_ERROR_MSG("HipLZ could not recognize allocation options", hipErrorNotSupported);
 }
 
+bool LZContext::getPointerSize(void *ptr, size_t *size) {
+  void *pBase;
+  size_t pSize;
+  ze_result_t status = zeMemGetAddressRange(this->hContext, ptr, &pBase, &pSize);
+  LZ_PROCESS_ERROR_MSG("HipLZ could not get pointer info with error code: ", status);
+  logDebug("LZ MEMORY GET INFO via calling zeMemGetAddressRange {} ", status);
+  *size = pSize - ((intptr_t)ptr - (intptr_t)pBase);
+  return true;
+}
+
 void * LZContext::allocate(size_t size) {
   return allocate(size, 0x1000, LZMemoryType::Device); // Shared);
 }
 
 bool LZContext::free(void *p) {
   ze_result_t status = zeMemFree(this->hContext, p);
-  if (ZE_RESULT_SUCCESS != status) {
-    LZ_PROCESS_ERROR_MSG("HipLZ could not free memory with error code: ", status);
- 
-    return false;
-  }
+  LZ_PROCESS_ERROR_MSG("HipLZ could not free memory with error code: ", status);
 
   return true;
 }
@@ -1764,9 +1764,7 @@ void LZQueue::initializeQueue(LZContext* lzContext, bool needDefaultCmdList) {
   // Create the Level-0 queue  
   ze_result_t status = zeCommandQueueCreate(lzContext->GetContextHandle(),
 					    lzContext->GetDevice()->GetDeviceHandle(), &cqDesc, &hQueue);
-  if (status != ZE_RESULT_SUCCESS) {
-    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueCreate FAILED with return code ", status);
-  }
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueCreate FAILED with return code ", status);
   logDebug("LZ QUEUE INITIALIZATION via calling zeCommandQueueCreate {} ", status);
 
   if (needDefaultCmdList) {
@@ -1796,9 +1794,7 @@ bool LZQueue::finish() {
   }
   // Synchronize host with device kernel execution 
   ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT64_MAX);
-  if (status != ZE_RESULT_SUCCESS) {
-    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueSynchronize FAILED with return code ", status);
-  }
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueSynchronize FAILED with return code ", status);
   logDebug("LZ COMMAND EXECUTION FINISH via calling zeCommandQueueSynchronize {} ", status);
   
   return true;
@@ -1976,9 +1972,7 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
   // Set group size
   ze_result_t status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
 					    Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
-  if (status != ZE_RESULT_SUCCESS) {
-    LZ_PROCESS_ERROR_MSG("could not set group size! ", status);
-  }
+  LZ_PROCESS_ERROR_MSG("could not set group size! ", status);
 
   logDebug("LZ KERNEL EXECUTION via calling zeKernelSetGroupSize {} ", status);
   
