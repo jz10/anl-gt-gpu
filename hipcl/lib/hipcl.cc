@@ -921,7 +921,12 @@ hipError_t hipFree(void *ptr) {
 }
 
 hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
-  return hipMalloc(ptr, size);
+  LZ_TRY
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  *ptr = cont->allocate(size, 0x1000, LZMemoryType::Shared);
+  LZ_CATCH
+  RETURN(hipSuccess);
 }
 
 hipError_t hipHostFree(void *ptr) { return hipFree(ptr); }
@@ -932,12 +937,6 @@ hipError_t hipFreeHost(void *ptr) { return hipHostFree(ptr); }
 hipError_t hipHostGetDevicePointer(void **devPtr, void *hstPtr,
                                    unsigned int flags) {
   ERROR_IF(((hstPtr == nullptr) || (devPtr == nullptr)), hipErrorInvalidValue);
-
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  if (!cont->hasPointer(hstPtr))
-    RETURN(hipErrorInvalidDevicePointer);
 
   *devPtr = hstPtr;
   RETURN(hipSuccess);
