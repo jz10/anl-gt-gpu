@@ -383,6 +383,7 @@ typedef enum __HIP_NODISCARD hipError_t {
   hipErrorNotFound = 500,
   hipErrorIllegalAddress = 700,
   hipErrorInvalidSymbol = 701,
+  hipErrorNotSupported = 801,
   // Runtime Error Codes start here.
   hipErrorMissingConfiguration = 1001,
   hipErrorMemoryAllocation = 1002, ///< Memory allocation error.
@@ -590,7 +591,9 @@ typedef enum {
 
 class ClEvent;
 
-typedef ClEvent *hipEvent_t;
+class LZEvent;
+
+typedef LZEvent *hipEvent_t;
 
 class ClKernel;
 
@@ -602,7 +605,11 @@ typedef ClProgram *hipModule_t;
 
 class ClQueue;
 
-typedef ClQueue *hipStream_t;
+typedef ClQueue *hipStream_t_xxx;
+
+class LZQueue;
+
+typedef LZQueue *hipStream_t;
 
 class ClContext;
 

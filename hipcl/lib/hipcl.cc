@@ -89,8 +89,15 @@ hipError_t hipSetDevice(int deviceId) {
 }
 
 hipError_t hipDeviceSynchronize(void) {
-  getTlsDefaultCtx()->finishAll();
+  LZ_TRY
+
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  // Synchronize among HipLZ queues
+  cont->finishAll();
   RETURN(hipSuccess);
+
+  LZ_CATCH
 }
 
 hipError_t hipDeviceReset(void) {
@@ -146,7 +153,7 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 
   // Here we initialize HipLZ device as well, but does not actually return device properties
   // TODO: make a real properties retrieving function
-  std::cout << "Initialize HipLZ" << std::endl;
+  
   InitializeHipLZ();
 
   ERROR_CHECK_DEVNUM(deviceId);
@@ -450,7 +457,8 @@ const char *hipGetErrorName(hipError_t hip_error) {
     return "hipErrorNoDevice";
   case hipErrorPeerAccessAlreadyEnabled:
     return "hipErrorPeerAccessAlreadyEnabled";
-
+  case hipErrorNotSupported:
+    return "hipErrorNotSupported";
   case hipErrorPeerAccessNotEnabled:
     return "hipErrorPeerAccessNotEnabled";
   case hipErrorRuntimeMemory:
@@ -486,14 +494,25 @@ hipError_t hipStreamCreateWithPriority(hipStream_t *stream, unsigned int flags,
                                        int priority) {
   ERROR_IF((stream == nullptr), hipErrorInvalidResourceHandle);
 
-  // TODO priority & flags require an OpenCL extensions
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  LZ_TRY
 
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   if (cont->createQueue(stream, flags, priority))
-    RETURN(hipSuccess);
+     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+
+  LZ_CATCH
+
+  // TODO priority & flags require an OpenCL extensions
+  // ClContext *cont = getTlsDefaultCtx();
+  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  // if (cont->createQueue(stream, flags, priority))
+  //   RETURN(hipSuccess);
+  // else
+  //   RETURN(hipErrorInvalidValue);
 }
 
 hipError_t hipDeviceGetStreamPriorityRange(int *leastPriority,
@@ -729,14 +748,15 @@ hipError_t hipCtxDisablePeerAccess(hipCtx_t peerCtx) {
 
 hipError_t hipMemGetAddressRange(hipDeviceptr_t *pbase, size_t *psize,
                                  hipDeviceptr_t dptr) {
-
-  hipCtx_t ctx = getTlsDefaultCtx();
+  LZ_TRY
+  LZContext *ctx = getTlsDefaultLzCtx();
   ERROR_IF((ctx == nullptr), hipErrorInvalidContext);
 
   if (ctx->findPointerInfo(dptr, pbase, psize))
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+  LZ_CATCH
 }
 
 hipError_t hipDevicePrimaryCtxGetState(hipDevice_t deviceId,
@@ -786,7 +806,9 @@ hipError_t hipEventCreate(hipEvent_t *event) {
 }
 
 hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZ_TRY
+
+  LZContext* cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -797,14 +819,20 @@ hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
   } else {
     RETURN(hipErrorOutOfMemory);
   }
+
+  LZ_CATCH
 }
 
 hipError_t hipEventRecord(hipEvent_t event, hipStream_t stream) {
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  LZ_TRY
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
+  LZContext* cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
   RETURN(cont->recordEvent(stream, event));
+
+  LZ_CATCH
 }
 
 hipError_t hipEventDestroy(hipEvent_t event) {
@@ -815,22 +843,26 @@ hipError_t hipEventDestroy(hipEvent_t event) {
 }
 
 hipError_t hipEventSynchronize(hipEvent_t event) {
+  LZ_TRY
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
   if (event->wait())
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+  LZ_CATCH
 }
 
 hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
+  LZ_TRY
   ERROR_IF((start == nullptr), hipErrorInvalidValue);
   ERROR_IF((stop == nullptr), hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext* cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   RETURN(cont->eventElapsedTime(ms, start, stop));
+  LZ_CATCH
 }
 
 hipError_t hipEventQuery(hipEvent_t event) {
@@ -845,7 +877,7 @@ hipError_t hipEventQuery(hipEvent_t event) {
 /********************************************************************/
 
 hipError_t hipMalloc(void **ptr, size_t size) {
-
+  LZ_TRY
   ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
 
   if (size == 0) {
@@ -860,6 +892,7 @@ hipError_t hipMalloc(void **ptr, size_t size) {
   ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
 
   *ptr = retval;
+  LZ_CATCH
   RETURN(hipSuccess);
 }
 
@@ -874,10 +907,8 @@ hipError_t hipHostAlloc(void **ptr, size_t size, unsigned int flags) {
 }
 
 hipError_t hipFree(void *ptr) {
-
+  LZ_TRY
   ERROR_IF((ptr == nullptr), hipSuccess);
-  //  if (ptr == nullptr)
-  //    RETURN(hipSuccess);
 
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -886,10 +917,16 @@ hipError_t hipFree(void *ptr) {
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidDevicePointer);
+  LZ_CATCH
 }
 
 hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
-  return hipMalloc(ptr, size);
+  LZ_TRY
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  *ptr = cont->allocate(size, 0x1000, LZMemoryType::Shared);
+  LZ_CATCH
+  RETURN(hipSuccess);
 }
 
 hipError_t hipHostFree(void *ptr) { return hipFree(ptr); }
@@ -900,12 +937,6 @@ hipError_t hipFreeHost(void *ptr) { return hipHostFree(ptr); }
 hipError_t hipHostGetDevicePointer(void **devPtr, void *hstPtr,
                                    unsigned int flags) {
   ERROR_IF(((hstPtr == nullptr) || (devPtr == nullptr)), hipErrorInvalidValue);
-
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  if (!cont->hasPointer(hstPtr))
-    RETURN(hipErrorInvalidDevicePointer);
 
   *devPtr = hstPtr;
   RETURN(hipSuccess);
@@ -931,7 +962,7 @@ static hipError_t hipMallocPitch3D(void **ptr, size_t *pitch, size_t width,
   *pitch = ((((int)width - 1) / SVM_ALIGNMENT) + 1) * SVM_ALIGNMENT;
   const size_t sizeBytes = (*pitch) * height * ((depth == 0) ? 1 : depth);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   void *retval = cont->allocate(sizeBytes);
@@ -943,15 +974,17 @@ static hipError_t hipMallocPitch3D(void **ptr, size_t *pitch, size_t width,
 
 hipError_t hipMallocPitch(void **ptr, size_t *pitch, size_t width,
                           size_t height) {
+  LZ_TRY
   return hipMallocPitch3D(ptr, pitch, width, height, 0);
+  LZ_CATCH
 }
 
 hipError_t hipMallocArray(hipArray **array, const hipChannelFormatDesc *desc,
                           size_t width, size_t height, unsigned int flags) {
-
+  LZ_TRY
   ERROR_IF((width == 0), hipErrorInvalidValue);
 
-  auto cont = getTlsDefaultCtx();
+  auto cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidContext);
 
   *array = new hipArray;
@@ -976,14 +1009,16 @@ hipError_t hipMallocArray(hipArray **array, const hipChannelFormatDesc *desc,
   ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
 
   *ptr = retval;
+  LZ_CATCH
   RETURN(hipSuccess);
 }
 
 hipError_t hipArrayCreate(hipArray **array,
                           const HIP_ARRAY_DESCRIPTOR *pAllocateArray) {
+  LZ_TRY
   ERROR_IF((pAllocateArray->width == 0), hipErrorInvalidValue);
 
-  auto cont = getTlsDefaultCtx();
+  auto cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidContext);
 
   *array = new hipArray;
@@ -1035,6 +1070,7 @@ hipError_t hipArrayCreate(hipArray **array,
   ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
 
   *ptr = retval;
+  LZ_CATCH
   RETURN(hipSuccess);
 }
 
@@ -1051,7 +1087,7 @@ hipError_t hipFreeArray(hipArray *array) {
 }
 
 hipError_t hipMalloc3D(hipPitchedPtr *pitchedDevPtr, hipExtent extent) {
-
+  LZ_TRY
   ERROR_IF((extent.width == 0 || extent.height == 0), hipErrorInvalidValue);
   ERROR_IF((pitchedDevPtr == nullptr), hipErrorInvalidValue);
 
@@ -1066,16 +1102,17 @@ hipError_t hipMalloc3D(hipPitchedPtr *pitchedDevPtr, hipExtent extent) {
     pitchedDevPtr->ysize = extent.height;
   }
   RETURN(hip_status);
+  LZ_CATCH
 }
 
 hipError_t hipMemGetInfo(size_t *free, size_t *total) {
 
   ERROR_IF((total == nullptr || free == nullptr), hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  auto device = cont->getDevice();
+  auto device = cont->GetDevice();
   *total = device->getGlobalMemSize();
   assert (device->getGlobalMemSize() > device->getUsedGlobalMem() );
   *free =  device->getGlobalMemSize() - device->getUsedGlobalMem();
@@ -1084,23 +1121,24 @@ hipError_t hipMemGetInfo(size_t *free, size_t *total) {
 }
 
 hipError_t hipMemPtrGetInfo(void *ptr, size_t *size) {
-
+  LZ_TRY
   ERROR_IF((ptr == nullptr || size == nullptr), hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   if (cont->getPointerSize(ptr, size))
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+  LZ_CATCH
 }
 
 /********************************************************************/
 
 hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
                           hipMemcpyKind kind, hipStream_t stream) {
-
+  LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   /*
@@ -1118,25 +1156,29 @@ hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
     memcpy(dst, src, sizeBytes);
     RETURN(hipSuccess);
   } else {
-    RETURN(cont->memCopy(dst, src, sizeBytes, stream));
+    RETURN(cont->memCopyAsync(dst, src, sizeBytes, stream));
   }
+  LZ_CATCH
 }
 
 hipError_t hipMemcpy(void *dst, const void *src, size_t sizeBytes,
                      hipMemcpyKind kind) {
+  LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  hipError_t e =
-      hipMemcpyAsync(dst, src, sizeBytes, kind, NULL); //cont->getDefaultQueue());
-  if (e != hipSuccess)
-    return e;
-
-  ze_result_t status = zeCommandQueueSynchronize(cont->hQueue, UINT64_MAX);
-  if (status != ZE_RESULT_SUCCESS) {
-	  throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+  if (kind == hipMemcpyHostToHost) {
+    memcpy(dst, src, sizeBytes);
+    RETURN(hipSuccess);
+  } else {
+    RETURN(cont->memCopy(dst, src, sizeBytes, nullptr));
   }
-  RETURN(hipSuccess);
+  LZ_CATCH
+  // ze_result_t status = zeCommandQueueSynchronize(cont->hQueue, UINT64_MAX);
+  // if (status != ZE_RESULT_SUCCESS) {
+  // 	  throw InvalidLevel0Initialization("HipLZ zeCommandQueueSynchronize FAILED with return code " + std::to_string(status));
+  // }
+  // RETURN(hipSuccess);
 }
 
 hipError_t hipMemcpyDtoDAsync(hipDeviceptr_t dst, hipDeviceptr_t src,
@@ -1171,23 +1213,21 @@ hipError_t hipMemcpyDtoH(void *dst, hipDeviceptr_t src, size_t sizeBytes) {
 
 hipError_t hipMemsetD32Async(hipDeviceptr_t dst, int value, size_t count,
                              hipStream_t stream) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZ_TRY
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  RETURN(cont->memFill(dst, 4 * count, &value, 4, stream));
+  RETURN(cont->memFillAsync(dst, 4 * count, &value, 4, stream));
+  LZ_CATCH
 }
 
 hipError_t hipMemsetD32(hipDeviceptr_t dst, int value, size_t count) {
-
-  ClContext *cont = getTlsDefaultCtx();
+  LZ_TRY
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  hipError_t e = hipMemsetD32Async(dst, value, count, cont->getDefaultQueue());
-  if (e != hipSuccess)
-    return e;
-
-  cont->getDefaultQueue()->finish();
-  RETURN(hipSuccess);
+  RETURN(cont->memFill(dst, 4 * count, &value, 4));
+  LZ_CATCH
 }
 
 hipError_t hipMemset2DAsync(void *dst, size_t pitch, int value, size_t width,
@@ -1199,16 +1239,9 @@ hipError_t hipMemset2DAsync(void *dst, size_t pitch, int value, size_t width,
 
 hipError_t hipMemset2D(void *dst, size_t pitch, int value, size_t width,
                        size_t height) {
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  hipError_t e = hipMemset2DAsync(dst, pitch, value, width, height,
-                                  cont->getDefaultQueue());
-  if (e != hipSuccess)
-    return e;
-
-  cont->getDefaultQueue()->finish();
-  RETURN(hipSuccess);
+  size_t sizeBytes = pitch * height;
+  return hipMemset(dst, value, sizeBytes);
 }
 
 hipError_t hipMemset3DAsync(hipPitchedPtr pitchedDevPtr, int value,
@@ -1221,37 +1254,27 @@ hipError_t hipMemset3DAsync(hipPitchedPtr pitchedDevPtr, int value,
 hipError_t hipMemset3D(hipPitchedPtr pitchedDevPtr, int value,
                        hipExtent extent) {
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  hipError_t e =
-      hipMemset3DAsync(pitchedDevPtr, value, extent, cont->getDefaultQueue());
-  if (e != hipSuccess)
-    return e;
-
-  cont->getDefaultQueue()->finish();
-  RETURN(hipSuccess);
+  size_t sizeBytes = pitchedDevPtr.pitch * extent.height * extent.depth;
+  return hipMemset(pitchedDevPtr.ptr, value, sizeBytes);
 }
 
 hipError_t hipMemsetAsync(void *dst, int value, size_t sizeBytes,
                           hipStream_t stream) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZ_TRY
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
   char c_value = value;
-  RETURN(cont->memFill(dst, sizeBytes, &c_value, 1, stream));
+  RETURN(cont->memFillAsync(dst, sizeBytes, &c_value, 1, stream));
+  LZ_CATCH
 }
 
 hipError_t hipMemset(void *dst, int value, size_t sizeBytes) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZ_TRY
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  hipError_t e = hipMemsetAsync(dst, value, sizeBytes, cont->getDefaultQueue());
-  if (e != hipSuccess)
-    return e;
-
-  cont->getDefaultQueue()->finish();
-  RETURN(hipSuccess);
+  char c_value = value;
+  RETURN(cont->memFill(dst, sizeBytes, &c_value, 1));
+  LZ_CATCH
 }
 
 hipError_t hipMemsetD8(hipDeviceptr_t dest, unsigned char value,
@@ -1280,16 +1303,9 @@ hipError_t hipMemcpy2DAsync(void *dst, size_t dpitch, const void *src,
   if (spitch == 0 || dpitch == 0)
     RETURN(hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
   for (size_t i = 0; i < height; ++i) {
-    if (kind == hipMemcpyHostToHost) {
-      memcpy(dst, src, width);
-    } else {
-      if (cont->memCopy(dst, src, width, stream) != hipSuccess)
-        RETURN(hipErrorLaunchFailure);
-    }
+    if (hipMemcpyAsync(dst, src, width, kind, stream) != hipSuccess)
+      RETURN(hipErrorLaunchFailure);
     src = (char *)src + spitch;
     dst = (char *)dst + dpitch;
   }
@@ -1298,7 +1314,7 @@ hipError_t hipMemcpy2DAsync(void *dst, size_t dpitch, const void *src,
 
 hipError_t hipMemcpy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
                        size_t width, size_t height, hipMemcpyKind kind) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   hipError_t e = hipMemcpy2DAsync(dst, dpitch, src, spitch, width, height, kind,
@@ -1337,7 +1353,7 @@ hipError_t hipMemcpy2DToArray(hipArray *dst, size_t wOffset, size_t hOffset,
     RETURN(hipErrorInvalidValue);
   }
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   size_t src_w = spitch;
@@ -1346,14 +1362,8 @@ hipError_t hipMemcpy2DToArray(hipArray *dst, size_t wOffset, size_t hOffset,
   for (size_t i = 0; i < height; ++i) {
     void *dst_p = ((unsigned char *)dst->data + i * dst_w);
     void *src_p = ((unsigned char *)src + i * src_w);
-
-    if (kind == hipMemcpyHostToHost) {
-      memcpy(dst_p, src_p, width);
-    } else {
-      if (cont->memCopy(dst_p, src_p, width, cont->getDefaultQueue()) !=
-          hipSuccess)
-        RETURN(hipErrorLaunchFailure);
-    }
+    if (hipMemcpyAsync(dst_p, src_p, width, kind, cont->getDefaultQueue()) != hipSuccess)
+      RETURN(hipErrorLaunchFailure);
   }
 
   cont->getDefaultQueue()->finish();
@@ -1364,39 +1374,15 @@ hipError_t hipMemcpyToArray(hipArray *dst, size_t wOffset, size_t hOffset,
                             const void *src, size_t count, hipMemcpyKind kind) {
 
   void *dst_p = (unsigned char *)dst->data + wOffset;
-
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  if (kind == hipMemcpyHostToHost) {
-    memcpy(dst_p, src, count);
-  } else {
-    if (cont->memCopy(dst_p, src, count, cont->getDefaultQueue()) != hipSuccess)
-      RETURN(hipErrorLaunchFailure);
-  }
-
-  cont->getDefaultQueue()->finish();
-  RETURN(hipSuccess);
+  return hipMemcpy(dst_p, src, count, kind);
 }
 
 hipError_t hipMemcpyFromArray(void *dst, hipArray_const_t srcArray,
                               size_t wOffset, size_t hOffset, size_t count,
                               hipMemcpyKind kind) {
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
   void *src_p = (unsigned char *)srcArray->data + wOffset;
-
-  if (kind == hipMemcpyHostToHost) {
-    memcpy(dst, src_p, count);
-  } else {
-    if (cont->memCopy(dst, src_p, count, cont->getDefaultQueue()) != hipSuccess)
-      RETURN(hipErrorLaunchFailure);
-  }
-
-  cont->getDefaultQueue()->finish();
-  RETURN(hipSuccess);
+  return hipMemcpy(dst, src_p, count, kind);
 }
 
 hipError_t hipMemcpyAtoH(void *dst, hipArray *srcArray, size_t srcOffset,
@@ -1476,7 +1462,7 @@ hipError_t hipMemcpy3D(const struct hipMemcpy3DParms *p) {
                      widthInBytes * height * depth, p->kind);
   } else {
 
-    ClContext *cont = getTlsDefaultCtx();
+    LZContext *cont = getTlsDefaultLzCtx();
     ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
     for (size_t i = 0; i < depth; i++) {
@@ -1486,8 +1472,8 @@ hipError_t hipMemcpy3D(const struct hipMemcpy3DParms *p) {
             (unsigned char *)srcPtr + i * ySize * srcPitch + j * srcPitch;
         unsigned char *dst =
             (unsigned char *)dstPtr + i * height * dstPitch + j * dstPitch;
-        hipMemcpyAsync(dst, src, widthInBytes, p->kind,
-                       cont->getDefaultQueue());
+        if (hipMemcpyAsync(dst, src, widthInBytes, p->kind, cont->getDefaultQueue()) != hipSuccess)
+	  RETURN(hipErrorLaunchFailure);
       }
     }
 
@@ -1499,8 +1485,10 @@ hipError_t hipMemcpy3D(const struct hipMemcpy3DParms *p) {
 /********************************************************************/
 
 hipError_t hipInit(unsigned int flags) {
+  LZ_TRY
   InitializeOpenCL();
   InitializeHipLZ();
+  LZ_CATCH
   RETURN(hipSuccess);
 }
 
@@ -1531,40 +1519,38 @@ hipError_t hipModuleLoadDataEx(hipModule_t *module, const void *image,
 
 hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
                             hipStream_t stream) {
-  // Try for HipLZ context at first , here we ignore OpenCL queue 
-  LZContext* lzCtx = getTlsDefaultLzCtx();
-  if (lzCtx->configureCall(gridDim, blockDim, sharedMem))
-    RETURN(hipSuccess);
-  
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  LZ_TRY
 
-  RETURN(cont->configureCall(gridDim, blockDim, sharedMem, stream));
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
+  RETURN(lzCtx->configureCall(gridDim, blockDim, sharedMem, stream));
+
+  LZ_CATCH
 }
 
 hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
+  LZ_TRY 
+
   // Try for HipLZ kernel at first
   LZContext* lzCtx = getTlsDefaultLzCtx();
-  if (lzCtx->setArg(arg, size, offset))
-    RETURN(hipSuccess);
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);  
+  RETURN(lzCtx->setArg(arg, size, offset));
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  RETURN(cont->setArg(arg, size, offset));
+  LZ_CATCH
 }
 
 hipError_t hipLaunchByPtr(const void *hostFunction) {
-  logDebug("hipLaunchByPtr\n");
+  LZ_TRY
+
   // Try for HipLZ kernel at first
   LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
   if (lzCtx->launchHostFunc(hostFunction)) 
     RETURN(hipSuccess);
+  else
+    RETURN(hipErrorLaunchFailure);
 
-  ClContext *cont = getTlsDefaultCtx();
-  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  RETURN(cont->launchHostFunc(hostFunction));
+  LZ_CATCH
 }
 
 /********************************************************************/
