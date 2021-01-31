@@ -825,11 +825,10 @@ hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
 
 hipError_t hipEventRecord(hipEvent_t event, hipStream_t stream) {
   LZ_TRY
+  ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
   LZContext* cont = getTlsDefaultLzCtx();
-  // ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-  ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
   RETURN(cont->recordEvent(stream, event));
 
@@ -844,12 +843,14 @@ hipError_t hipEventDestroy(hipEvent_t event) {
 }
 
 hipError_t hipEventSynchronize(hipEvent_t event) {
+  LZ_TRY
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
   if (event->wait())
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+  LZ_CATCH
 }
 
 hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
@@ -858,7 +859,6 @@ hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
   ERROR_IF((stop == nullptr), hipErrorInvalidValue);
 
   LZContext* cont = getTlsDefaultLzCtx();
-  // ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   RETURN(cont->eventElapsedTime(ms, start, stop));
@@ -975,15 +975,17 @@ static hipError_t hipMallocPitch3D(void **ptr, size_t *pitch, size_t width,
 
 hipError_t hipMallocPitch(void **ptr, size_t *pitch, size_t width,
                           size_t height) {
+  LZ_TRY
   return hipMallocPitch3D(ptr, pitch, width, height, 0);
+  LZ_CATCH
 }
 
 hipError_t hipMallocArray(hipArray **array, const hipChannelFormatDesc *desc,
                           size_t width, size_t height, unsigned int flags) {
-
+  LZ_TRY
   ERROR_IF((width == 0), hipErrorInvalidValue);
 
-  auto cont = getTlsDefaultCtx();
+  auto cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidContext);
 
   *array = new hipArray;
@@ -1008,14 +1010,16 @@ hipError_t hipMallocArray(hipArray **array, const hipChannelFormatDesc *desc,
   ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
 
   *ptr = retval;
+  LZ_CATCH
   RETURN(hipSuccess);
 }
 
 hipError_t hipArrayCreate(hipArray **array,
                           const HIP_ARRAY_DESCRIPTOR *pAllocateArray) {
+  LZ_TRY
   ERROR_IF((pAllocateArray->width == 0), hipErrorInvalidValue);
 
-  auto cont = getTlsDefaultCtx();
+  auto cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidContext);
 
   *array = new hipArray;
@@ -1067,6 +1071,7 @@ hipError_t hipArrayCreate(hipArray **array,
   ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
 
   *ptr = retval;
+  LZ_CATCH
   RETURN(hipSuccess);
 }
 
