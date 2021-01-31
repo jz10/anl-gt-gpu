@@ -1345,6 +1345,11 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
   status = zeDeviceGetProperties(this->hDevice, &(this->deviceProps));
   LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties Failed with return code ", status);
 
+  // Query device memory properties
+  uint32_t count = 1;
+  status = zeDeviceGetMemoryProperties(this->hDevice, &count, &(this->deviceMemoryProps));
+  this->TotalUsedMem = 0;
+
   // Create Level-0 context  
   ze_context_desc_t ctxtDesc = {
     ZE_STRUCTURE_TYPE_CONTEXT_DESC,
@@ -1670,7 +1675,14 @@ bool LZContext::getPointerSize(void *ptr, size_t *size) {
   ze_result_t status = zeMemGetAddressRange(this->hContext, ptr, &pBase, &pSize);
   LZ_PROCESS_ERROR_MSG("HipLZ could not get pointer info with error code: ", status);
   logDebug("LZ MEMORY GET INFO via calling zeMemGetAddressRange {} ", status);
-  *size = pSize - ((intptr_t)ptr - (intptr_t)pBase);
+  *size = pSize;
+  return true;
+}
+
+bool LZContext::findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase, size_t *psize) {
+  ze_result_t status = zeMemGetAddressRange(this->hContext, dptr, pbase, psize);
+  LZ_PROCESS_ERROR_MSG("HipLZ could not get pointer info with error code: ", status);
+  logDebug("LZ MEMORY GET INFO via calling zeMemGetAddressRange {} ", status);
   return true;
 }
 

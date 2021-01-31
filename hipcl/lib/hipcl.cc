@@ -748,14 +748,15 @@ hipError_t hipCtxDisablePeerAccess(hipCtx_t peerCtx) {
 
 hipError_t hipMemGetAddressRange(hipDeviceptr_t *pbase, size_t *psize,
                                  hipDeviceptr_t dptr) {
-
-  hipCtx_t ctx = getTlsDefaultCtx();
+  LZ_TRY
+  LZContext *ctx = getTlsDefaultLzCtx();
   ERROR_IF((ctx == nullptr), hipErrorInvalidContext);
 
   if (ctx->findPointerInfo(dptr, pbase, psize))
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+  LZ_CATCH
 }
 
 hipError_t hipDevicePrimaryCtxGetState(hipDevice_t deviceId,
@@ -808,7 +809,6 @@ hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
   LZ_TRY
 
   LZContext* cont = getTlsDefaultLzCtx();
-  // ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -1109,10 +1109,10 @@ hipError_t hipMemGetInfo(size_t *free, size_t *total) {
 
   ERROR_IF((total == nullptr || free == nullptr), hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  auto device = cont->getDevice();
+  auto device = cont->GetDevice();
   *total = device->getGlobalMemSize();
   assert (device->getGlobalMemSize() > device->getUsedGlobalMem() );
   *free =  device->getGlobalMemSize() - device->getUsedGlobalMem();
@@ -1124,7 +1124,7 @@ hipError_t hipMemPtrGetInfo(void *ptr, size_t *size) {
   LZ_TRY
   ERROR_IF((ptr == nullptr || size == nullptr), hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   if (cont->getPointerSize(ptr, size))
@@ -1314,7 +1314,7 @@ hipError_t hipMemcpy2DAsync(void *dst, size_t dpitch, const void *src,
 
 hipError_t hipMemcpy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
                        size_t width, size_t height, hipMemcpyKind kind) {
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   hipError_t e = hipMemcpy2DAsync(dst, dpitch, src, spitch, width, height, kind,
@@ -1353,7 +1353,7 @@ hipError_t hipMemcpy2DToArray(hipArray *dst, size_t wOffset, size_t hOffset,
     RETURN(hipErrorInvalidValue);
   }
 
-  ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   size_t src_w = spitch;
@@ -1526,11 +1526,6 @@ hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
   RETURN(lzCtx->configureCall(gridDim, blockDim, sharedMem, stream));
 
   LZ_CATCH
-    
-  // ClContext *cont = getTlsDefaultCtx();
-  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  // RETURN(cont->configureCall(gridDim, blockDim, sharedMem, stream));
 }
 
 hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
@@ -1542,11 +1537,6 @@ hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
   RETURN(lzCtx->setArg(arg, size, offset));
 
   LZ_CATCH
-
-  // ClContext *cont = getTlsDefaultCtx();
-  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  // RETURN(cont->setArg(arg, size, offset));
 }
 
 hipError_t hipLaunchByPtr(const void *hostFunction) {
@@ -1561,11 +1551,6 @@ hipError_t hipLaunchByPtr(const void *hostFunction) {
     RETURN(hipErrorLaunchFailure);
 
   LZ_CATCH
-    
-  // ClContext *cont = getTlsDefaultCtx();
-  // ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  // RETURN(cont->launchHostFunc(hostFunction));
 }
 
 /********************************************************************/
