@@ -6,6 +6,8 @@
 #include <tuple>
 #include <vector>
 
+#include <pthread.h>
+
 #define CL_TARGET_OPENCL_VERSION 210
 #define CL_MINIMUM_OPENCL_VERSION 200
 #define CL_HPP_TARGET_OPENCL_VERSION 210
@@ -503,10 +505,13 @@ protected:
 
   ze_device_memory_properties_t deviceMemoryProps;
   size_t TotalUsedMem;
-public:
   ze_device_properties_t deviceProps;
+
+public:
   LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_);
   
+  // Get device properties
+  ze_device_properties_t* GetDeviceProps() { return &(this->deviceProps); };
   ze_device_handle_t GetDeviceHandle() { return this->hDevice; };
   ze_driver_handle_t GetDriverHandle() { return this->hDriver; }
   
@@ -794,10 +799,7 @@ public:
 
 protected:
   // Get the potential signal event 
-  ze_event_handle_t GetSignalEvent(LZQueue* lzQueue);
-
-  // Get the potential elapse time event 
-  LZEvent* GetTimeStampEvent(LZQueue* lzQueue);
+  LZEvent* GetSignalEvent(LZQueue* lzQueue);
 };
 
 class LZQueue : public ClQueue {
@@ -812,16 +814,38 @@ protected:
   LZCommandList* defaultCmdList;
   
   // The current HipLZ event, currently, we only maintain one event for each queue
-  LZEvent* currentEvent;
+  // LZEvent* currentEvent;
 
+  // The list of local events 
+  std::list<LZEvent* > localEvents;
+  
+  // The lock of event list
+  std::mutex EventsMutex;
+  
+  // The list of callbacks
+  std::list<hipStreamCallbackData> callbacks;
+  
+  // The lock of callback list
+  std::mutex CallbacksMutex;
+  
+  // The thread ID for monitor thread
+  pthread_t monitorThreadId;
+  
 public:
   LZQueue(cl::CommandQueue q, unsigned int f, int p) :  ClQueue(q, f, p) {
     lzContext = nullptr;
     defaultCmdList = nullptr;
-    currentEvent = nullptr;
+    monitorThreadId = 0;
   };
   LZQueue(LZContext* lzContext, bool needDefaultCmdList = false);
   LZQueue(LZContext* lzContext, LZCommandList* lzCmdList); 
+
+  ~LZQueue() {
+    // Detach from LZContext object
+    this->lzContext = nullptr; 
+    // Do thread join to wait for thread termination
+    WaitEventMonitor();
+  };
 
   // Get Level-0 queue handler
   ze_command_queue_handle_t GetQueueHandle() { return this->hQueue; }
@@ -865,9 +889,29 @@ public:
   // Get and clear current event
   LZEvent* GetAndClearEvent();
 
+  // Create and monitor event                                                                 
+  LZEvent* CreateAndMonitorEvent(LZEvent* event);
+  
+  // Get HipLZ context object
+  LZContext* GetContext() {
+    return this->lzContext;
+  };
+  
+  // Get an event from event list
+  LZEvent* GetPendingEvent();
+  
+  // Get callback from lock protected callback list   
+  bool GetCallback(hipStreamCallbackData* data);
+  
 protected:
   // Initialize Level-0 queue
   void initializeQueue(LZContext* lzContext, bool needDefaultCmdList = false);
+
+  // Create the callback monitor on-demand 
+  bool CheckAndCreateMonitor();
+  
+  // Synchronize on the event monitor thread  
+  void WaitEventMonitor();
 };
 
 LZDevice &HipLZDeviceById(int deviceId);

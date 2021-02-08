@@ -1734,8 +1734,8 @@ hipError_t LZContext::eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t s
   uint64_t Started = start->getFinishTime();
   uint64_t Finished = stop->getFinishTime();
 
-  uint64_t timerResolution    = this->GetDevice()->deviceProps.timerResolution;
-  uint32_t timestampValidBits = this->GetDevice()->deviceProps.timestampValidBits;
+  uint64_t timerResolution    = this->GetDevice()->GetDeviceProps()->timerResolution;
+  uint32_t timestampValidBits = this->GetDevice()->GetDeviceProps()->timestampValidBits;
 
   logDebug("EventElapsedTime: Started {} Finished {} timerResolution {} timestampValidBits {}\n", Started, Finished, timerResolution, timestampValidBits);
 
@@ -1785,6 +1785,45 @@ bool LZContext::finishAll() {
   return true;
 }
 
+// Execute the callback function  
+static void * CallbackExecutor(void* data) {
+  hipStreamCallbackData* callback_data = (hipStreamCallbackData*)data;
+
+  if (callback_data != nullptr) {
+    // Invoke the callback function   
+    callback_data->Callback(callback_data->Stream, hipSuccess, callback_data->UserData);
+
+    // Destroy callback data   
+    delete callback_data;
+  }
+
+  return 0;
+}
+
+// Monitor event status and invoke callbacks  
+static void * EventMonitor(void* data) {
+  LZQueue* lzQueue = (LZQueue* )data;
+  while (lzQueue->GetContext() != nullptr) {
+    while (LZEvent* event = lzQueue->GetPendingEvent()) {
+      // Wait til event is synchronized 
+      event->wait();
+    }
+
+    // Invoke callbacks 
+    hipStreamCallbackData* callback_data = new hipStreamCallbackData{};
+    while (lzQueue->GetCallback(callback_data)) {
+      pthread_t threadId;
+      // Invoke call back asynchronously  
+      pthread_create(&threadId, 0, CallbackExecutor, (void* )callback_data);
+    }
+
+    // Release processor 
+    pthread_yield();
+  }
+
+  return 0;
+}
+
 LZQueue::LZQueue(LZContext* lzContext_, bool needDefaultCmdList) {
   // Initialize super class fields, i.e. ClQueue
   this->LastEvent = nullptr;
@@ -1794,7 +1833,7 @@ LZQueue::LZQueue(LZContext* lzContext_, bool needDefaultCmdList) {
   // Initialize Level-0 related class fields
   this->lzContext = lzContext_;
   this->defaultCmdList = nullptr;
-  this->currentEvent = nullptr;
+  this->monitorThreadId = 0;
 
   // Initialize Level-0 queue
   initializeQueue(lzContext, needDefaultCmdList);
@@ -1832,7 +1871,7 @@ LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
   // Initialize Level-0 related class fields
   this->lzContext = lzContext_;
   this->defaultCmdList = lzCmdList;
-  this->currentEvent = nullptr;
+  this->monitorThreadId = 0;
 
   // Initialize Level-0 queue
   initializeQueue(lzContext);
@@ -1871,18 +1910,65 @@ bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
     return true;
   }
 
-  hipStreamCallbackData *Data = new hipStreamCallbackData{};
-  Data->Stream = this;
-  Data->Callback = callback;
-  Data->UserData = userData;
-  Data->Status = hipSuccess;
-  err = ::clSetEventCallback(LastEvent, CL_COMPLETE, notifyOpenCLevent, Data);
-  if (err != CL_SUCCESS)
-    logError("clSetEventCallback failed with error {}\n", err);
+  hipStreamCallbackData Data; //  = new hipStreamCallbackData{};
+  Data.Stream = this;
+  Data.Callback = callback;
+  Data.UserData = userData;
+  Data.Status = hipSuccess;
+  // err = ::clSetEventCallback(LastEvent, CL_COMPLETE, notifyOpenCLevent, Data);
+  // if (err != CL_SUCCESS)
+  //   logError("clSetEventCallback failed with error {}\n", err);
 
-  return (err == CL_SUCCESS);
+  // return (err == CL_SUCCESS);
   
+  // Add event callback to callback list 
+  {
+    std::lock_guard<std::mutex> Lock(CallbacksMutex);
+    callbacks.push_back(Data);
+  }
+  
+  // Create event monitor on demand  
+  CheckAndCreateMonitor();
+
+  return true;
+
   // LZ_PROCESS_ERROR_MSG("Not support LZQueue::addCallback yet!", hipErrorNotSupported);
+}
+
+// Get callback from lock protected callback list  
+bool LZQueue::GetCallback(hipStreamCallbackData* data) {
+  bool res = false;
+  {
+    std::lock_guard<std::mutex> Lock(CallbacksMutex);
+    if (!this->callbacks.empty()) {
+      * data = callbacks.front();
+      callbacks.pop_front();
+
+      res = true;
+    }
+  }
+
+  return res;
+}
+
+// Create the callback monitor on-demand  
+bool LZQueue::CheckAndCreateMonitor() {
+  // This operation is protected by event mutex  
+  std::lock_guard<std::mutex> Lock(EventsMutex);
+  if (this->monitorThreadId != 0)
+    return false;
+
+  // If the event monotor thread was not created yet, spawn it 
+  return 0 != pthread_create(&(this->monitorThreadId), 0, EventMonitor, (void* )this);
+}
+
+// Synchronize on the event monitor thread 
+void LZQueue::WaitEventMonitor() {
+  if  (this->monitorThreadId == 0)
+    return;
+
+  // Join the event monitor thread   
+  pthread_join(this->monitorThreadId, NULL);
 }
 
 // Record event
@@ -1994,35 +2080,61 @@ bool LZQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t p
 
 // The set the current event  
 bool LZQueue::SetEvent(LZEvent* event) {
-  if (this->currentEvent != nullptr) 
-    HIP_PROCESS_ERROR_MSG("There has been one event there!", hipErrorInitializationError);
+  // if (this->currentEvent != nullptr) 
+  HIP_PROCESS_ERROR_MSG("No current event here!", hipErrorInitializationError);
 
-  this->currentEvent = event;
+  // this->currentEvent = event;
   
   return true;
 }
 
 // Get and clear current event 
 LZEvent* LZQueue::GetAndClearEvent() {
-  LZEvent* res = this->currentEvent;
-  this->currentEvent = nullptr;
+  // LZEvent* res = this->currentEvent;
+  // this->currentEvent = nullptr;
 
-  return res;
-}
+  // return res;
 
-// Get the potential signal event 
-ze_event_handle_t LZCommandList::GetSignalEvent(LZQueue* lzQueue) {
-  LZEvent* lzEvent = lzQueue->GetAndClearEvent();
-  if (lzEvent != nullptr) {
-    lzEvent->GetEventHandler();
-  }
+  HIP_PROCESS_ERROR_MSG("No current event there to get and clear!", hipErrorInitializationError);
 
   return nullptr;
 }
 
-// Get the potential elapse time event 
-LZEvent* LZCommandList::GetTimeStampEvent(LZQueue* lzQueue) {
-  return lzQueue->GetAndClearEvent();
+// Create and monior event  
+LZEvent* LZQueue::CreateAndMonitorEvent(LZEvent* event) {
+  if (!event)
+    event = this->lzContext->createEvent(0);
+  {
+    std::lock_guard<std::mutex> Lock(EventsMutex);
+    // Put event into local event list to enable monitor    
+    this->localEvents.push_back(event);
+  }
+
+  return event;
+}
+
+LZEvent* LZQueue::GetPendingEvent() {
+  LZEvent* res = nullptr;
+  {
+    // Check if there is pending event in list
+    std::lock_guard<std::mutex> Lock(EventsMutex);
+    if (!this->localEvents.empty()) {
+      res = this->localEvents.front();
+      this->localEvents.pop_front();
+    }
+  }
+
+  return res;
+}
+    
+// Get the potential signal event 
+LZEvent* LZCommandList::GetSignalEvent(LZQueue* lzQueue) {
+  // LZEvent* lzEvent = lzQueue->GetAndClearEvent();
+  // if (lzEvent != nullptr) {
+  //   lzEvent->GetEventHandler();
+  // }
+
+  return lzQueue->CreateAndMonitorEvent(nullptr);
 }
 
 // Execute the Level-0 kernel
@@ -2044,7 +2156,7 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
   ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
   
   // Get the potential signal event 
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue);
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
 
   status = zeCommandListAppendLaunchKernel(hCommandList,
                                            Kernel->GetKernelHandle(),
@@ -2063,7 +2175,7 @@ bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem
 // Execute HipLZ memory copy command
 bool LZCommandList::ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes) {
   // Get the potential signal event
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue);
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
 
   ze_result_t status = zeCommandListAppendMemoryCopy(hCommandList, dst, src, sizeBytes,
                                                      hSignalEvent, 0, NULL);
@@ -2075,7 +2187,7 @@ bool LZCommandList::ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src,
 // Execute HipLZ memory copy command asynchronously
 bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes) {
   // Get the potential signal event  
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue);
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
 
   ze_result_t status = zeCommandListAppendMemoryCopy(hCommandList, dst, src, sizeBytes,
                                                      hSignalEvent, 0, NULL);
@@ -2086,7 +2198,7 @@ bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void 
 
 // Execute HipLZ memory fill command
 bool LZCommandList::ExecuteMemFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue);
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
 
   ze_result_t status = zeCommandListAppendMemoryFill(hCommandList, dst, pattern, pattern_size, size, hSignalEvent, 0, NULL);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryFill FAILED with return code ", status);
@@ -2095,7 +2207,7 @@ bool LZCommandList::ExecuteMemFill(LZQueue* lzQueue, void *dst, size_t size, con
 
 // Execute HipLZ memory fill command asynchronously
 bool LZCommandList::ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue);
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
 
   ze_result_t status = zeCommandListAppendMemoryFill(hCommandList, dst, pattern, pattern_size, size, hSignalEvent, 0, NULL);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryFill FAILED with return code ", status);
@@ -2105,12 +2217,12 @@ bool LZCommandList::ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size
 // Execute HipLZ write global timestamp
 uint64_t LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue) {
   // Get the event for recording time stamp
-  LZEvent* tsEvent = GetTimeStampEvent(lzQueue);
-  if (!tsEvent) {
-    logError("LZ Time Elapse Event was not set ");
+  // LZEvent* tsEvent = GetTimeStampEvent(lzQueue);
+  // if (!tsEvent) {
+  //   logError("LZ Time Elapse Event was not set ");
 
-    return false;
-  }
+  //   return false;
+  // }
 		 
   ze_result_t status = zeCommandListAppendWriteGlobalTimestamp(hCommandList, (uint64_t*)(shared_buf), nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendWriteGlobalTimestamp FAILED with return code ", status);
@@ -2419,12 +2531,11 @@ bool LZEvent::recordStream(hipStream_t S, cl_event E) {
   std::lock_guard<std::mutex> Lock(EventMutex);
  
   Stream = S;
-  if (((LZQueue* )Stream)->SetEvent(this)) {
-    Status = EVENT_STATUS_RECORDING;
-    return true;
-  }
+  // if (((LZQueue* )Stream)->SetEvent(this)) {
+  ((LZQueue* )Stream)->CreateAndMonitorEvent(this);
+  Status = EVENT_STATUS_RECORDING;
 
-  return false;
+  return true;
 }
 
 bool LZEvent::updateFinishStatus() {
