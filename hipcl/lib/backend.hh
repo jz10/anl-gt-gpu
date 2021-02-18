@@ -492,31 +492,56 @@ public:
 
 class LZContext;
 
+class LZDriver;
+
+// HipLZ device object that 
 class LZDevice {
 protected:
+  // Synchronization mutex
   std::mutex mtx;
-  LZContext* defaultContext;
-  ze_device_handle_t hDevice;
-  ze_driver_handle_t hDriver;
 
+  // The default context associated with this device
+  LZContext* defaultContext;
+
+  // The device handler
+  ze_device_handle_t hDevice;
+
+  // The driver object
+  LZDriver* driver;
+
+  // The names of modules
   std::vector<std::string *> Modules;
+  
+  // The map between host function pointer and module name 
   std::map<const void *, std::string *> HostPtrToModuleMap;
+
+  // The map between host function pointer nd name
   std::map<const void *, std::string> HostPtrToNameMap;
 
+  // The handle of device memory property 
   ze_device_memory_properties_t deviceMemoryProps;
+  
+  // The size of total used memory
   size_t TotalUsedMem;
+
+  // The handle of device properties
   ze_device_properties_t deviceProps;
 
 public:
-  LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_);
+  LZDevice(ze_device_handle_t hDevice, LZDriver* driver);
   
   // Get device properties
   ze_device_properties_t* GetDeviceProps() { return &(this->deviceProps); };
+
+  // Get device handle
   ze_device_handle_t GetDeviceHandle() { return this->hDevice; };
-  ze_driver_handle_t GetDriverHandle() { return this->hDriver; }
+
+  // Get current device driver handle
+  ze_driver_handle_t GetDriverHandle();
   
   // Register HipLZ module which is presented as IL
   void registerModule(std::string* module);
+
   // Regsiter HipLZ module, kernel function name with host function which is a wrapper
   bool registerFunction(std::string *module, const void *HostFunction, const char *FunctionName);
 
@@ -751,6 +776,69 @@ public:
   void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
 };
 
+// HipLZ driver object that manages device objects and the current context
+class LZDriver {
+protected:
+  // The synchronization mutex
+  std::mutex DriverMutex;
+
+  // The driver handler
+  ze_driver_handle_t hDriver;
+
+  // Thhe device type maintained in this driver
+  ze_device_type_t deviceType;
+
+  // The device objects
+  std::vector<LZDevice* > devices;
+
+public:
+  LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_) { 
+    this->hDriver = hDriver_;
+    this->deviceType = deviceType_; 
+  
+    // Collect HipLZ devices
+    FindHipLZDevices();
+  };
+  
+  // Get and initialize the drivers
+  static bool InitDrivers(std::vector<LZDriver* >& drivers, const ze_device_type_t deviceType);
+
+  // Get HipLZ driver via integer ID
+  static LZDriver& HipLZDriverById(int id);
+
+  // Get the number of HipLZ devices
+  int GetNumOfDevices() { return this->devices.size(); };
+
+  // Get the driver handler
+  ze_driver_handle_t GetDriverHandle() { return this->hDriver; };
+
+  // Get the primary device
+  LZDevice& getPrimaryDevice() {
+    return * devices.at(0);
+  }
+
+  // Register the given module to all devices
+  void registerModule(std::string *module) {
+    for (int deviceId = 0; deviceId < devices.size(); deviceId ++) {
+      devices[deviceId]->registerModule(module);
+    }
+  }
+
+  // Register the given kernel function to all devices
+  bool registerFunction(std::string *module, const void *HostFunction, const char *FunctionName) {
+    for (int deviceId = 0; deviceId < devices.size(); deviceId ++) {
+      if (!devices[deviceId]->registerFunction(module, HostFunction, FunctionName))
+	return false;
+    }
+
+    return true;
+  }
+
+protected:
+  // Collect HipLZ device that belongs to this driver
+  bool FindHipLZDevices();
+};
+
 class LZCommandList {
 protected:
   // Current associated HipLZ context
@@ -917,6 +1005,8 @@ protected:
 LZDevice &HipLZDeviceById(int deviceId);
 
 extern size_t NumLZDevices;
+
+extern size_t NumLZDrivers;
 
 void InitializeHipLZ();
 

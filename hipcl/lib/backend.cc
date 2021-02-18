@@ -1333,12 +1333,16 @@ bool ClDevice::getModuleAndFName(const void *HostFunction,
 /***********************************************************************/
 // HipLZ support
 static std::vector<LZDevice *> HipLZDevices INIT_PRIORITY(120);
+// The drivers are managed globally
+static std::vector<LZDriver *> HipLZDrivers INIT_PRIORITY(120);
 
 size_t NumLZDevices = 1;
 
-LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
+size_t NumLZDrivers = 1;
+
+LZDevice::LZDevice(ze_device_handle_t hDevice_, LZDriver* driver_) {
   this->hDevice = hDevice_;
-  this->hDriver = hDriver_;
+  this->driver = driver_;
   ze_result_t status = ZE_RESULT_SUCCESS;
 
   // Query device properties
@@ -1357,7 +1361,7 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, ze_driver_handle_t hDriver_) {
     0
   };
   ze_context_handle_t hContext;
-  status = zeContextCreate(this->hDriver, &ctxtDesc, &hContext);
+  status = zeContextCreate(this->driver->GetDriverHandle(), &ctxtDesc, &hContext);
   LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
   this->defaultContext = new LZContext(this, hContext);
@@ -1395,6 +1399,11 @@ std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
     HIP_PROCESS_ERROR_MSG("HipLZ no corresponding host function name found", hipErrorInitializationError);
 
   return HostPtrToNameMap[HostFunction];
+}
+
+// Get current device driver handle 
+ze_driver_handle_t LZDevice::GetDriverHandle() { 
+  return this->driver->GetDriverHandle(); 
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
@@ -1452,8 +1461,6 @@ hipError_t LZContext::memFillAsync(void *dst, size_t size, const void *pattern, 
   }
   return hipSuccess;
 }
-
-
 
 hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
   if (stream == nullptr) {
@@ -1783,6 +1790,81 @@ bool LZContext::finishAll() {
     }
   }
   return true;
+}
+
+// Initialize HipLZ drivers 
+bool LZDriver::InitDrivers(std::vector<LZDriver* >& drivers, const ze_device_type_t deviceType) {
+  const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
+  ze_device_handle_t pDevice = nullptr;
+
+  // Get driver count 
+  uint32_t driverCount = 0;
+  ze_result_t status = zeDriverGet(&driverCount, nullptr);
+  LZ_PROCESS_ERROR(status);
+  logDebug("HipLZ GET DRIVER via calling zeDriverGet {}\n", status);
+
+  // Get drivers 
+  std::vector<ze_driver_handle_t> driver_handles(driverCount);
+  status = zeDriverGet(&driverCount, driver_handles.data());
+  LZ_PROCESS_ERROR(status);
+  logDebug("HipLZ GET DRIVER COUNT via calling zeDriverGet {}\n", status);
+
+  // Create driver object and find the level-0 devices for each driver 
+  for (uint32_t driverId = 0; driverId < driverCount; ++ driverId) {
+    ze_driver_handle_t hDriver = driver_handles[driverId];
+    LZDriver* driver = new LZDriver(hDriver, deviceType);
+    drivers.push_back(driver);
+    
+    // Count the number of devices
+    NumLZDevices += driver->GetNumOfDevices();
+ }
+
+  logDebug("LZ DEVICES {}", NumLZDevices);
+
+  if (NumLZDevices == 0) {
+    HIP_PROCESS_ERROR(hipErrorNoDevice);
+  }
+
+  // Set the number of drivers
+  NumLZDrivers = driverCount;
+
+  return true;
+}
+
+// Collect HipLZ device that belongs to this driver
+bool LZDriver::FindHipLZDevices() {
+  // get all devices 
+  uint32_t deviceCount = 0;
+  zeDeviceGet(this->hDriver, &deviceCount, nullptr);
+  logDebug("GET DRIVER'S DEVICE COUNT {} ", deviceCount);
+
+  std::vector<ze_device_handle_t> device_handles(deviceCount); 
+  ze_result_t status = zeDeviceGet(this->hDriver, &deviceCount, device_handles.data());
+  LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGet FAILED with return code ", status);
+  logDebug("GET DRIVER'S DEVICE COUNT (via calling zeDeviceGet) -  {} ", deviceCount);
+
+  ze_device_handle_t found = nullptr;
+  // For each device, find the first one matching the type 
+  for (uint32_t device = 0; device < deviceCount; ++ device) {
+    auto hDevice = device_handles[device];
+    ze_device_properties_t device_properties = {};
+    device_properties.stype = ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
+
+    status = zeDeviceGetProperties(hDevice, &device_properties);
+    LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties FAILED with return code " ,status);
+    logDebug("GET DEVICE PROPERTY (via calling zeDeviceGetProperties) {} ", this->deviceType == device_properties.type);
+
+    if (this->deviceType == device_properties.type) {
+      this->devices.push_back(new LZDevice(hDevice, this));
+    }
+  }
+
+  return !this->devices.empty();
+}
+
+// Get HipLZ driver via integer ID 
+LZDriver& LZDriver::HipLZDriverById(int id) {
+  return * HipLZDrivers.at(id);
 }
 
 // Execute the callback function  
@@ -2746,6 +2828,11 @@ static void InitializeHipLZCallOnce() {
   LZ_PROCESS_ERROR(status);
   logDebug("INITIALIZE LEVEL-0 (via calling zeInit) {}\n", status);
   
+  // Initialize HipLZ device drivers and relevant devices
+  LZDriver::InitDrivers(HipLZDrivers, ZE_DEVICE_TYPE_GPU);
+
+  // TODO: the following code should be expired
+  /*
   const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
   ze_driver_handle_t pDriver = nullptr;
   ze_device_handle_t pDevice = nullptr;
@@ -2782,6 +2869,7 @@ static void InitializeHipLZCallOnce() {
   } else {
     HIP_PROCESS_ERROR(hipErrorNoDevice);
   }
+*/
 }
 
 void InitializeHipLZ() {

@@ -29,7 +29,9 @@ static thread_local LZContext *tls_defaultLzCtx = nullptr;
 
 static LZContext *getTlsDefaultLzCtx() {
   if (tls_defaultLzCtx == nullptr)
-    tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx(); 
+    // tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx(); 
+    tls_defaultLzCtx = LZDriver::HipLZDriverById(0).getPrimaryDevice().getPrimaryCtx();
+
   return tls_defaultLzCtx;
 }
 
@@ -1702,11 +1704,14 @@ extern "C" void **__hipRegisterFatBinary(const void *data) {
   }
 
   // Register HipLZ Module
-  for (size_t deviceId = 0; deviceId < NumLZDevices; ++deviceId) {
-    HipLZDeviceById(deviceId).registerModule(module);
+  // for (size_t deviceId = 0; deviceId < NumLZDevices; ++deviceId) {
+  //   HipLZDeviceById(deviceId).registerModule(module);
+  // }
+  for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+    LZDriver::HipLZDriverById(driverId).registerModule(module);
   }
-
-  ++binaries_loaded;
+  
+  ++ binaries_loaded;
   logDebug("__hipRegisterFatBinary {}\n", binaries_loaded);
 
   return (void **)module;
@@ -1759,13 +1764,20 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   }
 
   // HipLZ: here we register HipLZ kernels as well
-  for (size_t deviceId = 0; deviceId < NumLZDevices; ++ deviceId) {
-    if (HipLZDeviceById(deviceId).registerFunction(module, hostFunction,
-                                                   deviceName)) {
+  // for (size_t deviceId = 0; deviceId < NumLZDevices; ++ deviceId) {
+  //   if (HipLZDeviceById(deviceId).registerFunction(module, hostFunction, deviceName)) {
+  //     logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName);
+  //   } else {
+  //     logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n", deviceName);
+  //     std::abort();
+  //   }
+  // }
+  
+  for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+    if (LZDriver::HipLZDriverById(driverId).registerFunction(module, hostFunction, deviceName)) {
       logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName);
     } else {
-      logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n",
-                  deviceName);
+      logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n", deviceName);
       std::abort();
     }
   }
