@@ -56,14 +56,16 @@ static LZContext *getTlsDefaultLzCtx() {
 /***********************************************************************/
 
 hipError_t hipGetDevice(int *deviceId) {
-  InitializeOpenCL();
-
+  // InitializeOpenCL();
+  InitializeHipLZ();
+  
   ERROR_IF((deviceId == nullptr), hipErrorInvalidValue);
 
-  ClContext *cont = getTlsDefaultCtx();
+  // ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  *deviceId = cont->getDevice()->getHipDeviceT();
+  *deviceId = cont->GetDevice()->getHipDeviceT();
   RETURN(hipSuccess);
 }
 

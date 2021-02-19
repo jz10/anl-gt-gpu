@@ -527,8 +527,11 @@ protected:
   // The handle of device properties
   ze_device_properties_t deviceProps;
 
+  // The integer ID of current device
+  hipDevice_t deviceId;
+  
 public:
-  LZDevice(ze_device_handle_t hDevice, LZDriver* driver);
+  LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver);
   
   // Get device properties
   ze_device_properties_t* GetDeviceProps() { return &(this->deviceProps); };
@@ -538,6 +541,11 @@ public:
 
   // Get current device driver handle
   ze_driver_handle_t GetDriverHandle();
+
+  // Get current device's integer ID
+  hipDevice_t getHipDeviceT() {
+    return this->deviceId;
+  }
   
   // Register HipLZ module which is presented as IL
   void registerModule(std::string* module);

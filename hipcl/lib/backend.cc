@@ -1340,7 +1340,8 @@ size_t NumLZDevices = 1;
 
 size_t NumLZDrivers = 1;
 
-LZDevice::LZDevice(ze_device_handle_t hDevice_, LZDriver* driver_) {
+LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver_) {
+  this->deviceId = id;
   this->hDevice = hDevice_;
   this->driver = driver_;
   ze_result_t status = ZE_RESULT_SUCCESS;
@@ -1870,8 +1871,8 @@ bool LZDriver::FindHipLZDevices() {
 
   ze_device_handle_t found = nullptr;
   // For each device, find the first one matching the type 
-  for (uint32_t device = 0; device < deviceCount; ++ device) {
-    auto hDevice = device_handles[device];
+  for (uint32_t deviceId = 0; deviceId < deviceCount; ++ deviceId) {
+    auto hDevice = device_handles[deviceId];
     ze_device_properties_t device_properties = {};
     device_properties.stype = ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
 
@@ -1880,7 +1881,7 @@ bool LZDriver::FindHipLZDevices() {
     logDebug("GET DEVICE PROPERTY (via calling zeDeviceGetProperties) {} ", this->deviceType == device_properties.type);
 
     if (this->deviceType == device_properties.type) {
-      this->devices.push_back(new LZDevice(hDevice, this));
+      this->devices.push_back(new LZDevice(deviceId, hDevice, this));
     }
   }
 
