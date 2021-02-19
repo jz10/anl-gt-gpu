@@ -29,7 +29,6 @@ static thread_local LZContext *tls_defaultLzCtx = nullptr;
 
 static LZContext *getTlsDefaultLzCtx() {
   if (tls_defaultLzCtx == nullptr)
-    // tls_defaultLzCtx = HipLZDeviceById(0).getPrimaryCtx(); 
     tls_defaultLzCtx = LZDriver::HipLZDriverById(0).getPrimaryDevice().getPrimaryCtx();
 
   return tls_defaultLzCtx;
@@ -69,13 +68,14 @@ hipError_t hipGetDevice(int *deviceId) {
 }
 
 hipError_t hipGetDeviceCount(int *count) {
-  InitializeOpenCL();
-  ERROR_IF((count == nullptr), hipErrorInvalidValue);
-  *count = NumDevices;
+  // InitializeOpenCL();
+  //  ERROR_IF((count == nullptr), hipErrorInvalidValue);
+  // *count = NumDevices;
 
+  InitializeHipLZ();
+  ERROR_IF((count == nullptr), hipErrorInvalidValue);
   // Discover all the driver instances    
-  uint32_t driverCount = 0;
-  zeDriverGet(&driverCount, nullptr);
+  * count = LZDriver::GetPrimaryDriver().GetNumOfDevices();
   
   RETURN(hipSuccess);
 }
@@ -104,10 +104,13 @@ hipError_t hipDeviceSynchronize(void) {
 
 hipError_t hipDeviceReset(void) {
 
-  ClContext *cont = getTlsDefaultCtx();
+  // ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-
-  ClDevice *dev = cont->getDevice();
+  
+  // ClDevice *dev = cont->getDevice();
+  LZDevice* dev = cont->GetDevice();
+  
   dev->reset();
   RETURN(hipSuccess);
 }

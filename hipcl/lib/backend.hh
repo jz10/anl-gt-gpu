@@ -379,7 +379,7 @@ public:
   ClDevice *getDevice() const { return Device; }
   unsigned getFlags() const { return Flags; }
   hipStream_t getDefaultQueue() { return DefaultQueue; }
-  void reset();
+  virtual void reset();
 
   virtual hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
   ClEvent *createEvent(unsigned Flags);
@@ -498,7 +498,7 @@ class LZDriver;
 class LZDevice {
 protected:
   // Synchronization mutex
-  std::mutex mtx;
+  std::mutex DeviceMutex;
 
   // The default context associated with this device
   LZContext* defaultContext;
@@ -550,10 +550,21 @@ public:
   
   // Get primary context
   LZContext* getPrimaryCtx() { return this->defaultContext; };
+
+  // Get the size of global memory
   size_t getGlobalMemSize() const { return this->deviceMemoryProps.totalSize; }
+
+  // Get the size of used global memory
   size_t getUsedGlobalMem() const { return TotalUsedMem; }
+
+  // Reserver memory
   bool reserveMem(size_t bytes) { return true; };
+
+  // Release memory
   bool releaseMem(size_t bytes) { return true; };
+
+  // Reset current device
+  void reset();
 };
 
 class LZKernel : public ClKernel {
@@ -772,6 +783,9 @@ public:
   // Synchronize all streams
   virtual bool finishAll();
 
+  // Reset current context
+  virtual void reset();
+  
   // Allocate memory via Level-0 runtime
   void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
 };
@@ -806,6 +820,12 @@ public:
   // Get HipLZ driver via integer ID
   static LZDriver& HipLZDriverById(int id);
 
+  // Get the primary HipLZ driver
+  static LZDriver& GetPrimaryDriver() {
+    // Here we use driver 0 as the primary one
+    return HipLZDriverById(0);
+  };
+  
   // Get the number of HipLZ devices
   int GetNumOfDevices() { return this->devices.size(); };
 

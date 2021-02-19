@@ -1368,13 +1368,13 @@ LZDevice::LZDevice(ze_device_handle_t hDevice_, LZDriver* driver_) {
 }
 
 void LZDevice::registerModule(std::string* module) {
-  std::lock_guard<std::mutex> Lock(this->mtx);
+  std::lock_guard<std::mutex> Lock(DeviceMutex);
   Modules.push_back(module);
 }
 
 bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
 				const char *FunctionName) {
-  std::lock_guard<std::mutex> Lock(this->mtx);
+  std::lock_guard<std::mutex> Lock(DeviceMutex);
 
   logDebug("LZ REGISER FUCNTION {}", FunctionName);
   auto it = std::find(Modules.begin(), Modules.end(), module);
@@ -1404,6 +1404,12 @@ std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
 // Get current device driver handle 
 ze_driver_handle_t LZDevice::GetDriverHandle() { 
   return this->driver->GetDriverHandle(); 
+}
+
+// Reset current device
+void LZDevice::reset() {
+  std::lock_guard<std::mutex> Lock(DeviceMutex);
+  this->defaultContext->reset();
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
@@ -1790,6 +1796,25 @@ bool LZContext::finishAll() {
     }
   }
   return true;
+}
+
+// Reset current context 
+void LZContext::reset() {
+  std::lock_guard<std::mutex> Lock(ContextMutex);
+  int err;
+
+  // Cleanup the execution item stack
+  while (!this->ExecStack.empty()) {
+    ExecItem *Item = ExecStack.top();
+    delete Item;
+    this->ExecStack.pop();
+  }
+
+  this->Queues.clear();
+  delete DefaultQueue;
+  // this->Memory.clear();
+
+  // TODO: check if the default queue still need to be initialized?
 }
 
 // Initialize HipLZ drivers 
@@ -2523,38 +2548,6 @@ LZKernel* LZModule::GetKernel(std::string funcName) {
   return kernels[funcName];
 }
 
-static ze_device_handle_t FindLevel0Device(ze_driver_handle_t pDriver, ze_device_type_t type) {
-  // get all devices  
-  uint32_t deviceCount = 0;
-  zeDeviceGet(pDriver, &deviceCount, nullptr);
-  logDebug("GET DRIVER'S DEVICE COUNT {} ", deviceCount);
-
-  std::vector<ze_device_handle_t> devices(deviceCount);
-  ze_device_handle_t devices_[10]; // Set initial number of devices as 10
-  ze_result_t status = zeDeviceGet(pDriver, &deviceCount, devices.data());
-  LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGet FAILED with return code ", status);
-  logDebug("GET DRIVER'S DEVICE COUNT (via calling zeDeviceGet) -  {} ", deviceCount);
- 
-  ze_device_handle_t found = nullptr;
-  // For each device, find the first one matching the type
-  for (uint32_t device = 0; device < deviceCount; ++device) {
-    auto phDevice = devices[device];
-    ze_device_properties_t device_properties = {};
-    device_properties.stype = ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
-    
-    status = zeDeviceGetProperties(phDevice, &device_properties);
-    LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties FAILED with return code " ,status);
-    logDebug("GET DEVICE PROPERTY (via calling zeDeviceGetProperties) {} ", type == device_properties.type);
-    
-    if (type == device_properties.type) {
-      found = phDevice;
-      break;
-    }
-  }
-
-  return found;
-}
-
 // Create event pool
 LZEventPool::LZEventPool(LZContext* c) {
   this->lzContext = c;
@@ -2830,46 +2823,6 @@ static void InitializeHipLZCallOnce() {
   
   // Initialize HipLZ device drivers and relevant devices
   LZDriver::InitDrivers(HipLZDrivers, ZE_DEVICE_TYPE_GPU);
-
-  // TODO: the following code should be expired
-  /*
-  const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
-  ze_driver_handle_t pDriver = nullptr;
-  ze_device_handle_t pDevice = nullptr;
-
-  // Get driver count
-  uint32_t driverCount = 0;
-  status = zeDriverGet(&driverCount, nullptr);
-  LZ_PROCESS_ERROR(status);
-  logDebug("HipLZ GET DRIVER via calling zeDriverGet {}\n", status);
- 
-  // Get drivers
-  std::vector<ze_driver_handle_t> drivers(driverCount);
-  status = zeDriverGet(&driverCount, drivers.data());
-  LZ_PROCESS_ERROR(status);
-  logDebug("HipLZ GET DRIVER COUNT via calling zeDriverGet {}\n", status);
- 
-  // Find the level-0 device, here we just pick up the 1st one
-  for (uint32_t driver = 0; driver < driverCount; ++ driver) {
-    pDriver = drivers[driver];
-    pDevice = FindLevel0Device( pDriver, type );
-    if (pDevice) {
-      break;
-    }
-  }
-
-  // Manully set the number of HipLZ devices, this is just a temproary solution
-  NumLZDevices = 1;
-
-  logDebug("GET DEVICES {}", pDevice != nullptr);
-  if (pDevice) {
-    LZDevice* lzDevice = new LZDevice(pDevice, pDriver);
-    HipLZDevices.emplace_back(lzDevice);
-    logDebug("LZ DEVICES {}", HipLZDevices.size());
-  } else {
-    HIP_PROCESS_ERROR(hipErrorNoDevice);
-  }
-*/
 }
 
 void InitializeHipLZ() {
