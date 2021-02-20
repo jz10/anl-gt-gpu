@@ -1413,6 +1413,17 @@ void LZDevice::reset() {
   this->defaultContext->reset();
 }
 
+// Setup HipLZ device properties
+void LZDevice::setupProperties(int index) {
+  // TODO:
+}
+
+// Copy device properties to given property data structure 
+void LZDevice::copyProperties(hipDeviceProp_t *prop) {
+  if (prop)
+    std::memcpy(prop, &this->Properties, sizeof(hipDeviceProp_t));
+}
+
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
   if (stream == nullptr) {
     // Here we use default queue in  LZ context to do the synchronous copy
@@ -1891,6 +1902,14 @@ bool LZDriver::FindHipLZDevices() {
 // Get HipLZ driver via integer ID 
 LZDriver& LZDriver::HipLZDriverById(int id) {
   return * HipLZDrivers.at(id);
+}
+
+// Get the HipLZ device driver by ID                                                                    
+LZDevice& LZDriver::GetDeviceById(int id) {
+  if (id >= this->devices.size() || this->devices.size() == 0 || id < 0)
+    HIP_PROCESS_ERROR_MSG("Hiplz devices were not initialized in this driver?", hipErrorInitializationError);
+
+  return * this->devices[id];
 }
 
 // Execute the callback function  

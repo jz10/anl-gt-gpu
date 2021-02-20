@@ -529,6 +529,9 @@ protected:
 
   // The integer ID of current device
   hipDevice_t deviceId;
+
+  // The current device's properties
+  hipDeviceProp_t Properties;
   
 public:
   LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver);
@@ -573,6 +576,13 @@ public:
 
   // Reset current device
   void reset();
+
+  // Copy device properties to given property data structure
+  void copyProperties(hipDeviceProp_t *prop);
+
+protected:
+  // Setup HipLZ device properties 
+  void setupProperties(int index);
 };
 
 class LZKernel : public ClKernel {
@@ -861,6 +871,9 @@ public:
 
     return true;
   }
+
+  // Get the HipLZ device driver by ID
+  LZDevice& GetDeviceById(int id);
 
 protected:
   // Collect HipLZ device that belongs to this driver

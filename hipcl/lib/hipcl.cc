@@ -83,13 +83,19 @@ hipError_t hipGetDeviceCount(int *count) {
 }
 
 hipError_t hipSetDevice(int deviceId) {
-  InitializeOpenCL();
+  // InitializeOpenCL();
+  InitializeHipLZ();
 
   ERROR_CHECK_DEVNUM(deviceId);
 
-  tls_defaultCtx = CLDeviceById(deviceId).getPrimaryCtx();
-
+  // tls_defaultCtx = CLDeviceById(deviceId).getPrimaryCtx();
+  LZ_TRY
+    
+  tls_defaultLzCtx = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getPrimaryCtx();
+  
   RETURN(hipSuccess);
+
+  LZ_CATCH
 }
 
 hipError_t hipDeviceSynchronize(void) {
@@ -118,11 +124,17 @@ hipError_t hipDeviceReset(void) {
 }
 
 hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
-  InitializeOpenCL();
+  // InitializeOpenCL();
+  
+  // ERROR_IF(((ordinal < 0) || ((size_t)ordinal >= NumDevices)),
+  //          hipErrorInvalidValue);
 
-  ERROR_IF(((ordinal < 0) || ((size_t)ordinal >= NumDevices)),
-           hipErrorInvalidValue);
 
+  InitializeHipLZ();
+  ERROR_IF(((ordinal < 0)
+	    || ((size_t)ordinal >= LZDriver::GetPrimaryDriver().GetNumOfDevices())),
+	   hipErrorInvalidValue);
+  
   ERROR_IF((device == nullptr), hipErrorInvalidDevice);
 
   *device = ordinal;
@@ -131,11 +143,15 @@ hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
 
 hipError_t hipDeviceComputeCapability(int *major, int *minor,
                                       hipDevice_t deviceId) {
-  InitializeOpenCL();
+  // InitializeOpenCL();
+  InitializeHipLZ();
+  
   ERROR_CHECK_DEVNUM(deviceId);
 
   hipDeviceProp_t props;
-  CLDeviceById(deviceId).copyProperties(&props);
+  // CLDeviceById(deviceId).copyProperties(&props);
+  LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).copyProperties(&props);
+  
   if (major)
     *major = props.major;
   if (minor)
