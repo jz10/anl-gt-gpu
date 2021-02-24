@@ -518,8 +518,14 @@ protected:
   // The map between host function pointer nd name
   std::map<const void *, std::string> HostPtrToNameMap;
 
-  // The handle of device memory property 
+  // The device memory properties 
   ze_device_memory_properties_t deviceMemoryProps;
+  
+  // The device compute properties
+  ze_device_compute_properties_t deviceComputeProps;
+
+  // The device cache properties
+  ze_device_cache_properties_t deviceCacheProps;
   
   // The size of total used memory
   size_t TotalUsedMem;
@@ -533,6 +539,9 @@ protected:
   // The current device's properties
   hipDeviceProp_t Properties;
   
+  // The Hip attribute map
+  std::map<hipDeviceAttribute_t, int> Attributes;
+
 public:
   LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver);
   
@@ -580,6 +589,12 @@ public:
   // Copy device properties to given property data structure
   void copyProperties(hipDeviceProp_t *prop);
 
+  // Get Hip attribute from attribute enum ID
+  int getAttr(int *pi, hipDeviceAttribute_t attr);
+
+  // Get HipLZ device name
+  const char *getName() const { return Properties.name; };
+  
 protected:
   // Setup HipLZ device properties 
   void setupProperties(int index);

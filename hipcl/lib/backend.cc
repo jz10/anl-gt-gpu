@@ -1355,7 +1355,14 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   status = zeDeviceGetMemoryProperties(this->hDevice, &count, &(this->deviceMemoryProps));
   this->TotalUsedMem = 0;
 
-  // Create Level-0 context  
+  // Query device computation properties
+  status = zeDeviceGetComputeProperties(this->hDevice, &(this->deviceComputeProps));
+
+  // Query device cache properties
+  count = 1;
+  status = zeDeviceGetCacheProperties(this->hDevice, &count, &(this->deviceCacheProps));
+
+  // Create HipLZ context  
   ze_context_desc_t ctxtDesc = {
     ZE_STRUCTURE_TYPE_CONTEXT_DESC,
     nullptr,
@@ -1366,6 +1373,9 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
   this->defaultContext = new LZContext(this, hContext);
+
+  // Setup HipLZ device properties
+  setupProperties(id);
 }
 
 void LZDevice::registerModule(std::string* module) {
@@ -1415,13 +1425,95 @@ void LZDevice::reset() {
 
 // Setup HipLZ device properties
 void LZDevice::setupProperties(int index) {
-  // TODO:
+  // Copy device name
+  if (255 < ZE_MAX_DEVICE_NAME) {
+    strncpy(Properties.name, this->deviceProps.name, 255);
+    Properties.name[255] = 0;
+  } else {
+    strncpy(Properties.name, this->deviceProps.name, ZE_MAX_DEVICE_NAME);
+    Properties.name[ZE_MAX_DEVICE_NAME] = 0;
+  }
+
+  // Get total device memory
+  Properties.totalGlobalMem = this->deviceMemoryProps.totalSize;
+
+  Properties.sharedMemPerBlock = this->deviceComputeProps.maxSharedLocalMemory; 
+  //??? Dev.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>(&err);
+
+  Properties.maxThreadsPerBlock = this->deviceComputeProps.maxTotalGroupSize;
+  //??? Dev.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>(&err);
+
+  Properties.maxThreadsDim[0] = this->deviceComputeProps.maxGroupSizeX;
+  Properties.maxThreadsDim[1] = this->deviceComputeProps.maxGroupSizeY;
+  Properties.maxThreadsDim[2] = this->deviceComputeProps.maxGroupSizeZ;
+
+  // Maximum configured clock frequency of the device in MHz. 
+  Properties.clockRate = 1000 * this->deviceMemoryProps.maxClockRate;
+  // Dev.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>();
+
+  Properties.multiProcessorCount = this->deviceComputeProps.maxTotalGroupSize;
+  //??? Dev.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
+  Properties.l2CacheSize = this->deviceCacheProps.cacheSize;
+  // Dev.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
+
+  // not actually correct
+  Properties.totalConstMem = 0;
+  // ??? Dev.getInfo<CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE>();
+
+  // totally made up 
+  Properties.regsPerBlock = 64;
+
+  Properties.warpSize = this->deviceComputeProps.maxTotalGroupSize;
+
+  // Replicate from OpenCL implementation
+  Properties.maxGridSize[0] = 65536;
+  Properties.maxGridSize[1] = 65536;
+  Properties.maxGridSize[2] = 65536;
+  Properties.memoryClockRate = this->deviceMemoryProps.maxClockRate;
+  Properties.memoryBusWidth = this->deviceMemoryProps.maxBusWidth;
+  Properties.major = 2;
+  Properties.minor = 0;
+
+  Properties.maxThreadsPerMultiProcessor = 10;
+
+  Properties.computeMode = 0;
+  Properties.arch = {};
+
+  Properties.arch.hasGlobalInt32Atomics = 1;
+  Properties.arch.hasSharedInt32Atomics = 1;
+
+  Properties.arch.hasGlobalInt64Atomics = 1;
+  Properties.arch.hasSharedInt64Atomics = 1;
+
+  Properties.arch.hasDoubles = 1;
+
+  Properties.clockInstructionRate = 2465;
+  Properties.concurrentKernels = 1;
+  Properties.pciDomainID = 0;
+  Properties.pciBusID = 0x10;
+  Properties.pciDeviceID = 0x40 + index;
+  Properties.isMultiGpuBoard = 0;
+  Properties.canMapHostMemory = 1;
+  Properties.gcnArch = 0;
+  Properties.integrated = 0;
+  Properties.maxSharedMemoryPerMultiProcessor = 0;
 }
 
 // Copy device properties to given property data structure 
 void LZDevice::copyProperties(hipDeviceProp_t *prop) {
   if (prop)
     std::memcpy(prop, &this->Properties, sizeof(hipDeviceProp_t));
+}
+
+// Get Hip attribute from attribute enum ID 
+int LZDevice::getAttr(int *pi, hipDeviceAttribute_t attr) {
+  auto I = Attributes.find(attr);
+  if (I != Attributes.end()) {
+    *pi = I->second;
+    return 0;
+  } else {
+    return 1;
+  }
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
@@ -1892,6 +1984,7 @@ bool LZDriver::FindHipLZDevices() {
     logDebug("GET DEVICE PROPERTY (via calling zeDeviceGetProperties) {} ", this->deviceType == device_properties.type);
 
     if (this->deviceType == device_properties.type) {
+      // Register HipLZ device in driver
       this->devices.push_back(new LZDevice(deviceId, hDevice, this));
     }
   }

@@ -162,17 +162,19 @@ hipError_t hipDeviceComputeCapability(int *major, int *minor,
 
 hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
                                  int deviceId) {
-  InitializeOpenCL();
+  // InitializeOpenCL();
+  InitializeHipLZ();
   ERROR_CHECK_DEVNUM(deviceId);
 
-  if (CLDeviceById(deviceId).getAttr(pi, attr))
+  // if (CLDeviceById(deviceId).getAttr(pi, attr))
+  if (LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getAttr(pi, attr)) 
     RETURN(hipErrorInvalidValue);
   else
     RETURN(hipSuccess);
 }
 
 hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
-  InitializeOpenCL();
+  // InitializeOpenCL();
 
   // Here we initialize HipLZ device as well, but does not actually return device properties
   // TODO: make a real properties retrieving function
@@ -181,7 +183,8 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 
   ERROR_CHECK_DEVNUM(deviceId);
 
-  CLDeviceById(deviceId).copyProperties(prop);
+  // CLDeviceById(deviceId).copyProperties(prop);
+  LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).copyProperties(prop);
 
   RETURN(hipSuccess);
 }
@@ -193,23 +196,28 @@ hipError_t hipDeviceGetLimit(size_t *pValue, enum hipLimit_t limit) {
 }
 
 hipError_t hipDeviceGetName(char *name, int len, hipDevice_t deviceId) {
-  InitializeOpenCL();
+  // InitializeOpenCL();
+  InitializeHipLZ();
   ERROR_CHECK_DEVNUM(deviceId);
 
-  size_t namelen = strlen(CLDeviceById(deviceId).getName()) + 1;
+  size_t namelen = strlen(LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName()) + 1;
+  // CLDeviceById(deviceId).getName()) + 1;
   if (namelen <= (size_t)len)
-    memcpy(name, CLDeviceById(deviceId).getName(), namelen);
+    memcpy(name, LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName(), namelen);
+  // CLDeviceById(deviceId).getName(), namelen);
   else if (name && (len > 0))
     name[0] = 0;
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
-  InitializeOpenCL();
+  // InitializeOpenCL();
+  InitializeHipLZ();
   ERROR_CHECK_DEVNUM(deviceId);
 
   if (bytes)
-    *bytes = CLDeviceById(deviceId).getGlobalMemSize();
+    *bytes = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getGlobalMemSize();
+  // CLDeviceById(deviceId).getGlobalMemSize();
   RETURN(hipSuccess);
 }
 
