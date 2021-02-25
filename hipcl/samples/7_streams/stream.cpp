@@ -18,6 +18,7 @@ THE SOFTWARE.
 */
 
 #include <iostream>
+#include <mutex>
 #include <cmath>
 
 #include "hip/hip_runtime.h"
@@ -31,6 +32,24 @@ THE SOFTWARE.
 #define THREADS_PER_BLOCK_Z 1
 
 using namespace std;
+
+int StreamCount = 0;
+std::mutex GlobalMtx;
+
+int id1, id2;
+void TestCallback(hipStream_t stream, hipError_t status, void* userData) {
+  float* TransposeData = (float* )userData;
+  for (int i = 0; i < NUM; i ++)
+    TransposeData[i] += 1.0f;
+
+  GlobalMtx.lock();
+  StreamCount ++;
+  GlobalMtx.unlock();
+  
+  // std::cout << "Invoke CALLBACK " << * (int*)userData << std::endl;
+
+  // return 0;
+}
 
 __global__ void matrixTranspose_static_shared(float* out, float* in,
                                               const int width) {
@@ -86,6 +105,11 @@ void MultipleStream(float** data, float* randArray, float** gpuTransposeMatrix,
     for (int i = 0; i < num_streams; i++)
         hipMemcpyAsync(TransposeMatrix[i], gpuTransposeMatrix[i], NUM * sizeof(float),
                        hipMemcpyDeviceToHost, streams[i]);
+
+    // id1 = 0;
+    // id2 = 1;
+    hipStreamAddCallback(streams[0], TestCallback, (void* )TransposeMatrix[0], 0);
+    hipStreamAddCallback(streams[1], TestCallback, (void* )TransposeMatrix[1], 0);
 }
 
 int main() {
@@ -111,6 +135,14 @@ int main() {
 
     hipDeviceSynchronize();
 
+    // Spin on stream counter to wait for the termination of event callbacks
+    int spinVal = 0;
+    do {
+      GlobalMtx.lock();
+      spinVal = StreamCount;
+      GlobalMtx.unlock();
+    } while (spinVal < 2);
+    
     // verify the results
     int errors = 0;
     float eps = 1.0E-6;
