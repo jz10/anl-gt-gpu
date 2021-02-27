@@ -140,7 +140,8 @@ int main() {
   MultipleStream(data, randArray, gpuTransposeMatrix, TransposeMatrix, width);
   
   hipDeviceSynchronize();
-  
+
+/*  
   // Spin on stream counter to wait for the termination of event callbacks
   int spinVal = 0;
   do {
@@ -148,7 +149,8 @@ int main() {
     spinVal = StreamCount;
     GlobalMtx.unlock();
   } while (spinVal < 2);
-  
+*/
+
   // verify the results
   int errors = 0;
   float eps = 1.0E-6;
