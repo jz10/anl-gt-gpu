@@ -1374,6 +1374,9 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
   this->defaultContext = new LZContext(this, hContext);
 
+  // Get the copute queue group ordinal
+  retrieveCmdQueueGroupOrdinal(this->cmdQueueGraphOrdinal);
+      
   // Setup HipLZ device properties
   setupProperties(id);
 }
@@ -1514,6 +1517,31 @@ int LZDevice::getAttr(int *pi, hipDeviceAttribute_t attr) {
   } else {
     return 1;
   }
+}
+
+bool LZDevice::retrieveCmdQueueGroupOrdinal(uint32_t& computeQueueGroupOrdinal) {
+  // Discover all command queue groups
+  uint32_t cmdqueueGroupCount = 0;
+  zeDeviceGetCommandQueueGroupProperties(hDevice, &cmdqueueGroupCount, nullptr);
+
+  if (cmdqueueGroupCount > 32)
+    return false;
+  ze_command_queue_group_properties_t cmdqueueGroupProperties[32];
+  zeDeviceGetCommandQueueGroupProperties(hDevice, &cmdqueueGroupCount, cmdqueueGroupProperties);
+  
+  // Find a command queue type that support compute
+  computeQueueGroupOrdinal = cmdqueueGroupCount;
+  for (uint32_t i = 0; i < cmdqueueGroupCount; ++i ) {
+    if (cmdqueueGroupProperties[i].flags & ZE_COMMAND_QUEUE_GROUP_PROPERTY_FLAG_COMPUTE ) {
+      computeQueueGroupOrdinal = i;
+      break;
+    }
+  }
+  
+  if (computeQueueGroupOrdinal == cmdqueueGroupCount)
+    return false; // no compute queues found
+
+  return true;
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
@@ -2495,6 +2523,9 @@ bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
+
+  status = zeCommandListReset(hCommandList);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
   
   return true;
 }

@@ -542,6 +542,8 @@ protected:
   // The Hip attribute map
   std::map<hipDeviceAttribute_t, int> Attributes;
 
+  uint32_t cmdQueueGraphOrdinal;
+  
 public:
   LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver);
   
@@ -594,10 +596,15 @@ public:
 
   // Get HipLZ device name
   const char *getName() const { return Properties.name; };
+
+  // Get command group ordinal
+  uint32_t GetCmdQueueGroupOrdinal() { return this->cmdQueueGraphOrdinal; };
   
 protected:
   // Setup HipLZ device properties 
   void setupProperties(int index);
+
+  bool retrieveCmdQueueGroupOrdinal(uint32_t& ordinal);
 };
 
 class LZKernel : public ClKernel {
@@ -912,7 +919,7 @@ public:
     this->hCommandList = hCommandList_;
     this->shared_buf = nullptr;
   };
-  LZCommandList(LZContext* lzContext_, bool immediate = false);
+  LZCommandList(LZContext* lzContext_, bool immediate = true); // false);
 
   // Get command list handler
   ze_command_list_handle_t GetCommandListHandle() { return this->hCommandList; }
