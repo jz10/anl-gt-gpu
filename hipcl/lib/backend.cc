@@ -1374,6 +1374,9 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
   this->defaultContext = new LZContext(this, hContext);
 
+  // Get the copute queue group ordinal
+  retrieveCmdQueueGroupOrdinal(this->cmdQueueGraphOrdinal);
+      
   // Setup HipLZ device properties
   setupProperties(id);
 }
@@ -1431,7 +1434,7 @@ void LZDevice::setupProperties(int index) {
     Properties.name[255] = 0;
   } else {
     strncpy(Properties.name, this->deviceProps.name, ZE_MAX_DEVICE_NAME);
-    Properties.name[ZE_MAX_DEVICE_NAME] = 0;
+    Properties.name[ZE_MAX_DEVICE_NAME-1] = 0;
   }
 
   // Get total device memory
@@ -1514,6 +1517,31 @@ int LZDevice::getAttr(int *pi, hipDeviceAttribute_t attr) {
   } else {
     return 1;
   }
+}
+
+bool LZDevice::retrieveCmdQueueGroupOrdinal(uint32_t& computeQueueGroupOrdinal) {
+  // Discover all command queue groups
+  uint32_t cmdqueueGroupCount = 0;
+  zeDeviceGetCommandQueueGroupProperties(hDevice, &cmdqueueGroupCount, nullptr);
+
+  if (cmdqueueGroupCount > 32)
+    return false;
+  ze_command_queue_group_properties_t cmdqueueGroupProperties[32];
+  zeDeviceGetCommandQueueGroupProperties(hDevice, &cmdqueueGroupCount, cmdqueueGroupProperties);
+  
+  // Find a command queue type that support compute
+  computeQueueGroupOrdinal = cmdqueueGroupCount;
+  for (uint32_t i = 0; i < cmdqueueGroupCount; ++i ) {
+    if (cmdqueueGroupProperties[i].flags & ZE_COMMAND_QUEUE_GROUP_PROPERTY_FLAG_COMPUTE ) {
+      computeQueueGroupOrdinal = i;
+      break;
+    }
+  }
+  
+  if (computeQueueGroupOrdinal == cmdqueueGroupCount)
+    return false; // no compute queues found
+
+  return true;
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
@@ -2024,19 +2052,26 @@ static void * CallbackExecutor(void* data) {
 static void * EventMonitor(void* data) {
   LZQueue* lzQueue = (LZQueue* )data;
   while (lzQueue->GetContext() != nullptr) {
-    while (LZEvent* event = lzQueue->GetPendingEvent()) {
-      // Wait til event is synchronized 
-      event->wait();
-    }
-
     // Invoke callbacks 
-    hipStreamCallbackData* callback_data = new hipStreamCallbackData{};
-    while (lzQueue->GetCallback(callback_data)) {
-      pthread_t threadId;
-      // Invoke call back asynchronously  
-      pthread_create(&threadId, 0, CallbackExecutor, (void* )callback_data);
+    hipStreamCallbackData callback_data;
+    while (lzQueue->GetCallback(&callback_data)) {
+      ze_result_t status;
+      status = zeEventHostSynchronize(callback_data.waitEvent, UINT64_MAX );
+      //LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostSynchronize FAILED with return code ", status);
+      callback_data.Callback(callback_data.Stream, lzConvertResult(status), callback_data.UserData);
+      status = zeEventHostSignal(callback_data.signalEvent);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostSignal FAILED with return code ", status);
+      status = zeEventHostSynchronize(callback_data.waitEvent2, UINT64_MAX );
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostSynchronize FAILED with return code ", status);
+      status = zeEventDestroy(callback_data.waitEvent);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventDestroy FAILED with return code ", status);
+      status = zeEventDestroy(callback_data.signalEvent);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventDestroy FAILED with return code ", status);
+      status = zeEventDestroy(callback_data.waitEvent2);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventDestroy FAILED with return code ", status);
+      status = zeEventPoolDestroy(callback_data.eventPool);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolDestroy FAILED with return code ", status);
     }
-
     // Release processor 
     pthread_yield();
   }
@@ -2099,15 +2134,16 @@ LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
 
 // Queue synchronous support                                                                           
 bool LZQueue::finish() {
+  std::lock_guard<std::mutex> Lock(QueueMutex);
   if (this->lzContext == nullptr) {
     HIP_PROCESS_ERROR_MSG("HipLZ LZQueue was not associated with a LZContext!", hipErrorInitializationError);
   }
-  // Synchronize host with device kernel execution 
-  ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT64_MAX);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueSynchronize FAILED with return code ", status);
-  logDebug("LZ COMMAND EXECUTION FINISH via calling zeCommandQueueSynchronize {} ", status);
+  return defaultCmdList->finish();
+  //ze_result_t status = zeCommandQueueSynchronize(hQueue, UINT64_MAX);
+  //LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueSynchronize FAILED with return code ", status);
+  //logDebug("LZ COMMAND EXECUTION FINISH via calling zeCommandQueueSynchronize {} ", status);
   
-  return true;
+  //return true;
 }
 
 // Get OpenCL command queue  
@@ -2124,17 +2160,41 @@ bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
 bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   std::lock_guard<std::mutex> Lock(QueueMutex);
 
-  int err;
-  if (LastEvent == nullptr) {
+  hipStreamCallbackData Data; //  = new hipStreamCallbackData{};
+  ze_result_t status;
+  ze_event_pool_desc_t ep_desc = {};
+  ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
+  ep_desc.count = 3;
+  ep_desc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
+  ze_event_desc_t ev_desc = {};
+  ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
+  ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
+  ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
+/*  if (LastEvent == nullptr) {
     callback(this, hipSuccess, userData);
     return true;
-  }
+  }*/
 
-  hipStreamCallbackData Data; //  = new hipStreamCallbackData{};
+  ze_device_handle_t dev = GetContext()->GetDevice()->GetDeviceHandle();
+  status = zeEventPoolCreate(GetContext()->GetContextHandle(), &ep_desc, 1, &dev, &(Data.eventPool));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
+  status = zeEventCreate(Data.eventPool, &ev_desc, &(Data.waitEvent));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+  status = zeEventCreate(Data.eventPool, &ev_desc, &(Data.signalEvent));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+  status = zeEventCreate(Data.eventPool, &ev_desc, &(Data.waitEvent2));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
   Data.Stream = this;
   Data.Callback = callback;
   Data.UserData = userData;
   Data.Status = hipSuccess;
+  ze_command_list_handle_t list = defaultCmdList->GetCommandListHandle();
+  status = zeCommandListAppendSignalEvent(list, Data.waitEvent);
+  LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendSignalEvent FAILED with return code ", status);
+  status = zeCommandListAppendBarrier(list, NULL, 1, &(Data.signalEvent));
+  LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendBarrier FAILED with return code ", status);
+  status = zeCommandListAppendSignalEvent(list, Data.waitEvent2);
+  LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendSignalEvent FAILED with return code ", status);
   // err = ::clSetEventCallback(LastEvent, CL_COMPLETE, notifyOpenCLevent, Data);
   // if (err != CL_SUCCESS)
   //   logError("clSetEventCallback failed with error {}\n", err);
@@ -2453,48 +2513,60 @@ uint64_t LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue) {
   return ret;
 }
 
+bool LZCommandList::finish() {
+  ze_result_t status = zeCommandListAppendSignalEvent(hCommandList, finishEvent);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendSignalEvent FAILED with return code ", status);
+  status = zeEventHostSynchronize(finishEvent, UINT64_MAX);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostSynchronize FAILED with return code ", status);
+  status = zeEventHostReset(finishEvent);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostReset FAILED with return code ", status);
+  return true;
+ }
+
 // Execute HipLZ command list  
 bool LZCommandList::Execute(LZQueue* lzQueue) {
   // Finished appending commands (typically done on another thread)
-  ze_result_t status = zeCommandListClose(hCommandList);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
+//  ze_result_t status = zeCommandListClose(hCommandList);
+//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
 
-  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
+//  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
   
   // Execute command list in command queue
-  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
+//  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
+//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
 
-  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
+//  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
 
   // Synchronize host with device kernel execution
-  status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT64_MAX);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueSynchronize FAILED with return code ", status);
-  
-  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
+  return finish();
+ 
+//  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
   
   // Reset (recycle) command list for new commands
-  status = zeCommandListReset(hCommandList);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
+//  status = zeCommandListReset(hCommandList);
+//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
 
-  logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
+//  logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
   
-  return true;
+//  return true;
 }
 
 // Execute HipLZ command list asynchronously
 bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
   // Finished appending commands (typically done on another thread)  
-  ze_result_t status = zeCommandListClose(hCommandList);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
+//  ze_result_t status = zeCommandListClose(hCommandList);
+//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
 
-  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
+//  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
 
   // Execute command list in command queue  
-  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
+//  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
+//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
 
-  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
+//  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
+
+//  status = zeCommandListReset(hCommandList);
+//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
   
   return true;
 }
@@ -2538,6 +2610,20 @@ LZCommandList::LZCommandList(LZContext* lzContext_, bool immediate) {
     LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListCreate FAILED with return code ", status);
     logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreate {} ", status);
   }
+  ze_event_pool_desc_t ep_desc = {};
+  ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
+  ep_desc.count = 1;
+  ep_desc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
+  ze_event_desc_t ev_desc = {};
+  ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
+  ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
+  ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
+  ze_result_t status;
+  ze_device_handle_t dev = lzContext_->GetDevice()->GetDeviceHandle();
+  status = zeEventPoolCreate(lzContext_->GetContextHandle(), &ep_desc, 1, &dev, &(this->eventPool));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
+  status = zeEventCreate(this->eventPool, &ev_desc, &(this->finishEvent));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
 }
 
 int LZExecItem::setupAllArgs(LZKernel *kernel) {

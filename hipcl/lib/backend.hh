@@ -249,6 +249,10 @@ public:
 
 struct hipStreamCallbackData {
   hipStream_t Stream;
+  ze_event_pool_handle_t eventPool;
+  ze_event_handle_t waitEvent;
+  ze_event_handle_t signalEvent;
+  ze_event_handle_t waitEvent2;
   hipError_t Status;
   void *UserData;
   hipStreamCallback_t Callback;
@@ -542,6 +546,8 @@ protected:
   // The Hip attribute map
   std::map<hipDeviceAttribute_t, int> Attributes;
 
+  uint32_t cmdQueueGraphOrdinal;
+  
 public:
   LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver);
   
@@ -594,10 +600,15 @@ public:
 
   // Get HipLZ device name
   const char *getName() const { return Properties.name; };
+
+  // Get command group ordinal
+  uint32_t GetCmdQueueGroupOrdinal() { return this->cmdQueueGraphOrdinal; };
   
 protected:
   // Setup HipLZ device properties 
   void setupProperties(int index);
+
+  bool retrieveCmdQueueGroupOrdinal(uint32_t& ordinal);
 };
 
 class LZKernel : public ClKernel {
@@ -900,6 +911,8 @@ protected:
   // Current associated HipLZ context
   LZContext* lzContext;
 
+  ze_event_pool_handle_t eventPool;
+  ze_event_handle_t finishEvent;
   // HipLZ command list handler
   ze_command_list_handle_t hCommandList;
 
@@ -911,8 +924,22 @@ public:
     this->lzContext = lzContext_;
     this->hCommandList = hCommandList_;
     this->shared_buf = nullptr;
+    ze_event_pool_desc_t ep_desc = {};
+    ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
+    ep_desc.count = 1;
+    ep_desc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
+    ze_event_desc_t ev_desc = {};
+    ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
+    ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
+    ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
+    ze_result_t status;
+    ze_device_handle_t dev = lzContext_->GetDevice()->GetDeviceHandle();
+    status = zeEventPoolCreate(lzContext_->GetContextHandle(), &ep_desc, 1, &dev, &(this->eventPool));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
+    status = zeEventCreate(this->eventPool, &ev_desc, &(this->finishEvent));
+    LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
   };
-  LZCommandList(LZContext* lzContext_, bool immediate = false);
+  LZCommandList(LZContext* lzContext_, bool immediate = true); // false);
 
   // Get command list handler
   ze_command_list_handle_t GetCommandListHandle() { return this->hCommandList; }
@@ -934,6 +961,8 @@ public:
 
   // Execute HipLZ write global timestamp  
   uint64_t ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue);
+
+  bool finish();
 
   // Execute HipLZ command list 
   bool Execute(LZQueue* lzQueue);
