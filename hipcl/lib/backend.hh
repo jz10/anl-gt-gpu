@@ -920,7 +920,7 @@ protected:
   void* shared_buf;
 
 public:
-  LZCommandList(LZContext* lzContext_, ze_command_list_handle_t hCommandList_) {
+  /*LZCommandList(LZContext* lzContext_, ze_command_list_handle_t hCommandList_) {
     this->lzContext = lzContext_;
     this->hCommandList = hCommandList_;
     this->shared_buf = nullptr;
@@ -938,8 +938,12 @@ public:
     LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
     status = zeEventCreate(this->eventPool, &ev_desc, &(this->finishEvent));
     LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
-  };
-  LZCommandList(LZContext* lzContext_, bool immediate = true); // false);
+  };*/
+
+  LZCommandList(LZContext* lzContext);
+
+  // Create HipLZ command list
+  static LZCommandList* CreateCmdList(LZContext* lzContext, bool immediate = true);
 
   // Get command list handler
   ze_command_list_handle_t GetCommandListHandle() { return this->hCommandList; }
@@ -962,17 +966,67 @@ public:
   // Execute HipLZ write global timestamp  
   uint64_t ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue);
 
-  bool finish();
-
   // Execute HipLZ command list 
-  bool Execute(LZQueue* lzQueue);
+  virtual bool Execute(LZQueue* lzQueue);
 
   // Execute HipLZ command list asynchronously
-  bool ExecuteAsync(LZQueue* lzQueue);
+  virtual bool ExecuteAsync(LZQueue* lzQueue);
+
+  // Synchronize host with device kernel execution
+  virtual bool finish();
 
 protected:
   // Get the potential signal event 
   LZEvent* GetSignalEvent(LZQueue* lzQueue);
+};
+
+// The standard level-0 command list
+class LZStdCommandList : public LZCommandList {
+public:
+  LZStdCommandList(LZContext* lzContext) : LZCommandList(lzContext) {
+    initializeCmdList();
+  };
+  
+  // Execute HipLZ command list
+  virtual bool Execute(LZQueue* lzQueue);
+
+  // Execute HipLZ command list asynchronously
+  virtual bool ExecuteAsync(LZQueue* lzQueue);
+
+  // Synchronize host with device kernel execution
+  virtual bool finish();
+
+protected:
+  // Initialize standard level-0 command list
+  bool initializeCmdList();
+};
+
+// The immedate level-0 command list
+class LZImmCommandList : public LZCommandList {
+protected:
+  // The per-command list event pool that assists synchronization for immediate command list
+  ze_event_pool_handle_t eventPool;
+
+  // The finish event that denotes the finish of current command list items
+  ze_event_handle_t finishEvent;
+
+public:
+  LZImmCommandList(LZContext* lzContext) : LZCommandList(lzContext) {
+    initializeCmdList();
+  };
+  
+  // Execute HipLZ command list
+  virtual bool Execute(LZQueue* lzQueue);
+
+  // Execute HipLZ command list asynchronously
+  virtual bool ExecuteAsync(LZQueue* lzQueue);
+
+  // Synchronize host with device kernel execution
+  virtual bool finish();
+
+protected:
+  // Initialize standard level-0 command list
+  bool initializeCmdList();
 };
 
 class LZQueue : public ClQueue {

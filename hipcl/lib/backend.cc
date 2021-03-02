@@ -1628,39 +1628,14 @@ LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 
   this->lzDevice = D;
   this->hContext = hContext_;
   this->lzModule = 0;
-  
-  // Create command list 
-  // ze_command_queue_desc_t cqDesc;
-  // cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;                                    
-  // cqDesc.pNext = nullptr;
-  // cqDesc.ordinal = 0;
-  // cqDesc.index = 0;
-  //  cqDesc.flags = 0; // default hehaviour
-  // cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
-  // cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
-  
-  // ze_command_list_handle_t hCommandList;
-  // ze_result_t status = zeCommandListCreateImmediate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hCommandList);
-  // if (status != ZE_RESULT_SUCCESS) {
-  //   throw InvalidLevel0Initialization("HipLZ zeCommandListCreate FAILED with return code " + std::to_string(status));
-    // }
-  // Create the Level-0 queue
-  // ze_command_queue_handle_t hQueue;
-  // status = zeCommandQueueCreate(this->hContext, lzDevice->GetDeviceHandle(), &cqDesc, &hQueue);
 
   // TODO: just use DefaultQueue to maintain the context local queu and command list?
   // Create a command list for default command queue
-  this->lzCommandList = new LZCommandList(this);
+  this->lzCommandList = LZCommandList::CreateCmdList(this); 
   // Create the default command queue
   this->lzQueue = this->DefaultQueue = new LZQueue(this, this->lzCommandList);
   // Create the default event pool
   this->defaultEventPool = new LZEventPool(this);
-
-  // if (status != ZE_RESULT_SUCCESS) {
-  //   throw InvalidLevel0Initialization("HipLZ zeCommandQueueCreate with return code " + std::to_string(status));
-  //  }
-  // logDebug("LZ COMMAND LIST {} ", status);
-  // this->lzCommandList = new LZCommandList(this, hCommandList);
 }
 
 bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
@@ -2113,7 +2088,7 @@ void LZQueue::initializeQueue(LZContext* lzContext, bool needDefaultCmdList) {
   logDebug("LZ QUEUE INITIALIZATION via calling zeCommandQueueCreate {} ", status);
 
   if (needDefaultCmdList) {
-    this->defaultCmdList = new LZCommandList(this->lzContext);
+    this->defaultCmdList = LZCommandList::CreateCmdList(this->lzContext);
   }
 }
 
@@ -2407,13 +2382,81 @@ LZEvent* LZQueue::GetPendingEvent() {
   return res;
 }
     
-// Get the potential signal event 
-LZEvent* LZCommandList::GetSignalEvent(LZQueue* lzQueue) {
-  // LZEvent* lzEvent = lzQueue->GetAndClearEvent();
-  // if (lzEvent != nullptr) {
-  //   lzEvent->GetEventHandler();
-  // }
+LZCommandList::LZCommandList(LZContext* lzContext_) {
+  this->lzContext = lzContext_;
 
+  // Initialize the shared memory buffer
+  this->shared_buf = this->lzContext->allocate(32, 8, LZMemoryType::Shared);
+
+  // Initialize the uint64_t part as 0
+   * (uint64_t* )this->shared_buf = 0;
+}
+
+// Initialize stand Level-0 command list
+bool LZStdCommandList::initializeCmdList() {
+  // Create the command list
+  ze_command_list_desc_t clDesc;
+  clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;
+  clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour 
+  clDesc.commandQueueGroupOrdinal = 0;
+  clDesc.pNext = nullptr;
+  ze_result_t status = zeCommandListCreate(lzContext->GetContextHandle(), 
+					   lzContext->GetDevice()->GetDeviceHandle(),
+					   &clDesc, &hCommandList);
+
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListCreate FAILED with return code ", status);
+  logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreate {} ", status);
+  
+  return true;
+}
+
+// Initialize immediate Level-0 command list
+bool LZImmCommandList::initializeCmdList() {
+  // Create command list via immidiately associated with a queue 
+  ze_command_queue_desc_t cqDesc;
+  cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
+  cqDesc.pNext = nullptr;
+  cqDesc.ordinal = 0;
+  cqDesc.index = 0;
+  cqDesc.flags = ZE_COMMAND_QUEUE_FLAG_EXPLICIT_ONLY; // 0;                                            
+  cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
+  cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
+
+  ze_result_t status = zeCommandListCreateImmediate(this->lzContext->GetContextHandle(),
+						    this->lzContext->GetDevice()->GetDeviceHandle(),
+						    &cqDesc, &hCommandList);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListCreate FAILED with return code ", status);
+  logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreateImmediate {} ", status);
+
+  // Initialize the internal event pool and finish event  
+  ze_event_pool_desc_t ep_desc = {};
+  ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
+  ep_desc.count = 1;
+  ep_desc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
+  ze_event_desc_t ev_desc = {};
+  ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
+  ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
+  ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
+  ze_device_handle_t dev = lzContext->GetDevice()->GetDeviceHandle();
+  status = zeEventPoolCreate(lzContext->GetContextHandle(), &ep_desc, 1, &dev, &(this->eventPool));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
+  status = zeEventCreate(this->eventPool, &ev_desc, &(this->finishEvent));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+
+  return true;
+}
+
+// Create HipLZ command list 
+LZCommandList* LZCommandList::CreateCmdList(LZContext* lzContext, bool immediate) {
+  if (immediate)
+    return new LZImmCommandList(lzContext);
+  else 
+    return new LZStdCommandList(lzContext);
+}
+
+// Get the potential signal event
+// TODO: depracate this? 
+LZEvent* LZCommandList::GetSignalEvent(LZQueue* lzQueue) {
   return lzQueue->CreateAndMonitorEvent(nullptr);
 }
 
@@ -2421,7 +2464,8 @@ LZEvent* LZCommandList::GetSignalEvent(LZQueue* lzQueue) {
 bool LZCommandList::ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments) {
   // Set group size
   ze_result_t status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
-					    Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
+					    Arguments->BlockDim.x, Arguments->BlockDim.y, 
+					    Arguments->BlockDim.z);
   LZ_PROCESS_ERROR_MSG("could not set group size! ", status);
 
   logDebug("LZ KERNEL EXECUTION via calling zeKernelSetGroupSize {} ", status);
@@ -2496,14 +2540,6 @@ bool LZCommandList::ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size
 
 // Execute HipLZ write global timestamp
 uint64_t LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue) {
-  // Get the event for recording time stamp
-  // LZEvent* tsEvent = GetTimeStampEvent(lzQueue);
-  // if (!tsEvent) {
-  //   logError("LZ Time Elapse Event was not set ");
-
-  //   return false;
-  // }
-		 
   ze_result_t status = zeCommandListAppendWriteGlobalTimestamp(hCommandList, (uint64_t*)(shared_buf), nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendWriteGlobalTimestamp FAILED with return code ", status);
   Execute(lzQueue);
@@ -2514,137 +2550,101 @@ uint64_t LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue) {
 }
 
 bool LZCommandList::finish() {
+  HIP_PROCESS_ERROR_MSG("HipLZ does not support LZCommandList::finish! ", hipErrorNotSupported);
+  return true;
+}
+
+// Synchronize host with device kernel execution 
+bool LZStdCommandList::finish() {
+  // Do nothing here
+  return true;
+}
+
+// Synchronize host with device kernel execution 
+bool LZImmCommandList::finish() {
   ze_result_t status = zeCommandListAppendSignalEvent(hCommandList, finishEvent);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendSignalEvent FAILED with return code ", status);
   status = zeEventHostSynchronize(finishEvent, UINT64_MAX);
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostSynchronize FAILED with return code ", status);
   status = zeEventHostReset(finishEvent);
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostReset FAILED with return code ", status);
+  
   return true;
  }
 
-// Execute HipLZ command list  
 bool LZCommandList::Execute(LZQueue* lzQueue) {
-  // Finished appending commands (typically done on another thread)
-//  ze_result_t status = zeCommandListClose(hCommandList);
-//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
-
-//  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
-  
-  // Execute command list in command queue
-//  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
-//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
-
-//  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
-
-  // Synchronize host with device kernel execution
-  return finish();
- 
-//  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
-  
-  // Reset (recycle) command list for new commands
-//  status = zeCommandListReset(hCommandList);
-//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
-
-//  logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
-  
-//  return true;
+  HIP_PROCESS_ERROR_MSG("HipLZ does not support LZCommandList::Execute! ", hipErrorNotSupported);
+  return true;
 }
 
-// Execute HipLZ command list asynchronously
-bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
-  // Finished appending commands (typically done on another thread)  
-//  ze_result_t status = zeCommandListClose(hCommandList);
-//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
+// Execute HipLZ command list in standard command list 
+bool LZStdCommandList::Execute(LZQueue* lzQueue) {
+  // Finished appending commands (typically done on another thread)
+  ze_result_t status = zeCommandListClose(hCommandList);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListClose FAILED with return code ", status);
 
-//  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandListClose {} ", status);
+  
+  // Execute command list in command queue
+  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
 
-  // Execute command list in command queue  
-//  status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
-//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
 
-//  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
+  
+  // Reset (recycle) command list for new commands
+  status = zeCommandListReset(hCommandList);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
 
-//  status = zeCommandListReset(hCommandList);
-//  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
+  logDebug("LZ KERNEL EXECUTION via calling zeCommandListReset {} ", status);
   
   return true;
 }
 
-LZCommandList::LZCommandList(LZContext* lzContext_, bool immediate) {
-  this->lzContext = lzContext_;
 
-  // Initialize the shared memory buffer
-  this->shared_buf = this->lzContext->allocate(32, 8, LZMemoryType::Shared);
-  // Initialize the uint64_t part as 0 
-  * (uint64_t* )this->shared_buf = 0;
+// Execute HipLZ command list in immediate command list 
+bool LZImmCommandList::Execute(LZQueue* lzQueue) {
+  // Synchronize host with device kernel execution
+  return finish();
+}
 
-  if (immediate) {
-    // Create command list via immidiately associated with a queue
-    ze_command_queue_desc_t cqDesc;
-    cqDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC;
-    cqDesc.pNext = nullptr;
-    cqDesc.ordinal = 0;
-    cqDesc.index = 0;
-    cqDesc.flags = ZE_COMMAND_QUEUE_FLAG_EXPLICIT_ONLY; // 0;
-    cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
-    cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL; 
+bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
+  HIP_PROCESS_ERROR_MSG("HipLZ does not support LZCommandList::ExecuteAsync! ", hipErrorNotSupported);
+  return true;
+}
 
-    ze_result_t status = zeCommandListCreateImmediate(this->lzContext->GetContextHandle(),
-						      this->lzContext->GetDevice()->GetDeviceHandle(),
-						      &cqDesc, &hCommandList);
-    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListCreate FAILED with return code ", status);
-    logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreateImmediate {} ", status);
-  } else {
-    // Default command list creation, i.e. w/o immediately associated with a  queue
-    
-    // Create the command list                                                
-    ze_command_list_desc_t clDesc;
-    clDesc.stype = ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC;
-    clDesc.flags = ZE_COMMAND_LIST_FLAG_EXPLICIT_ONLY; // default hehaviour 
-    clDesc.commandQueueGroupOrdinal = 0;
-    clDesc.pNext = nullptr;
-    ze_result_t status = zeCommandListCreate(lzContext->GetContextHandle(), lzContext->GetDevice()->GetDeviceHandle(),
-					     &clDesc, &hCommandList);
-    
-    LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListCreate FAILED with return code ", status);
-    logDebug("LZ COMMAND LIST CREATION via calling zeCommandListCreate {} ", status);
-  }
-  ze_event_pool_desc_t ep_desc = {};
-  ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
-  ep_desc.count = 1;
-  ep_desc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
-  ze_event_desc_t ev_desc = {};
-  ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
-  ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
-  ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-  ze_result_t status;
-  ze_device_handle_t dev = lzContext_->GetDevice()->GetDeviceHandle();
-  status = zeEventPoolCreate(lzContext_->GetContextHandle(), &ep_desc, 1, &dev, &(this->eventPool));
-  LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
-  status = zeEventCreate(this->eventPool, &ev_desc, &(this->finishEvent));
-  LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+// Execute HipLZ command list asynchronously in standard command list
+bool LZStdCommandList::ExecuteAsync(LZQueue* lzQueue) {
+  HIP_PROCESS_ERROR_MSG("HipLZ does not support LZStdCommandList::ExecuteAsync! ", hipErrorNotSupported);
+}
+
+// Execute HipLZ command list asynchronously in immediate command list
+bool LZImmCommandList::ExecuteAsync(LZQueue* lzQueue) {
+  return true;
 }
 
 int LZExecItem::setupAllArgs(LZKernel *kernel) {
   OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
   size_t NumLocals = 0;
- 
+  int LastArgIdx = -1;
+  
   for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
-    if (FuncInfo->ArgTypeInfo[i].space == OCLSpace::Local)
+    if (FuncInfo->ArgTypeInfo[i].space == OCLSpace::Local) {
       ++ NumLocals;
+    }
   }
   // there can only be one dynamic shared mem variable, per cuda spec 
   assert(NumLocals <= 1);
   
-  if ((OffsetsSizes.size()+NumLocals) != FuncInfo->ArgTypeInfo.size()) {
+  if ((OffsetsSizes.size() + NumLocals) != FuncInfo->ArgTypeInfo.size()) {
     logError("Some arguments are still unset\n");
     return CL_INVALID_VALUE;
   }
 
   if (OffsetsSizes.size() == 0)
     return CL_SUCCESS;
-
+  
   std::sort(OffsetsSizes.begin(), OffsetsSizes.end());
   if ((std::get<0>(OffsetsSizes[0]) != 0) ||
       (std::get<1>(OffsetsSizes[0]) == 0)) {
@@ -2670,12 +2670,12 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
   const unsigned char *start = ArgData.data();
   void *p;
   int err;
-  for (cl_uint i = 0; i < OffsetsSizes.size(); ++i) {
+  for (cl_uint i = 0; i < OffsetsSizes.size(); ++ i) {
     OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
     logDebug("ARG {}: OS[0]: {} OS[1]: {} \n      TYPE {} SPAC {} SIZE {}\n", i,
              std::get<0>(OffsetsSizes[i]), std::get<1>(OffsetsSizes[i]),
              (unsigned)ai.type, (unsigned)ai.space, ai.size);
-
+    
     if (ai.type == OCLType::Pointer) {
       // TODO: sync with ExecItem's solution   
       assert(ai.size == sizeof(void *));
@@ -2708,6 +2708,15 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
     }
   }
 
+  // Setup the kernel argument's value related to dynamically sized share memory
+  // TODO: get exact size of share memory?
+  if (NumLocals == 1) {
+    ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
+						  FuncInfo->ArgTypeInfo.size() - 1,
+						  16777216, nullptr); 
+    logDebug("LZ set dynamically sized share memory related argument via calling zeKernelSetArgumentValue {} ", status);
+    }
+  
   return CL_SUCCESS;
 }
 
