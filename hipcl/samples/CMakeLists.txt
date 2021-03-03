@@ -70,7 +70,7 @@ set(SAMPLES
     3_shared_memory
     4_shfl
     5_2dshfl
-#    6_dynamic_shared
+    6_dynamic_shared
     hipInfo
     7_streams
     9_unroll

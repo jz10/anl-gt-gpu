@@ -2709,13 +2709,12 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
   }
 
   // Setup the kernel argument's value related to dynamically sized share memory
-  // TODO: get exact size of share memory?
   if (NumLocals == 1) {
     ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
 						  FuncInfo->ArgTypeInfo.size() - 1,
-						  16777216, nullptr); 
+						  SharedMem, nullptr); 
     logDebug("LZ set dynamically sized share memory related argument via calling zeKernelSetArgumentValue {} ", status);
-    }
+  }
   
   return CL_SUCCESS;
 }
