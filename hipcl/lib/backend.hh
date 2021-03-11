@@ -611,6 +611,8 @@ protected:
   bool retrieveCmdQueueGroupOrdinal(uint32_t& ordinal);
 };
 
+class LZModule;
+
 class LZKernel : public ClKernel {
 protected:
   // HipLZ kernel handle
@@ -619,9 +621,8 @@ protected:
   OCLFuncInfo *FuncInfo;
 
 public: 
-  LZKernel(ze_kernel_handle_t hKernel_, OCLFuncInfo *FuncInfo_) : FuncInfo(FuncInfo_) {
-    this->hKernel = hKernel_;
-  }
+  LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* FuncInfo_);
+  ~LZKernel();
 
   ze_kernel_handle_t GetKernelHandle() { return this->hKernel; }
 
@@ -639,12 +640,11 @@ protected:
   std::map<std::string, LZKernel* > kernels;
 
 public:
-  LZModule(ze_module_handle_t hModule_) {
-    this->hModule = hModule_;
-  };
-
+  LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize);
+  ~LZModule();
+  
   // Get HipLZ module handle  
-  ze_module_handle_t GethModuleHandle() { return this->hModule; }
+  ze_module_handle_t GetModuleHandle() { return this->hModule; }
 
   // Create HipLZ kernel via function name
   void CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInfos);
@@ -768,7 +768,7 @@ protected:
 public:
   LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0), lzCommandList(0), 
 				       lzQueue(0), defaultEventPool(0) {}
-  LZContext(LZDevice* D, ze_context_handle_t hContext_);  
+  LZContext(LZDevice* dev);  
 
   // Create SPIR-V module
   bool CreateModule(uint8_t* moduleIL, size_t ilSize, std::string funcName);

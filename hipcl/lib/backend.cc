@@ -1363,16 +1363,7 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   status = zeDeviceGetCacheProperties(this->hDevice, &count, &(this->deviceCacheProps));
 
   // Create HipLZ context  
-  ze_context_desc_t ctxtDesc = {
-    ZE_STRUCTURE_TYPE_CONTEXT_DESC,
-    nullptr,
-    0
-  };
-  ze_context_handle_t hContext;
-  status = zeContextCreate(this->driver->GetDriverHandle(), &ctxtDesc, &hContext);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
-  logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
-  this->defaultContext = new LZContext(this, hContext);
+  this->defaultContext = new LZContext(this);
 
   // Get the copute queue group ordinal
   retrieveCmdQueueGroupOrdinal(this->cmdQueueGraphOrdinal);
@@ -1624,9 +1615,17 @@ hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes) {
   return hipSuccess;
 }
 
-LZContext::LZContext(LZDevice* D, ze_context_handle_t hContext_) : ClContext(0, 0) {
-  this->lzDevice = D;
-  this->hContext = hContext_;
+LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
+  this->lzDevice = dev;
+  ze_context_desc_t ctxtDesc = {
+    ZE_STRUCTURE_TYPE_CONTEXT_DESC,
+    nullptr,
+    0
+  };
+  ze_result_t status = zeContextCreate(dev->GetDriverHandle(), &ctxtDesc, &this->hContext);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
+  logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
+  
   this->lzModule = 0;
 
   // TODO: just use DefaultQueue to maintain the context local queu and command list?
@@ -1655,23 +1654,8 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
   logDebug("LZ PARSE SPIR {} ", funcName);
  
   if (!this->lzModule) {
-    // Create module 
-    ze_module_desc_t moduleDesc = {
-      ZE_STRUCTURE_TYPE_MODULE_DESC,
-      nullptr,
-      ZE_MODULE_FORMAT_IL_SPIRV,
-      ilSize,
-      funcIL,
-      nullptr,
-      nullptr
-    };
-    ze_module_handle_t hModule;
-    ze_result_t status = zeModuleCreate(hContext, lzDevice->GetDeviceHandle(), &moduleDesc, &hModule, nullptr);
-    LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
-
-    logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
     // Create module object
-    this->lzModule = new LZModule(hModule);
+    this->lzModule = new LZModule(this, funcIL, ilSize); 
   }
   
   // Create kernel object
@@ -2723,28 +2707,40 @@ bool LZExecItem::launch(LZKernel *Kernel) {
   return Stream->launch(Kernel, this) == hipSuccess;  
 };
 
+LZModule::LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) {
+  // Create module   
+  ze_module_desc_t moduleDesc = {
+    ZE_STRUCTURE_TYPE_MODULE_DESC,
+    nullptr,
+    ZE_MODULE_FORMAT_IL_SPIRV,
+    ilSize,
+    funcIL,
+    nullptr,
+    nullptr
+  };
+  ze_result_t status = zeModuleCreate(lzContext->GetContextHandle(),
+				      lzContext->GetDevice()->GetDeviceHandle(),
+				      &moduleDesc, &this->hModule, nullptr);
+  LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
+
+  logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
+}
+
+LZModule::~LZModule() {
+  zeModuleDestroy(this->hModule);
+  // TODO: destroy kernels
+}
+
 // Create Level-0 kernel 
 void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInfos) {
   if (this->kernels.find(funcName) != this->kernels.end())
     return;
 
-  // Create kernel
-  ze_kernel_desc_t kernelDesc = {
-    ZE_STRUCTURE_TYPE_KERNEL_DESC,
-    nullptr,
-    0, // flags 
-    funcName.c_str()
-  };
-  ze_kernel_handle_t hKernel;
-  ze_result_t status = zeKernelCreate(this->hModule, &kernelDesc, &hKernel);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeKernelCreate FAILED with return code ", status);
-
-  logDebug("LZ KERNEL CREATION via calling zeKernelCreate {} ", status);
-  
   // Register kernel
   if (FuncInfos.find(funcName) == FuncInfos.end())
     HIP_PROCESS_ERROR_MSG("HipLZ could not find function information ", hipErrorInitializationError);
-  this->kernels[funcName] = new LZKernel(hKernel, FuncInfos[funcName]);
+  // Create kernel
+  this->kernels[funcName] = new LZKernel(this, funcName, FuncInfos[funcName]);
 }
 
 // Get Level-0 kernel
@@ -2753,6 +2749,27 @@ LZKernel* LZModule::GetKernel(std::string funcName) {
     return nullptr;
 
   return kernels[funcName];
+}
+
+LZKernel::LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* FuncInfo_) {
+  this->FuncInfo = FuncInfo_;
+  
+  // Create kernel
+  ze_kernel_desc_t kernelDesc = {
+    ZE_STRUCTURE_TYPE_KERNEL_DESC,
+    nullptr,
+    0, // flags         
+    funcName.c_str()
+  };
+  ze_kernel_handle_t hKernel;
+  ze_result_t status = zeKernelCreate(lzModule->GetModuleHandle(), &kernelDesc, &this->hKernel);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeKernelCreate FAILED with return code ", status);
+  
+  logDebug("LZ KERNEL CREATION via calling zeKernelCreate {} ", status);  
+}
+
+LZKernel::~LZKernel() {
+  zeKernelDestroy(this->hKernel);
 }
 
 // Create event pool
