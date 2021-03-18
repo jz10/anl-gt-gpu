@@ -1585,7 +1585,21 @@ hipError_t hipLaunchByPtr(const void *hostFunction) {
 }
 
 /********************************************************************/
+hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* resDesc,
+				  hipTextureDesc* texDesc, void* opt) {
+  LZ_TRY
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
+  hipTextureObject_t retObj = lzCtx->createImage(resDesc, texDesc);
+  if (retObj != nullptr) {
+    * texObj = retObj;
+    RETURN(hipSuccess);
+  } else
+    RETURN(hipErrorLaunchFailure);
+  LZ_CATCH
+}
 
+/********************************************************************/
 hipError_t hipModuleLoad(hipModule_t *module, const char *fname) {
 
   ClContext *cont = getTlsDefaultCtx();

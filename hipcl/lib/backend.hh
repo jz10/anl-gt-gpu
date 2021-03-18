@@ -804,7 +804,7 @@ public:
   // Memory copy
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
-
+  
   // Asynchronous memory copy
   hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
  
@@ -832,6 +832,9 @@ public:
   
   // Allocate memory via Level-0 runtime
   void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
+
+  // Create Level-0 image object
+  LZImage* createImage(hipResourceDesc* resDesc, hipTextureDesc* texDesc);
 };
 
 // HipLZ driver object that manages device objects and the current context
@@ -1129,6 +1132,9 @@ public:
   
   // Get callback from lock protected callback list   
   bool GetCallback(hipStreamCallbackData* data);
+
+  // Get the default command list
+  LZCommandList* GetDefaultCmdList() { return this->defaultCmdList; };
   
 protected:
   // Initialize Level-0 queue
@@ -1140,6 +1146,25 @@ protected:
   // Synchronize on the event monitor thread  
   void WaitEventMonitor();
 };
+
+class LZImage {
+protected:
+  // Image handle
+  ze_image_handle_t hImage;
+
+  // The reference to HipLZ context
+  LZContext* lzContext;
+
+public:
+  LZImage(LZContext* lzContext, hipResourceDesc* resDesc, hipTextureDesc* texDesc);
+
+  // Get the image handle
+  ze_image_handle_t GtImageHandle() { return this->hImage; };
+
+  // Update data to image
+  bool upload(hipStream_t stream, void* srcptr);
+};
+
 
 LZDevice &HipLZDeviceById(int deviceId);
 

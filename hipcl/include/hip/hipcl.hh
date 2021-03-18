@@ -192,6 +192,18 @@ typedef struct hipChannelFormatDesc {
   enum hipChannelFormatKind f;
 } hipChannelFormatDesc;
 
+typedef struct hipResourceDesc {
+  int resType;
+  void * res;
+} hipResourceDesc;
+
+typedef struct hipTextureDesc {
+  int addressMode[2];
+  int filterMode;
+  int readMode;
+  int normalizedCoords;
+} hipTextureDesc;
+
 #define HIP_TRSF_NORMALIZED_COORDINATES 0x01
 #define HIP_TRSF_READ_AS_INTEGER 0x00
 #define HIP_TRSA_OVERRIDE_FORMAT 0x01
@@ -610,6 +622,10 @@ typedef ClQueue *hipStream_t_xxx;
 class LZQueue;
 
 typedef LZQueue *hipStream_t;
+
+class LZImage;
+
+typedef LZImage *hipTextureObject_t;
 
 class ClContext;
 
@@ -2874,6 +2890,9 @@ hipError_t hipDriverGetVersion(int *driverVersion);
  */
 hipError_t hipRuntimeGetVersion(int *runtimeVersion);
 
+hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* resDesc,
+                                  hipTextureDesc* texDesc, void* opt);
+  
 /**
  * @brief Loads code object from file into a hipModule_t
  *
