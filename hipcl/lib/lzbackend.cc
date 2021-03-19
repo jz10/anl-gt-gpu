@@ -237,6 +237,35 @@ hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipS
   return hipSuccess;
 }
 
+// The memory copy 2D support
+hipError_t LZContext::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
+				size_t width, size_t height, hipStream_t stream) {
+  if (stream == nullptr) {
+    if (!lzQueue->memCopy2D(dst, dpitch, src, spitch, width, height))
+      return hipErrorInvalidDevice;
+  } else {
+    if (!stream->memCopy2D(dst, dpitch, src, spitch, width, height))
+      return hipErrorInvalidDevice;
+  }
+
+  return hipSuccess;
+}
+
+// The memory copy 3D support
+hipError_t LZContext::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
+				const void *src, size_t spitch, size_t sspitch,
+				size_t width, size_t height, size_t depth, hipStream_t stream) {
+  if (stream == nullptr) {
+    if (!lzQueue->memCopy3D(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
+      return hipErrorInvalidDevice;
+  } else {
+    if (!stream->memCopy3D(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
+      return hipErrorInvalidDevice;
+  }
+
+  return hipSuccess;
+}
+
 hipError_t LZContext::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
   if (stream == nullptr) {
     // Here we use default queue in  LZ context to do the synchronous copy
@@ -289,6 +318,35 @@ hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes,
     if (!stream->memCopyAsync(dst, src, sizeBytes))
       return hipErrorInvalidDevice;
   }
+  return hipSuccess;
+}
+
+// The asynchronous memory copy 2D support 
+hipError_t LZContext::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+				     size_t width, size_t height, hipStream_t stream) {
+  if (stream == nullptr) {
+    if (!lzQueue->memCopy2DAsync(dst, dpitch, src, spitch, width, height))
+      return hipErrorInvalidDevice;
+  } else {
+    if (!stream->memCopy2DAsync(dst, dpitch, src, spitch, width, height))
+      return hipErrorInvalidDevice;
+  }
+
+  return hipSuccess;
+}
+
+// The asynchronous memory copy 3D support
+hipError_t LZContext::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
+				     const void *src, size_t spitch, size_t sspitch,
+				     size_t width, size_t height, size_t depth, hipStream_t stream) {
+  if (stream == nullptr) {
+    if (!lzQueue->memCopy3DAsync(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
+      return hipErrorInvalidDevice;
+  } else {
+    if (!stream->memCopy3DAsync(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
+      return hipErrorInvalidDevice;
+  }
+
   return hipSuccess;
 }
 
@@ -965,6 +1023,28 @@ hipError_t LZQueue::memCopy(void *dst, const void *src, size_t size) {
   return hipSuccess;
 }
 
+// The memory copy 2D support
+hipError_t LZQueue::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
+			      size_t width, size_t height) {
+  if (this->defaultCmdList == nullptr)
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  this->defaultCmdList->ExecuteMemCopyRegion(this, dst, dpitch, src, spitch, width, height);
+
+  return hipSuccess;
+}
+
+// The memory copy 3D support
+hipError_t LZQueue::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
+			      const void *src, size_t spitch, size_t sspitch,
+			      size_t width, size_t height, size_t depth) {
+  if (this->defaultCmdList == nullptr)
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  this->defaultCmdList->ExecuteMemCopyRegion(this, dst, dpitch, dspitch, src, spitch, sspitch,
+					     width, height, depth);
+
+  return hipSuccess;
+}
+
 // Memory fill support  
 hipError_t LZQueue::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size) {
   if (this->defaultCmdList == nullptr)
@@ -992,12 +1072,34 @@ hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
   return hipSuccess;
 }
 
-// The asynchronously memory copy support 
+// The asynchronous memory copy support 
 bool LZQueue::memCopyAsync(void *dst, const void *src, size_t sizeBytes) {
   if (this->defaultCmdList == nullptr)
     HIP_PROCESS_ERROR_MSG("No default command list setup in current HipLZ queue yet!", hipErrorInitializationError);
   
   return this->defaultCmdList->ExecuteMemCopyAsync(this, dst, src, sizeBytes);
+}
+
+// The asynchronous memory copy 2D support     
+hipError_t LZQueue::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+				   size_t width, size_t height) {
+  if (this->defaultCmdList == nullptr)
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  this->defaultCmdList->ExecuteMemCopyRegionAsync(this, dst, dpitch, src, spitch, width, height);
+
+  return hipSuccess;
+}
+
+// The asynchronous memory copy 3D support
+hipError_t LZQueue::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
+				   const void *src, size_t spitch, size_t sspitch,
+				   size_t width, size_t height, size_t depth) {
+  if (this->defaultCmdList == nullptr)
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  this->defaultCmdList->ExecuteMemCopyRegionAsync(this, dst, dpitch, dspitch, src, spitch, sspitch,
+						  width, height, depth);
+
+  return hipSuccess;
 }
 
 // The asynchronously memory fill support
@@ -1183,6 +1285,65 @@ bool LZCommandList::ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src,
   return Execute(lzQueue);
 }
 
+// Execute memory HipLZ copy regiion 
+bool LZCommandList::ExecuteMemCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch,
+					 const void *src, size_t spitch,
+					 size_t width, size_t height) {
+  // Get the potential signal event
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
+
+  // Create region
+  ze_copy_region_t dstRegion;
+  dstRegion.originX = 0;
+  dstRegion.originY = 0;
+  dstRegion.originZ = 0;
+  dstRegion.width = width;
+  dstRegion.height = height;
+  dstRegion.depth = 0;
+  ze_copy_region_t srcRegion;
+  srcRegion.originX = 0;
+  srcRegion.originY = 0;
+  srcRegion.originZ = 0;
+  srcRegion.width = width;
+  srcRegion.height = height;
+  srcRegion.depth = 0;
+  ze_result_t status = zeCommandListAppendMemoryCopyRegion(hCommandList, dst, &dstRegion, dpitch, 0,
+							   src, &srcRegion, spitch, 0,
+							   hSignalEvent, 0, nullptr);
+   
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopyRegion FAILED with return code ", status);
+  // Execute memory copy
+  return Execute(lzQueue);
+}
+
+bool LZCommandList::ExecuteMemCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
+					 const void *src, size_t spitch, size_t sspitch,
+					 size_t width, size_t height, size_t depth) {
+  // Get the potential signal event
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
+
+  ze_copy_region_t dstRegion;
+  dstRegion.originX = 0;
+  dstRegion.originY = 0;
+  dstRegion.originZ = 0;
+  dstRegion.width = width;
+  dstRegion.height = height;
+  dstRegion.depth = depth;
+  ze_copy_region_t srcRegion;
+  srcRegion.originX = 0;
+  srcRegion.originY = 0;
+  srcRegion.originZ = 0;
+  srcRegion.width = width;
+  srcRegion.height = height;
+  srcRegion.depth = depth;
+  ze_result_t status = zeCommandListAppendMemoryCopyRegion(hCommandList, dst, &dstRegion, dpitch,
+                                                           dspitch, src, &srcRegion, spitch, sspitch,
+                                                           hSignalEvent, 0, nullptr);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopyRegion FAILED with return code ", status);
+  // Execute memory copy
+  return Execute(lzQueue);
+}
+
 // Execute HipLZ memory copy command asynchronously
 bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes) {
   // Get the potential signal event  
@@ -1193,6 +1354,66 @@ bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void 
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
   // Execute memory copy asynchronously
   return ExecuteAsync(lzQueue);
+}
+
+// Execute asynchronous memory HipLZ copy regiion 
+bool LZCommandList::ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_t dpitch,
+					      const void *src, size_t spitch,
+					      size_t width, size_t height) {
+  // Get the potential signal event 
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
+
+  // Create region   
+  ze_copy_region_t dstRegion;
+  dstRegion.originX = 0;
+  dstRegion.originY = 0;
+  dstRegion.originZ = 0;
+  dstRegion.width = width;
+  dstRegion.height = height;
+  dstRegion.depth = 0;
+  ze_copy_region_t srcRegion;
+  srcRegion.originX = 0;
+  srcRegion.originY = 0;
+  srcRegion.originZ = 0;
+  srcRegion.width = width;
+  srcRegion.height = height;
+  srcRegion.depth = 0;
+  ze_result_t status = zeCommandListAppendMemoryCopyRegion(hCommandList, dst, &dstRegion, dpitch, 0,
+                                                           src, &srcRegion, spitch, 0,
+                                                           hSignalEvent, 0, nullptr);
+
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopyRegion FAILED with return code ", status);
+  // Execute memory copy   
+  return ExecuteAsync(lzQueue);
+}
+
+bool LZCommandList::ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_t dpitch,
+					      size_t dspitch, const void *src, size_t spitch,
+					      size_t sspitch, size_t width, size_t height,
+					      size_t depth) {
+  // Get the potential signal event
+  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
+
+  ze_copy_region_t dstRegion;
+  dstRegion.originX = 0;
+  dstRegion.originY = 0;
+  dstRegion.originZ = 0;
+  dstRegion.width = width;
+  dstRegion.height = height;
+  dstRegion.depth = depth;
+  ze_copy_region_t srcRegion;
+  srcRegion.originX = 0;
+  srcRegion.originY = 0;
+  srcRegion.originZ = 0;
+  srcRegion.width = width;
+  srcRegion.height = height;
+  srcRegion.depth = depth;
+  ze_result_t status = zeCommandListAppendMemoryCopyRegion(hCommandList, dst, &dstRegion, dpitch,
+                                                           dspitch, src, &srcRegion, spitch, sspitch,
+                                                           hSignalEvent, 0, nullptr);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopyRegion FAILED with return code ", status);
+  // Execute memory copy   
+  return Execute(lzQueue);
 }
 
 // Execute HipLZ memory fill command

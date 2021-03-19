@@ -804,10 +804,28 @@ public:
   // Memory copy
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
   hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
+
+  // Memory copy 2D
+  hipError_t memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
+		       size_t width, size_t height, hipStream_t stream);
+
+  // Memory copy 3D
+  hipError_t memCopy3D(void *dst, size_t dpitch, size_t dspitch,
+		       const void *src, size_t spitch, size_t sspitch,
+		       size_t width, size_t height, size_t depth, hipStream_t stream);
   
   // Asynchronous memory copy
   hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
- 
+
+  // Asynchronous memory copy 2D
+  hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+			    size_t width, size_t height, hipStream_t stream);
+
+  // Asynchronous memory copy 3D
+  hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
+			    const void *src, size_t spitch, size_t sspitch,  
+			    size_t width, size_t height, size_t depth, hipStream_t stream);
+  
   // Memory fill
   hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream);
   hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size);
@@ -923,26 +941,6 @@ protected:
   void* shared_buf;
 
 public:
-  /*LZCommandList(LZContext* lzContext_, ze_command_list_handle_t hCommandList_) {
-    this->lzContext = lzContext_;
-    this->hCommandList = hCommandList_;
-    this->shared_buf = nullptr;
-    ze_event_pool_desc_t ep_desc = {};
-    ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
-    ep_desc.count = 1;
-    ep_desc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
-    ze_event_desc_t ev_desc = {};
-    ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
-    ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
-    ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-    ze_result_t status;
-    ze_device_handle_t dev = lzContext_->GetDevice()->GetDeviceHandle();
-    status = zeEventPoolCreate(lzContext_->GetContextHandle(), &ep_desc, 1, &dev, &(this->eventPool));
-    LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
-    status = zeEventCreate(this->eventPool, &ev_desc, &(this->finishEvent));
-    LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
-  };*/
-
   LZCommandList(LZContext* lzContext);
 
   // Create HipLZ command list
@@ -957,9 +955,25 @@ public:
   // Execute HipLZ memory copy command 
   bool ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
 
+  // Execute memory HipLZ copy regiion
+  bool ExecuteMemCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, const void *src, size_t spitch,
+			    size_t width, size_t height);
+
+  bool ExecuteMemCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
+			    const void *src, size_t spitch, size_t sspitch,
+			    size_t width, size_t height, size_t depth);
+  
   // Execute HipLZ memory copy command asynchronously
   bool ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
- 
+
+  // Execute memory HipLZ copy asynchronously
+  bool ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_t dpitch, const void *src,
+				 size_t spitch,  size_t width, size_t height);
+
+  bool ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
+				 const void *src, size_t spitch, size_t sspitch,
+				 size_t width, size_t height, size_t depth);
+  
   // Execute HipLZ memory fill command
   bool ExecuteMemFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
 
@@ -1098,6 +1112,13 @@ public:
 
   // Memory copy support
   virtual hipError_t memCopy(void *dst, const void *src, size_t size);
+  // The memory copy 2D support
+  virtual hipError_t memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
+			       size_t width, size_t height);
+  // The memory copy 3D support
+  virtual hipError_t memCopy3D(void *dst, size_t dpitch, size_t dspitch,
+			       const void *src, size_t spitch, size_t sspitch,
+			       size_t width, size_t height, size_t depth);
   // Memory fill support
   virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size);
   // Launch kernel support
@@ -1110,6 +1131,13 @@ public:
 
   // The asynchronously memory copy support
   bool memCopyAsync(void *dst, const void *src, size_t sizeBytes);
+   // The memory copy 2D support
+  hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+			    size_t width, size_t height);
+  // The memory copy 3D support
+  hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
+			    const void *src, size_t spitch, size_t sspitch,
+			    size_t width, size_t height, size_t depth);
   // The asynchronously memory fill support
   bool memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size);
   
