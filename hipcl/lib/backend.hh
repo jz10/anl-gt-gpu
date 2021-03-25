@@ -564,6 +564,12 @@ public:
   hipDevice_t getHipDeviceT() {
     return this->deviceId;
   }
+
+  // Check if two devices can access peer from one to another
+  static hipError_t CanAccessPeer(LZDevice& device, LZDevice& peerDevice, int* canAccessPeer);
+
+  // Check if the current device has same PCI bus ID as the one given by input
+  bool HasPCIBusId(const char* pciBusId);
   
   // Register HipLZ module which is presented as IL
   void registerModule(std::string* module);

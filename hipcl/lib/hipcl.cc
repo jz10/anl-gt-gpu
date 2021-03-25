@@ -245,13 +245,27 @@ hipError_t hipFuncSetCacheConfig(const void *func, hipFuncCache_t config) {
   RETURN(hipSuccess);
 }
 
-hipError_t hipDeviceGetPCIBusId(char *pciBusId, int len, int device) {
-  // TODO this requires OpenCL extension(s)
+hipError_t hipDeviceGetPCIBusId(char *pciBusId, int len, int deviceId) {
+  // TODO this requires OpenCL extension(s) ?
+  LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId);
+  pciBusId[len] = 0;
+  if (device.HasPCIBusId(pciBusId))
+    RETURN(hipSuccess);
+  
   RETURN(hipErrorInvalidDevice);
 }
 
-hipError_t hipDeviceGetByPCIBusId(int *device, const char *pciBusId) {
+hipError_t hipDeviceGetByPCIBusId(int * deviceId, const char * pciBusId) {
   // TODO this requires OpenCL extension(s)
+
+  for (size_t i = 0; i < LZDriver::GetPrimaryDriver().GetNumOfDevices(); i ++) {
+    LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(i);
+    if (device.HasPCIBusId(pciBusId)) {
+      * deviceId = i;
+      RETURN(hipSuccess);
+    }
+  }
+  
   RETURN(hipErrorInvalidDevice);
 }
 
@@ -262,13 +276,17 @@ hipError_t hipSetDeviceFlags(unsigned flags) {
 
 hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
                                   int peerDeviceId) {
-  // TODO this needs implementing
   ERROR_CHECK_DEVNUM(deviceId);
   ERROR_CHECK_DEVNUM(peerDeviceId);
-  if (deviceId == peerDeviceId)
-    *canAccessPeer = 1;
-  else
-    *canAccessPeer = 0;
+
+  LZ_TRY
+     
+  LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId);
+  LZDevice& peerDevice = LZDriver::GetPrimaryDriver().GetDeviceById(peerDeviceId);
+  LZDevice::CanAccessPeer(device, peerDevice, canAccessPeer);
+
+  LZ_CATCH
+    
   return hipSuccess;
 }
 
@@ -288,8 +306,13 @@ hipError_t hipChooseDevice(int *device, const hipDeviceProp_t *prop) {
   int matchedPropCount = 0;
 
   *device = 0;
-  for (size_t i = 0; i < NumDevices; i++) {
-    CLDeviceById(i).copyProperties(&tempProp);
+
+  LZ_TRY
+    
+  for (size_t i = 0; i < LZDriver::GetPrimaryDriver().GetNumOfDevices(); i++) {
+    // CLDeviceById(i).copyProperties(&tempProp);
+    LZDriver::GetPrimaryDriver().GetDeviceById(i).copyProperties(&tempProp);
+    
     if (prop->major != 0) {
       inPropCount++;
       if (tempProp.major >= prop->major) {
@@ -350,6 +373,9 @@ hipError_t hipChooseDevice(int *device, const hipDeviceProp_t *prop) {
       RETURN(hipSuccess);
     }
   }
+
+  LZ_CATCH
+    
   RETURN(hipErrorInvalidValue);
 }
 

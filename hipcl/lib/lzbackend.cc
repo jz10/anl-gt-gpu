@@ -167,7 +167,7 @@ void LZDevice::setupProperties(int index) {
   Properties.clockInstructionRate = 2465;
   Properties.concurrentKernels = 1;
   Properties.pciDomainID = 0;
-  Properties.pciBusID = 0x10;
+  Properties.pciBusID = 0x10 + index;
   Properties.pciDeviceID = 0x40 + index;
   Properties.isMultiGpuBoard = 0;
   Properties.canMapHostMemory = 1;
@@ -216,6 +216,31 @@ bool LZDevice::retrieveCmdQueueGroupOrdinal(uint32_t& computeQueueGroupOrdinal) 
     return false; // no compute queues found
 
   return true;
+}
+
+// Check if two devices can access peer from one to another  
+hipError_t LZDevice::CanAccessPeer(LZDevice& device, LZDevice& peerDevice, int* canAccessPeer) {
+  ze_bool_t value;
+  ze_result_t status = zeDeviceCanAccessPeer(device.GetDeviceHandle(), peerDevice.GetDeviceHandle(),
+					     &value);
+
+  LZ_RETURN_ERROR_MSG("HipLZ zeDeviceCanAccessPeer FAILED with return code ", status);
+
+  if (value) 
+    * canAccessPeer = 1;
+  else
+    * canAccessPeer = 0;
+  
+  return hipSuccess;
+}
+
+// Check if the current device has same PCI bus ID as the one given by input  
+bool LZDevice::HasPCIBusId(const char* pciBusId) {
+  int id = std::atoi(pciBusId);
+  if (Properties.pciBusID == id)
+    return true;
+
+  return false;
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
