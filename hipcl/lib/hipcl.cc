@@ -4,7 +4,7 @@
 #include <stack>
 
 #include "ze_api.h"
-#include "backend.hh"
+#include "lzbackend.hh"
 
 #include <iostream>
 

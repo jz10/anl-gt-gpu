@@ -400,40 +400,8 @@ bool ClQueue::finish() {
   return err == CL_SUCCESS;
 }
 
-static void notifyOpenCLevent(cl_event event, cl_int status, void *data) {
-  hipStreamCallbackData *Data = (hipStreamCallbackData *)data;
-  Data->Callback(Data->Stream, Data->Status, Data->UserData);
-  delete Data;
-}
-
 bool ClQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   HIP_PROCESS_ERROR_MSG("Supported in LZQueue::addCallback!", hipErrorNotSupported);   
-}
-
-bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-  // CUDA API cudaStreamWaitEvent:
-  // event may be from a different device than stream.
-
-  cl::Event MarkerEvent;
-  logDebug("Queue is: {}\n", (void *)(Queue()));
-  int err = Queue.enqueueMarkerWithWaitList(nullptr, &MarkerEvent);
-  if (err != CL_SUCCESS)
-    return false;
-
-  cl::vector<cl::Event> Events = {MarkerEvent, ProvidedEvent->getEvent()};
-  cl::Event barrier;
-  err = Queue.enqueueBarrierWithWaitList(&Events, &barrier);
-  if (err != CL_SUCCESS) {
-    logError("clEnqueueBarrierWithWaitList failed with error {}\n", err);
-    return false;
-  }
-
-  if (LastEvent)
-    clReleaseEvent(LastEvent);
-  LastEvent = barrier();
-
-  return true;
 }
 
 bool ClQueue::recordEvent(hipEvent_t event) {
@@ -508,6 +476,36 @@ hipError_t ClQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
   }
 
   return retval;
+}
+
+hipError_t ClQueue::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
+			      size_t width, size_t height) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy2D", hipErrorNotSupported);
+}
+
+hipError_t ClQueue::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
+			      const void *src, size_t spitch, size_t sspitch,
+			      size_t width, size_t height, size_t depth) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy3D", hipErrorNotSupported);
+}
+
+bool ClQueue::memCopyAsync(void *dst, const void *src, size_t sizeByte) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopyAsync", hipErrorNotSupported);
+}
+
+hipError_t ClQueue::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+				   size_t width, size_t height) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy2DAsync", hipErrorNotSupported);
+}
+
+hipError_t ClQueue::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
+				   const void *src, size_t spitch, size_t sspitch,
+				   size_t width, size_t height, size_t depth) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy3DAsync", hipErrorNotSupported);
+}
+
+bool ClQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memFillAsync", hipErrorNotSupported);
 }
 
 /***********************************************************************/
@@ -599,10 +597,6 @@ int ExecItem::setupAllArgs(ClKernel *kernel) {
   return setLocalSize(SharedMem, FuncInfo, kernel->get().get());
 }
 
-inline hipError_t ExecItem::launch(ClKernel *Kernel) {
-  return Stream->launch(Kernel, this);
-}
-
 /***********************************************************************/
 
 /* errinfo is a pointer to an error string.
@@ -654,7 +648,7 @@ ClContext::ClContext(ClDevice *D, unsigned f) {
                             CL_QUEUE_PROFILING_ENABLE, &err);
   assert(err == CL_SUCCESS);
 
-  DefaultQueue = new LZQueue(CmdQueue, 0, 0); // new ClQueue(CmdQueue, 0, 0);
+  DefaultQueue = createRTSpecificQueue(CmdQueue, 0, 0); 
 
   Memory.init(Context);
 }
@@ -677,7 +671,7 @@ void ClContext::reset() {
                             CL_QUEUE_PROFILING_ENABLE, &err);
   assert(err == CL_SUCCESS);
 
-  DefaultQueue = new LZQueue(CmdQueue, 0, 0); // ClQueue(CmdQueue, 0, 0);
+  DefaultQueue = createRTSpecificQueue(CmdQueue, 0, 0); 
 }
 
 ClContext::~ClContext() {
@@ -831,7 +825,7 @@ bool ClContext::createQueue(hipStream_t *stream, unsigned flags, int priority) {
                             CL_QUEUE_PROFILING_ENABLE, &err);
   assert(err == CL_SUCCESS);
 
-  hipStream_t Ptr = new LZQueue(NewQueue, flags, priority); // new ClQueue(NewQueue, flags, priority);
+  hipStream_t Ptr = createRTSpecificQueue(NewQueue, flags, priority); 
   Queues.insert(Ptr);
   *stream = Ptr;
   return true;

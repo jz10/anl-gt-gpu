@@ -605,7 +605,7 @@ class ClEvent;
 
 class LZEvent;
 
-typedef LZEvent *hipEvent_t;
+typedef ClEvent *hipEvent_t;
 
 class ClKernel;
 
@@ -617,11 +617,11 @@ typedef ClProgram *hipModule_t;
 
 class ClQueue;
 
-typedef ClQueue *hipStream_t_xxx;
+typedef ClQueue *hipStream_t;
 
 class LZQueue;
 
-typedef LZQueue *hipStream_t;
+typedef LZQueue *hipStream_t_xxx;
 
 class LZImage;
 

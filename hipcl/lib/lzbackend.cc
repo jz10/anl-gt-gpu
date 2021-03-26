@@ -3,7 +3,7 @@
 #include <fstream>
 #include <iostream>
 
-#include "backend.hh"
+#include "lzbackend.hh"
 
 #ifdef __GNUC__
 #pragma GCC visibility push(hidden)
@@ -22,6 +22,46 @@ static std::vector<LZDriver *> HipLZDrivers INIT_PRIORITY(120);
 size_t NumLZDevices = 1;
 
 size_t NumLZDrivers = 1;
+
+static void notifyOpenCLevent(cl_event event, cl_int status, void *data) {
+  hipStreamCallbackData *Data = (hipStreamCallbackData *)data;
+  Data->Callback(Data->Stream, Data->Status, Data->UserData);
+  delete Data;
+}
+
+hipStream_t ClContext::createRTSpecificQueue(cl::CommandQueue q, unsigned int f, int p) {
+  return new LZQueue(q, f, p);
+}
+
+inline hipError_t ExecItem::launch(ClKernel *Kernel) {
+  return Stream->launch(Kernel, this);
+}
+
+bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
+  std::lock_guard<std::mutex> Lock(QueueMutex);
+  // CUDA API cudaStreamWaitEvent:
+  // event may be from a different device than stream.
+
+  cl::Event MarkerEvent;
+  logDebug("Queue is: {}\n", (void *)(Queue()));
+  int err = Queue.enqueueMarkerWithWaitList(nullptr, &MarkerEvent);
+  if (err != CL_SUCCESS)
+    return false;
+
+  cl::vector<cl::Event> Events = {MarkerEvent, ProvidedEvent->getEvent()};
+  cl::Event barrier;
+  err = Queue.enqueueBarrierWithWaitList(&Events, &barrier);
+  if (err != CL_SUCCESS) {
+    logError("clEnqueueBarrierWithWaitList failed with error {}\n", err);
+    return false;
+  }
+
+  if (LastEvent)
+    clReleaseEvent(LastEvent);
+  LastEvent = barrier();
+
+  return true;
+}
 
 LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver_) {
   this->deviceId = id;
@@ -398,7 +438,7 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
   // Create a command list for default command queue
   this->lzCommandList = LZCommandList::CreateCmdList(this); 
   // Create the default command queue
-  this->lzQueue = this->DefaultQueue = new LZQueue(this, this->lzCommandList);
+  this->DefaultQueue = this->lzQueue = new LZQueue(this, this->lzCommandList);
   // Create the default event pool
   this->defaultEventPool = new LZEventPool(this);
 }
@@ -468,7 +508,7 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
     HIP_PROCESS_ERROR_MSG("Hiplz no LZkernel found?", hipErrorInitializationError);
 
   LZExecItem *Arguments;
-  Arguments = ExecStack.top();
+  Arguments = (LZExecItem* )ExecStack.top();
   ExecStack.pop();
 
   // ze_result_t status = ZE_RESULT_SUCCESS;
@@ -1035,7 +1075,7 @@ bool LZQueue::recordEvent(hipEvent_t event) {
   event->recordStream(this, nullptr);
   
   // Record timestamp got from execution write global timestamp from command list
-  event->recordTimeStamp(this->defaultCmdList->ExecuteWriteGlobalTimeStamp(this));
+  ((LZEvent* )event)->recordTimeStamp(this->defaultCmdList->ExecuteWriteGlobalTimeStamp(this));
 
   return true;
 }
@@ -1844,7 +1884,7 @@ LZImage::LZImage(LZContext* lzContext, hipResourceDesc* resDesc, hipTextureDesc*
 
 // Update data to image 
 bool LZImage::upload(hipStream_t stream, void* srcptr) {
-  ze_result_t status = zeCommandListAppendImageCopyFromMemory(stream->GetDefaultCmdList()->GetCommandListHandle(),
+  ze_result_t status = zeCommandListAppendImageCopyFromMemory(((LZQueue* )stream)->GetDefaultCmdList()->GetCommandListHandle(),
 							      hImage, srcptr, nullptr, nullptr, 0,
 							      nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendImageCopyFromMemory with return code ", status);
