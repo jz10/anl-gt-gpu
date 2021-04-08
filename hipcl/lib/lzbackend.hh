@@ -147,6 +147,9 @@ protected:
 
   // The device cache properties
   ze_device_cache_properties_t deviceCacheProps;
+
+  // The device module properties
+  ze_device_module_properties_t deviceModuleProps;
   
   // The size of total used memory
   size_t TotalUsedMem;
@@ -221,6 +224,11 @@ public:
   // Get Hip attribute from attribute enum ID
   int getAttr(int *pi, hipDeviceAttribute_t attr);
 
+  // Get the max allocation size in MB
+  size_t GetMaxAllocSize() {
+    return this->deviceProps.maxMemAllocSize / 10000000;
+  }
+  
   // Get HipLZ device name
   const char *getName() const { return Properties.name; };
 

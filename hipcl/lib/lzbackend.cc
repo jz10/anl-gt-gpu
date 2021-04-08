@@ -85,6 +85,9 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   count = 1;
   status = zeDeviceGetCacheProperties(this->hDevice, &count, &(this->deviceCacheProps));
 
+  // Query device module properties
+  status = zeDeviceGetModuleProperties(this->hDevice, &(this->deviceModuleProps));
+  
   // Create HipLZ context  
   this->defaultContext = new LZContext(this);
 
@@ -160,15 +163,18 @@ void LZDevice::setupProperties(int index) {
   Properties.maxThreadsPerBlock = this->deviceComputeProps.maxTotalGroupSize;
   //??? Dev.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>(&err);
 
-  Properties.maxThreadsDim[0] = this->deviceComputeProps.maxGroupSizeX;
-  Properties.maxThreadsDim[1] = this->deviceComputeProps.maxGroupSizeY;
-  Properties.maxThreadsDim[2] = this->deviceComputeProps.maxGroupSizeZ;
+  Properties.maxThreadsDim[0] = this->deviceComputeProps.maxGroupSizeX
+    * this->deviceComputeProps.maxGroupCountX;
+  Properties.maxThreadsDim[1] = this->deviceComputeProps.maxGroupSizeY
+    * this->deviceComputeProps.maxGroupCountY;
+  Properties.maxThreadsDim[2] = this->deviceComputeProps.maxGroupSizeZ
+    * this->deviceComputeProps.maxGroupCountZ;
 
   // Maximum configured clock frequency of the device in MHz. 
-  Properties.clockRate = 1000 * this->deviceMemoryProps.maxClockRate;
+  Properties.clockRate = 1000 * this->deviceProps.coreClockRate; // deviceMemoryProps.maxClockRate;
   // Dev.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>();
 
-  Properties.multiProcessorCount = this->deviceComputeProps.maxTotalGroupSize;
+  Properties.multiProcessorCount = this->deviceProps.numSlices; // this->deviceComputeProps.maxTotalGroupSize;
   //??? Dev.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
   Properties.l2CacheSize = this->deviceCacheProps.cacheSize;
   // Dev.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
@@ -191,7 +197,8 @@ void LZDevice::setupProperties(int index) {
   Properties.major = 2;
   Properties.minor = 0;
 
-  Properties.maxThreadsPerMultiProcessor = 10;
+  Properties.maxThreadsPerMultiProcessor = this->deviceProps.numSubslicesPerSlice
+    * this->deviceProps.numEUsPerSubslice * this->deviceProps.numThreadsPerEU; //  10;
 
   Properties.computeMode = 0;
   Properties.arch = {};
@@ -202,7 +209,7 @@ void LZDevice::setupProperties(int index) {
   Properties.arch.hasGlobalInt64Atomics = 1;
   Properties.arch.hasSharedInt64Atomics = 1;
 
-  Properties.arch.hasDoubles = 1;
+  Properties.arch.hasDoubles = (this->deviceModuleProps.fp64flags != 0);
 
   Properties.clockInstructionRate = 2465;
   Properties.concurrentKernels = 1;

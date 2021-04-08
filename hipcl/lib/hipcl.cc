@@ -192,6 +192,8 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 hipError_t hipDeviceGetLimit(size_t *pValue, enum hipLimit_t limit) {
   ERROR_IF((pValue == nullptr), hipErrorInvalidValue);
 
+  * pValue = LZDriver::GetPrimaryDriver().getPrimaryDevice().GetMaxAllocSize();
+  
   RETURN(hipErrorUnsupportedLimit);
 }
 
