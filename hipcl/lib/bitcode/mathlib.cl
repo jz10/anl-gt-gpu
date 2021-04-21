@@ -317,6 +317,33 @@ DEF_OPENCL1F_NATIVE(log)
 
 EXPORT void CL_NAME(local_barrier)() { barrier(CLK_LOCAL_MEM_FENCE); }
 
+EXPORT void CL_NAME(local_fence)() { mem_fence(CLK_LOCAL_MEM_FENCE); }
+
+EXPORT void CL_NAME(global_fence)() { mem_fence(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE); }
+
+/* memory routines */
+
+// sets size bytes of the memory pointed to by ptr to value
+// interpret ptr as a unsigned char so that it writes as bytes
+EXPORT void* CL_NAME(memset)(DEFAULT_AS void* ptr, int value, size_t size) {
+  volatile unsigned char* temporary = ptr;
+
+  for(int i=0;i<size;i++)
+    temporary[i] = value;
+  
+    return ptr;
+}
+
+EXPORT void* CL_NAME(memcpy)(DEFAULT_AS void *dest, DEFAULT_AS const void * src, size_t n) {
+  volatile unsigned char* temporary_dest = dest;
+  volatile const unsigned char* temporary_src = src;
+
+  for(int i=0;i<n;i++)
+    temporary_dest[i] = temporary_src[i];
+
+  return dest;
+}
+
 /**********************************************************************/
 
 EXPORT uint CL_NAME2(popcount, ui)(uint var) {
@@ -578,6 +605,50 @@ static OVLD float atomic_exch_f(volatile global float *address, float val) {
   return as_float(atomic_xchg((volatile global uint *)(address), as_uint(val)));
 }
 
+static OVLD uint atomic_inc2_u(volatile local uint *address, uint val) {
+  uint old = *address;
+  uint r;
+  do {
+    r = old;
+    old = atom_cmpxchg(address, r, ((r >= val) ? 0 : (r+1)));
+  } while (r != old);
+
+  return r;
+}
+
+static OVLD uint atomic_dec2_u(volatile local uint *address, uint val) {
+  uint old = *address;
+  uint r;
+  do {
+    r = old;
+    old = atom_cmpxchg(address, r, (((r == 0) || (r > val)) ? val : (r-1)));
+  } while (r != old);
+
+  return r;
+}
+
+static OVLD uint atomic_inc2_u(volatile global uint *address, uint val) {
+  uint old = *address;
+  uint r;
+  do {
+    r = old;
+    old = atom_cmpxchg(address, r, ((r >= val) ? 0 : (r+1)));
+  } while (r != old);
+
+  return r;
+}
+
+static OVLD uint atomic_dec2_u(volatile global uint *address, uint val) {
+  uint old = *address;
+  uint r;
+  do {
+    r = old;
+    old = atom_cmpxchg(address, r, (((r == 0) || (r > val)) ? val : (r-1)));
+  } while (r != old);
+
+  return r;
+}
+
 EXPORT float CL_NAME_MANGLED_ATOM(add, f)(DEFAULT_AS float *address,
                                  float val) {
   volatile global float *gi = to_global(address);
@@ -611,6 +682,27 @@ EXPORT float CL_NAME_MANGLED_ATOM(exch, f)(DEFAULT_AS float *address,
   return 0;
 }
 
+EXPORT uint CL_NAME_MANGLED_ATOM(inc2, u)(DEFAULT_AS uint *address,
+                                 uint val) {
+  volatile global uint *gi = to_global((DEFAULT_AS uint *)address);
+  if (gi)
+    return atomic_inc2_u(gi, val);
+  volatile local uint *li = to_local((DEFAULT_AS uint *)address);
+  if (li)
+    return atomic_inc2_u(li, val);
+  return 0;
+}
+
+EXPORT uint CL_NAME_MANGLED_ATOM(dec2, u)(DEFAULT_AS uint *address,
+                                 uint val) {
+  volatile global uint *gi = to_global((DEFAULT_AS uint *)address);
+  if (gi)
+    return atomic_dec2_u(gi, val);
+  volatile local uint *li = to_local((DEFAULT_AS uint *)address);
+  if (li)
+    return atomic_dec2_u(li, val);
+  return 0;
+}
 /**********************************************************************/
 
 int OVLD intel_sub_group_shuffle(int var, uint srcLane);
@@ -661,3 +753,4 @@ EXPORT float CL_NAME2(shfl_down, f)(float var, uint delta) {
 
 int CL_NAME(group_all)(int pred) { return sub_group_all(pred); }
 int CL_NAME(group_any)(int pred) { return sub_group_any(pred); }
+ulong CL_NAME(group_ballot)(int pred) { return sub_group_reduce_add(pred ? (ulong)1 << get_sub_group_local_id() : 0); }
