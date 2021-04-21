@@ -163,55 +163,56 @@ void LZDevice::setupProperties(int index) {
   Properties.maxThreadsPerBlock = this->deviceComputeProps.maxTotalGroupSize;
   //??? Dev.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>(&err);
 
-  Properties.maxThreadsDim[0] = this->deviceComputeProps.maxGroupSizeX
-    * this->deviceComputeProps.maxGroupCountX;
-  Properties.maxThreadsDim[1] = this->deviceComputeProps.maxGroupSizeY
-    * this->deviceComputeProps.maxGroupCountY;
-  Properties.maxThreadsDim[2] = this->deviceComputeProps.maxGroupSizeZ
-    * this->deviceComputeProps.maxGroupCountZ;
+  Properties.maxThreadsDim[0] = this->deviceComputeProps.maxGroupSizeX;
+  Properties.maxThreadsDim[1] = this->deviceComputeProps.maxGroupSizeY;
+  Properties.maxThreadsDim[2] = this->deviceComputeProps.maxGroupSizeZ;
 
   // Maximum configured clock frequency of the device in MHz. 
   Properties.clockRate = 1000 * this->deviceProps.coreClockRate; // deviceMemoryProps.maxClockRate;
   // Dev.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>();
 
-  Properties.multiProcessorCount = this->deviceProps.numSlices; // this->deviceComputeProps.maxTotalGroupSize;
+  Properties.multiProcessorCount = this->deviceProps.numEUsPerSubslice * this->deviceProps.numSlices; // this->deviceComputeProps.maxTotalGroupSize;
   //??? Dev.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
   Properties.l2CacheSize = this->deviceCacheProps.cacheSize;
   // Dev.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
 
   // not actually correct
-  Properties.totalConstMem = 0;
+  Properties.totalConstMem = this->deviceMemoryProps.totalSize;
   // ??? Dev.getInfo<CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE>();
 
-  // totally made up 
-  Properties.regsPerBlock = 64;
+  // as per gen architecture doc
+  Properties.regsPerBlock = 4096;
 
-  Properties.warpSize = this->deviceComputeProps.maxTotalGroupSize;
+  Properties.warpSize =
+    this->deviceComputeProps.subGroupSizes[this->deviceComputeProps.numSubGroupSizes-1];
 
   // Replicate from OpenCL implementation
-  Properties.maxGridSize[0] = 65536;
-  Properties.maxGridSize[1] = 65536;
-  Properties.maxGridSize[2] = 65536;
+  Properties.maxGridSize[0] = this->deviceComputeProps.maxGroupCountX;
+  Properties.maxGridSize[1] = this->deviceComputeProps.maxGroupCountY;
+  Properties.maxGridSize[2] = this->deviceComputeProps.maxGroupCountZ;
   Properties.memoryClockRate = this->deviceMemoryProps.maxClockRate;
   Properties.memoryBusWidth = this->deviceMemoryProps.maxBusWidth;
   Properties.major = 2;
   Properties.minor = 0;
 
-  Properties.maxThreadsPerMultiProcessor = this->deviceProps.numSubslicesPerSlice
-    * this->deviceProps.numEUsPerSubslice * this->deviceProps.numThreadsPerEU; //  10;
+  Properties.maxThreadsPerMultiProcessor =
+    this->deviceProps.numEUsPerSubslice * this->deviceProps.numThreadsPerEU; //  10;
 
-  Properties.computeMode = 0;
+  Properties.computeMode = hipComputeModeDefault;
   Properties.arch = {};
 
   Properties.arch.hasGlobalInt32Atomics = 1;
   Properties.arch.hasSharedInt32Atomics = 1;
 
-  Properties.arch.hasGlobalInt64Atomics = 1;
-  Properties.arch.hasSharedInt64Atomics = 1;
+  Properties.arch.hasGlobalInt64Atomics =
+    (this->deviceModuleProps.flags & ZE_DEVICE_MODULE_FLAG_INT64_ATOMICS) ? 1 : 0;
+  Properties.arch.hasSharedInt64Atomics =
+    (this->deviceModuleProps.flags & ZE_DEVICE_MODULE_FLAG_INT64_ATOMICS) ? 1 : 0;
 
-  Properties.arch.hasDoubles = (this->deviceModuleProps.fp64flags != 0);
+  Properties.arch.hasDoubles =
+    (this->deviceModuleProps.flags & ZE_DEVICE_MODULE_FLAG_FP64) ? 1 : 0;
 
-  Properties.clockInstructionRate = 2465;
+  Properties.clockInstructionRate = this->deviceProps.coreClockRate;
   Properties.concurrentKernels = 1;
   Properties.pciDomainID = 0;
   Properties.pciBusID = 0x10 + index;
@@ -219,8 +220,10 @@ void LZDevice::setupProperties(int index) {
   Properties.isMultiGpuBoard = 0;
   Properties.canMapHostMemory = 1;
   Properties.gcnArch = 0;
-  Properties.integrated = 0;
-  Properties.maxSharedMemoryPerMultiProcessor = 0;
+  Properties.integrated =
+    (this->deviceProps.flags & ZE_DEVICE_PROPERTY_FLAG_INTEGRATED) ? 1 : 0;
+  Properties.maxSharedMemoryPerMultiProcessor =
+    this->deviceComputeProps.maxSharedLocalMemory;
 }
 
 // Copy device properties to given property data structure 
@@ -282,9 +285,10 @@ hipError_t LZDevice::CanAccessPeer(LZDevice& device, LZDevice& peerDevice, int* 
 }
 
 // Check if the current device has same PCI bus ID as the one given by input  
-bool LZDevice::HasPCIBusId(const char* pciBusId) {
-  int id = std::atoi(pciBusId);
-  if (Properties.pciBusID == id)
+bool LZDevice::HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID) {
+  if (Properties.pciDomainID == pciDomainID &&
+      Properties.pciBusID == pciBusID &&
+      Properties.pciDeviceID == pciDeviceID)
     return true;
 
   return false;
@@ -754,7 +758,7 @@ bool LZDriver::InitDrivers(std::vector<LZDriver* >& drivers, const ze_device_typ
     
     // Count the number of devices
     NumLZDevices += driver->GetNumOfDevices();
- }
+  }
 
   logDebug("LZ DEVICES {}", NumLZDevices);
 
