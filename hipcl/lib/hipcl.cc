@@ -174,7 +174,7 @@ hipError_t hipDeviceGetName(char *name, int len, hipDevice_t deviceId) {
   ERROR_CHECK_DEVNUM(deviceId);
 
   size_t namelen = strlen(LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName());
-  namelen = (namelen < (size_t)len ? namelen : len - 1;
+  namelen = (namelen < (size_t)len ? namelen : len - 1);
   memcpy(name, LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName(), namelen);
   name[namelen] = 0;
   RETURN(hipSuccess);
