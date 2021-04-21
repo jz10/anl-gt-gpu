@@ -189,7 +189,7 @@ public:
   static hipError_t CanAccessPeer(LZDevice& device, LZDevice& peerDevice, int* canAccessPeer);
 
   // Check if the current device has same PCI bus ID as the one given by input
-  bool HasPCIBusId(const char* pciBusId);
+  bool HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID);
   
   // Register HipLZ module which is presented as IL
   void registerModule(std::string* module);
@@ -226,7 +226,7 @@ public:
 
   // Get the max allocation size in MB
   size_t GetMaxAllocSize() {
-    return this->deviceProps.maxMemAllocSize / 10000000;
+    return this->deviceProps.maxMemAllocSize;
   }
   
   // Get HipLZ device name

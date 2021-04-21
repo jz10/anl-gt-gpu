@@ -50,18 +50,17 @@ static LZContext *getTlsDefaultLzCtx() {
   } while (0)
 
 #define ERROR_CHECK_DEVNUM(device)                                             \
-  ERROR_IF(((device < 0) || ((size_t)device >= NumDevices)),                   \
+  ERROR_IF(((device < 0) ||                                                    \
+           ((size_t)device >= LZDriver::GetPrimaryDriver().GetNumOfDevices())),\
            hipErrorInvalidDevice)
 
 /***********************************************************************/
 
 hipError_t hipGetDevice(int *deviceId) {
-  // InitializeOpenCL();
   InitializeHipLZ();
   
   ERROR_IF((deviceId == nullptr), hipErrorInvalidValue);
 
-  // ClContext *cont = getTlsDefaultCtx();
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
@@ -70,31 +69,22 @@ hipError_t hipGetDevice(int *deviceId) {
 }
 
 hipError_t hipGetDeviceCount(int *count) {
-  // InitializeOpenCL();
-  //  ERROR_IF((count == nullptr), hipErrorInvalidValue);
-  // *count = NumDevices;
-
   InitializeHipLZ();
   ERROR_IF((count == nullptr), hipErrorInvalidValue);
-  // Discover all the driver instances    
-  * count = LZDriver::GetPrimaryDriver().GetNumOfDevices();
+  *count = LZDriver::GetPrimaryDriver().GetNumOfDevices();
   
   RETURN(hipSuccess);
 }
 
 hipError_t hipSetDevice(int deviceId) {
-  // InitializeOpenCL();
   InitializeHipLZ();
 
   ERROR_CHECK_DEVNUM(deviceId);
 
-  // tls_defaultCtx = CLDeviceById(deviceId).getPrimaryCtx();
   LZ_TRY
-    
-  tls_defaultLzCtx = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getPrimaryCtx();
-  
-  RETURN(hipSuccess);
-
+    tls_defaultLzCtx =
+      LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getPrimaryCtx();
+    RETURN(hipSuccess);
   LZ_CATCH
 }
 
@@ -112,11 +102,9 @@ hipError_t hipDeviceSynchronize(void) {
 
 hipError_t hipDeviceReset(void) {
 
-  // ClContext *cont = getTlsDefaultCtx();
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   
-  // ClDevice *dev = cont->getDevice();
   LZDevice* dev = cont->GetDevice();
   
   dev->reset();
@@ -124,18 +112,9 @@ hipError_t hipDeviceReset(void) {
 }
 
 hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
-  // InitializeOpenCL();
-  
-  // ERROR_IF(((ordinal < 0) || ((size_t)ordinal >= NumDevices)),
-  //          hipErrorInvalidValue);
-
-
   InitializeHipLZ();
-  ERROR_IF(((ordinal < 0)
-	    || ((size_t)ordinal >= LZDriver::GetPrimaryDriver().GetNumOfDevices())),
-	   hipErrorInvalidValue);
-  
   ERROR_IF((device == nullptr), hipErrorInvalidDevice);
+  ERROR_CHECK_DEVNUM(ordinal);
 
   *device = ordinal;
   RETURN(hipSuccess);
@@ -143,13 +122,10 @@ hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
 
 hipError_t hipDeviceComputeCapability(int *major, int *minor,
                                       hipDevice_t deviceId) {
-  // InitializeOpenCL();
   InitializeHipLZ();
-  
   ERROR_CHECK_DEVNUM(deviceId);
 
   hipDeviceProp_t props;
-  // CLDeviceById(deviceId).copyProperties(&props);
   LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).copyProperties(&props);
   
   if (major)
@@ -162,11 +138,9 @@ hipError_t hipDeviceComputeCapability(int *major, int *minor,
 
 hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
                                  int deviceId) {
-  // InitializeOpenCL();
   InitializeHipLZ();
   ERROR_CHECK_DEVNUM(deviceId);
 
-  // if (CLDeviceById(deviceId).getAttr(pi, attr))
   if (LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getAttr(pi, attr)) 
     RETURN(hipErrorInvalidValue);
   else
@@ -174,16 +148,10 @@ hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
 }
 
 hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
-  // InitializeOpenCL();
-
-  // Here we initialize HipLZ device as well, but does not actually return device properties
   // TODO: make a real properties retrieving function
-  
   InitializeHipLZ();
 
   ERROR_CHECK_DEVNUM(deviceId);
-
-  // CLDeviceById(deviceId).copyProperties(prop);
   LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).copyProperties(prop);
 
   RETURN(hipSuccess);
@@ -191,35 +159,33 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 
 hipError_t hipDeviceGetLimit(size_t *pValue, enum hipLimit_t limit) {
   ERROR_IF((pValue == nullptr), hipErrorInvalidValue);
-
-  * pValue = LZDriver::GetPrimaryDriver().getPrimaryDevice().GetMaxAllocSize();
-  
-  RETURN(hipErrorUnsupportedLimit);
+  switch (limit) {
+  case hipLimitMallocHeapSize:
+    *pValue = 0;
+    break;
+  default:
+    RETURN(hipErrorUnsupportedLimit);
+  }
+  RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceGetName(char *name, int len, hipDevice_t deviceId) {
-  // InitializeOpenCL();
   InitializeHipLZ();
   ERROR_CHECK_DEVNUM(deviceId);
 
-  size_t namelen = strlen(LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName()) + 1;
-  // CLDeviceById(deviceId).getName()) + 1;
-  if (namelen <= (size_t)len)
-    memcpy(name, LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName(), namelen);
-  // CLDeviceById(deviceId).getName(), namelen);
-  else if (name && (len > 0))
-    name[0] = 0;
+  size_t namelen = strlen(LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName());
+  namelen = (namelen < (size_t)len ? namelen : len - 1;
+  memcpy(name, LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName(), namelen);
+  name[namelen] = 0;
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
-  // InitializeOpenCL();
   InitializeHipLZ();
   ERROR_CHECK_DEVNUM(deviceId);
 
   if (bytes)
     *bytes = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getGlobalMemSize();
-  // CLDeviceById(deviceId).getGlobalMemSize();
   RETURN(hipSuccess);
 }
 
@@ -248,21 +214,23 @@ hipError_t hipFuncSetCacheConfig(const void *func, hipFuncCache_t config) {
 }
 
 hipError_t hipDeviceGetPCIBusId(char *pciBusId, int len, int deviceId) {
-  // TODO this requires OpenCL extension(s) ?
   LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId);
-  pciBusId[len] = 0;
-  if (device.HasPCIBusId(pciBusId))
-    RETURN(hipSuccess);
   
-  RETURN(hipErrorInvalidDevice);
+  hipDeviceProp_t prop;
+  device.copyProperties(&prop);
+  snprintf(pciBusId, len, "%04x:%04x:%04x",
+           prop.pciDomainID, prop.pciBusID, prop.pciDeviceID);
+  RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceGetByPCIBusId(int * deviceId, const char * pciBusId) {
-  // TODO this requires OpenCL extension(s)
-
+  int pciDomainID, pciBusID, pciDeviceID;
+  int err = sscanf(pciBusId, "%4x:%4x:%4x", &pciDomainID, &pciBusID, &pciDeviceID);
+  if (err == EOF || err < 3)
+    RETURN(hipErrorInvalidValue);
   for (size_t i = 0; i < LZDriver::GetPrimaryDriver().GetNumOfDevices(); i ++) {
     LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(i);
-    if (device.HasPCIBusId(pciBusId)) {
+    if (device.HasPCIBusId(pciDomainID, pciBusID, pciDeviceID)) {
       * deviceId = i;
       RETURN(hipSuccess);
     }
@@ -272,14 +240,18 @@ hipError_t hipDeviceGetByPCIBusId(int * deviceId, const char * pciBusId) {
 }
 
 hipError_t hipSetDeviceFlags(unsigned flags) {
-  // TODO this requires OpenCL extension(s)
-  return hipSuccess;
+  // TODO
+  RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
                                   int peerDeviceId) {
   ERROR_CHECK_DEVNUM(deviceId);
   ERROR_CHECK_DEVNUM(peerDeviceId);
+  if (deviceId == peerDeviceId) {
+    *canAccessPeer = 0;
+    RETURN(hipSuccess);
+  }
 
   LZ_TRY
      
@@ -289,15 +261,24 @@ hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
 
   LZ_CATCH
     
-  return hipSuccess;
+  RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
-  return hipErrorInvalidDevice;
+  // TODO
+  // int deviceId = getTlsDefaultLzCtx()->GetDevice()->getHipDeviceT();
+  // int canAccessPeer;
+  // hipError_t err = hipDeviceCanAccessPeer(&canAccessPeer, deviceId, peerDeviceId);
+  // if (err != hipSuccess)
+  //   RETURN(err);
+  // if (!canAccessPeer)
+  //   RETURN(hipErrorInvalidDevice);
+  RETURN(hipErrorInvalidDevice);
 }
 
 hipError_t hipDeviceDisablePeerAccess(int peerDeviceId) {
-  return hipErrorPeerAccessNotEnabled;
+  // TODO
+  RETURN(hipErrorPeerAccessNotEnabled);
 }
 
 hipError_t hipChooseDevice(int *device, const hipDeviceProp_t *prop) {
