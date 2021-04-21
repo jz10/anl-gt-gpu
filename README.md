@@ -1,6 +1,6 @@
 # anl-gt-gpu
 
-This repo contains the modified HipCL that retargets from vendor's OpenCL runtime to Intel Level-Zero runtime. To build this version, a new CMake parameter is introduced that indicates where the Level-Zero runtime was installed. Here are steps:
+This repository contains the modified HIPCL(https://github.com/cpc/hipcl) that retargets from a vendor's OpenCL runtime to Intel Level-Zero runtime. To build this version, a new CMake parameter is introduced that indicates where the Level-Zero runtime was installed. Here are the steps:
 ```
 cd ${YOUR_HIPCL_SRC}
 mkdir build
