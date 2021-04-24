@@ -315,7 +315,7 @@ hipError_t LZDevice::CanBeAccessed(LZDevice& srcDevice, int* canAccessPeer) {
 }
 
 // Enable/Disable the peer access from given device  
-hipError_t LZDevice::SetAccess(LZDevice& srcDevice, bool enableAccess) {
+hipError_t LZDevice::SetAccess(LZDevice& srcDevice, int flags, bool enableAccess) {
   int srcDeviceId = srcDevice.getHipDeviceT();
   if (peerAccessTable.find(srcDevice.getHipDeviceT()) == peerAccessTable.end()) {
     int canAccessPeer = 0;

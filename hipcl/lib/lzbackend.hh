@@ -198,7 +198,7 @@ public:
   hipError_t CanBeAccessed(LZDevice& srcDevice, int* canAccessPeer);
 
   // Enable/Disable the peer access from given devince
-  hipError_t SetAccess(LZDevice& srcDevice, bool canAccessPeer);
+  hipError_t SetAccess(LZDevice& srcDevice, int flags, bool canAccessPeer);
 
   // Check if the current device has same PCI bus ID as the one given by input
   bool HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID);

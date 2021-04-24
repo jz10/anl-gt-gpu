@@ -272,16 +272,27 @@ hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
   LZ_TRY
   LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId);
   LZDevice& peerDevice = LZDriver::GetPrimaryDriver().GetDeviceById(peerDeviceId);
-
+  peerDevice.SetAccess(device, flags, true);
   
   LZ_CATCH
-    
-  RETURN(hipErrorInvalidDevice);
+
+  RETURN(hipSuccess);
+  // RETURN(hipErrorInvalidDevice);
 }
 
 hipError_t hipDeviceDisablePeerAccess(int peerDeviceId) {
   // TODO
-  RETURN(hipErrorPeerAccessNotEnabled);
+  int deviceId = getTlsDefaultLzCtx()->GetDevice()->getHipDeviceT();
+
+  LZ_TRY
+  LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId);
+  LZDevice& peerDevice = LZDriver::GetPrimaryDriver().GetDeviceById(peerDeviceId);
+  peerDevice.SetAccess(device, 0, false);
+  
+  LZ_CATCH
+    
+  RETURN(hipSuccess);
+  // RETURN(hipErrorPeerAccessNotEnabled);
 }
 
 hipError_t hipChooseDevice(int *device, const hipDeviceProp_t *prop) {
