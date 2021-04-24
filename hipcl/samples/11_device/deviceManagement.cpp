@@ -46,6 +46,8 @@ int main() {
   
   hipDeviceProp_t devProp;
   hipGetDeviceProperties(&devProp, 0);
+
+  hipSetDevice(0);
   
   std::cout << "Device name " << devProp.name << std::endl;
   
@@ -67,15 +69,15 @@ int main() {
 
   // CPU MatrixTranspose computation 
   matrixTransposeCPUReference(cpuTransposeMatrix, Matrix, WIDTH);
-  
-  // allocate the memory on the device side
-  hipMalloc((void**)&gpuMatrix, NUM * sizeof(float));
-  hipMalloc((void**)&gpuTransposeMatrix, NUM * sizeof(float));
 
   for (int deviceId = 0; deviceId < devCount; deviceId ++) {
     // Set device via ID
     hipSetDevice(deviceId);
-    
+
+    // allocate the memory on the device side    
+    hipMalloc((void**)&gpuMatrix, NUM * sizeof(float));
+    hipMalloc((void**)&gpuTransposeMatrix, NUM * sizeof(float));
+  
     // Memory transfer from host to device
     hipMemcpy(gpuMatrix, Matrix, NUM * sizeof(float), hipMemcpyHostToDevice);
     

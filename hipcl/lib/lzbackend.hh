@@ -118,6 +118,8 @@ class LZDriver;
 // HipLZ device object that 
 class LZDevice {
 protected:
+  enum PeerAccessState{ Accessible, UnAccessible, Accessible_Disabled, Uninitialized };
+  
   // Synchronization mutex
   std::mutex DeviceMutex;
 
@@ -166,7 +168,11 @@ protected:
   // The Hip attribute map
   std::map<hipDeviceAttribute_t, int> Attributes;
 
+  // The command queue ordinal 
   uint32_t cmdQueueGraphOrdinal;
+
+  // The device peer access states
+  std::map<int, PeerAccessState> peerAccessTable;
   
 public:
   LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver);
@@ -185,8 +191,14 @@ public:
     return this->deviceId;
   }
 
-  // Check if two devices can access peer from one to another
+  // Check if the device can access another device 
   static hipError_t CanAccessPeer(LZDevice& device, LZDevice& peerDevice, int* canAccessPeer);
+
+  // Check if the curren device can be accessed by another device
+  hipError_t CanBeAccessed(LZDevice& srcDevice, int* canAccessPeer);
+
+  // Enable/Disable the peer access from given devince
+  hipError_t SetAccess(LZDevice& srcDevice, bool canAccessPeer);
 
   // Check if the current device has same PCI bus ID as the one given by input
   bool HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID);
@@ -506,8 +518,11 @@ protected:
   // The device objects
   std::vector<LZDevice* > devices;
 
+  // The primary device ID
+  int primaryDevieId;
+  
 public:
-  LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_) { 
+  LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_) : primaryDevieId(0) { 
     this->hDriver = hDriver_;
     this->deviceType = deviceType_; 
   
@@ -533,9 +548,14 @@ public:
   // Get the driver handler
   ze_driver_handle_t GetDriverHandle() { return this->hDriver; };
 
+  // Set the primary device
+  void setPrimaryDevice(int deviceId) {
+    primaryDevieId = 0;
+  }
+  
   // Get the primary device
   LZDevice& getPrimaryDevice() {
-    return * devices.at(0);
+    return * devices.at(primaryDevieId);
   }
 
   // Register the given module to all devices
