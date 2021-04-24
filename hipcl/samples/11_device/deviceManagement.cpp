@@ -97,6 +97,10 @@ int main() {
 	errors++;
       }
     }
+
+    // free the resources on device side      
+    hipFree(gpuMatrix);
+    hipFree(gpuTransposeMatrix);
   }
 
   if (errors != 0) {
@@ -105,14 +109,10 @@ int main() {
     printf("PASSED!\n");
   }
   
-  // free the resources on device side
-    hipFree(gpuMatrix);
-    hipFree(gpuTransposeMatrix);
-
-    // free the resources on host side
-    free(Matrix);
-    free(TransposeMatrix);
-    free(cpuTransposeMatrix);
-
-    return errors;
+  // free the resources on host side
+  free(Matrix);
+  free(TransposeMatrix);
+  free(cpuTransposeMatrix);
+  
+  return errors;
 }
