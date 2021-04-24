@@ -550,7 +550,7 @@ public:
 
   // Set the primary device
   void setPrimaryDevice(int deviceId) {
-    primaryDevieId = 0;
+    primaryDevieId = deviceId;
   }
   
   // Get the primary device
