@@ -73,6 +73,9 @@ int main() {
   hipMalloc((void**)&gpuTransposeMatrix, NUM * sizeof(float));
 
   for (int deviceId = 0; deviceId < devCount; deviceId ++) {
+    // Set device via ID
+    hipSetDevice(deviceId);
+    
     // Memory transfer from host to device
     hipMemcpy(gpuMatrix, Matrix, NUM * sizeof(float), hipMemcpyHostToDevice);
     
