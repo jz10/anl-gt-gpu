@@ -284,6 +284,75 @@ hipError_t LZDevice::CanAccessPeer(LZDevice& device, LZDevice& peerDevice, int* 
   return hipSuccess;
 }
 
+// Check if the curren device can be accessed by another device 
+hipError_t LZDevice::CanBeAccessed(LZDevice& srcDevice, int* canAccessPeer) {
+  int srcDeviceId = srcDevice.getHipDeviceT();
+  if (peerAccessTable.find(srcDevice.getHipDeviceT()) == peerAccessTable.end()) {
+    hipError_t res = CanAccessPeer(* this, srcDevice, canAccessPeer);
+    if (res == hipSuccess && * canAccessPeer) {
+      peerAccessTable[srcDeviceId] = PeerAccessState::Accessible;
+    } else if (res == hipSuccess && !(* canAccessPeer))	{
+      peerAccessTable[srcDeviceId] = PeerAccessState::UnAccessible;
+    }
+
+    return res;
+  } else {
+    PeerAccessState accessState = peerAccessTable[srcDeviceId];
+    if (accessState == PeerAccessState::Accessible) {
+      * canAccessPeer = 1;
+    } else if (accessState == PeerAccessState::UnAccessible) {
+      * canAccessPeer =	0;
+    } else if (accessState == PeerAccessState::Accessible_Disabled) {
+      * canAccessPeer = 0;
+    } else {
+       * canAccessPeer = 0;
+
+       return hipErrorInvalidDevice;
+    }
+
+    return hipSuccess;
+  }
+}
+
+// Enable/Disable the peer access from given device  
+hipError_t LZDevice::SetAccess(LZDevice& srcDevice, int flags, bool enableAccess) {
+  int srcDeviceId = srcDevice.getHipDeviceT();
+  if (peerAccessTable.find(srcDevice.getHipDeviceT()) == peerAccessTable.end()) {
+    int canAccessPeer = 0;
+    hipError_t res = CanAccessPeer(* this, srcDevice, &canAccessPeer);
+    if (res == hipSuccess && canAccessPeer) {
+      // The device can be accessed physically
+      if (enableAccess)
+	// Accessible
+	peerAccessTable[srcDeviceId] = PeerAccessState::Accessible;
+      else
+	// Physically accessible but disabled
+	peerAccessTable[srcDeviceId] = PeerAccessState::Accessible_Disabled;
+    } else if (res == hipSuccess && !(canAccessPeer)) {
+      peerAccessTable[srcDeviceId] = PeerAccessState::UnAccessible;
+    }
+    
+    return res;
+  } else {
+    PeerAccessState accessState = peerAccessTable[srcDeviceId];
+    if (accessState == PeerAccessState::Accessible) {
+      if (!enableAccess)
+	 peerAccessTable[srcDeviceId] = PeerAccessState::Accessible_Disabled;
+    } else if (accessState == PeerAccessState::UnAccessible) {
+      if (enableAccess)
+	// Cand not set a physically unaccessible device to be accessible
+	return hipErrorInvalidDevice;
+    } else if (accessState == PeerAccessState::Accessible_Disabled) {
+      if (enableAccess)
+	peerAccessTable[srcDeviceId] = PeerAccessState::Accessible;
+    } else {
+       return hipErrorInvalidDevice;
+    }
+
+    return hipSuccess;
+  }
+}
+
 // Check if the current device has same PCI bus ID as the one given by input  
 bool LZDevice::HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID) {
   if (Properties.pciDomainID == pciDomainID &&
