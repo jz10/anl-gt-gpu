@@ -613,7 +613,10 @@ typedef ClKernel *hipFunction_t;
 
 class ClProgram;
 
-typedef ClProgram *hipModule_t;
+class LZModule;
+
+// typedef ClProgram *hipModule_t;
+typedef LZModule *hipModule_t;
 
 class ClQueue;
 
@@ -3022,6 +3025,22 @@ hipError_t hipModuleLaunchKernel(hipFunction_t f, unsigned int gridDimX,
                                  unsigned int sharedMemBytes,
                                  hipStream_t stream, void **kernelParams,
                                  void **extra);
+
+hipError_t hipGetSymbolAddress(void **devPtr, const void *symbol);
+hipError_t hipGetSymbolSize(size_t *size, const void *symbol);
+hipError_t hipMemcpyToSymbol(const void *symbol, const void *src,
+                             size_t sizeBytes, size_t offset __dparm(0),
+                             hipMemcpyKind kind __dparm(hipMemcpyHostToDevice));
+hipError_t hipMemcpyToSymbolAsync(const void *symbol, const void *src,
+                                  size_t sizeBytes, size_t offset,
+                                  hipMemcpyKind kind,
+                                  hipStream_t stream __dparm(0));
+hipError_t hipMemcpyFromSymbol(void *dst, const void *symbol, size_t sizeBytes,
+			       size_t offset __dparm(0),
+			       hipMemcpyKind kind __dparm(hipMemcpyDeviceToHost));
+
+hipError_t hipMemcpyFromSymbolAsync(void *dst, const void *symbol, size_t sizeBytes, size_t offset,
+                                    hipMemcpyKind kind, hipStream_t stream __dparm(0));
 
 // doxygen end Version Management
 /**

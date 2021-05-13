@@ -103,6 +103,7 @@ void LZDevice::registerModule(std::string* module) {
   Modules.push_back(module);
 }
 
+// Register kernel function
 bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
 				const char *FunctionName) {
   std::lock_guard<std::mutex> Lock(DeviceMutex);
@@ -117,10 +118,22 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
   HostPtrToModuleMap.emplace(std::make_pair(HostFunction, module));
   HostPtrToNameMap.emplace(std::make_pair(HostFunction, FunctionName));
 
+  std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
   // Create HipLZ module
   std::string funcName(FunctionName);
   this->defaultContext->CreateModule((uint8_t* )module->data(), module->length(), funcName);
 
+  return true;
+}
+
+// Register global variable
+bool LZDevice::registerVar(std::string *module, const void *HostVar, const char *VarName) {
+  std::string varName = (const char* )VarName;
+  std::cout << "Register variable: " <<	varName << "    " << (unsigned long)module->data() << std::endl;
+
+  // Register global variable on primary context
+  getPrimaryCtx()->registerVar(module, HostVar, VarName);
+  
   return true;
 }
 
@@ -512,8 +525,6 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
   LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
   
-  this->lzModule = 0;
-
   // TODO: just use DefaultQueue to maintain the context local queu and command list?
   // Create a command list for default command queue
   this->lzCommandList = LZCommandList::CreateCmdList(this); 
@@ -538,14 +549,18 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
   }
 
   logDebug("LZ PARSE SPIR {} ", funcName);
- 
-  if (!this->lzModule) {
-    // Create module object
-    this->lzModule = new LZModule(this, funcIL, ilSize); 
-  }
+
+  LZModule* lzModule = 0;
+  if (this->IL2Module.find(funcIL) == this->IL2Module.end()) {
+    // Create HipLZ module and register it
+    lzModule = new LZModule(this, funcIL, ilSize);
+    this->IL2Module[funcIL] = lzModule;
+  } else
+    lzModule = this->IL2Module[funcIL];
+  
   
   // Create kernel object
-  this->lzModule->CreateKernel(funcName, FuncInfos);
+  lzModule->CreateKernel(funcName, FuncInfos);
 
   return true;
 }
@@ -575,13 +590,18 @@ hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
 bool LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(this->mtx);
   LZKernel* Kernel = 0;
-  logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
-  if (!this->lzModule) {
-    HIP_PROCESS_ERROR_MSG("Hiplz LZModule was not created before invoking kernel?", hipErrorInitializationError);
-  }
+  // logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
+  // if (!this->lzModule) {
+  //   HIP_PROCESS_ERROR_MSG("Hiplz LZModule was not created before invoking kernel?", hipErrorInitializationError);
+  // }
 
   std::string HostFunctionName = this->lzDevice->GetHostFunctionName(HostFunction);
-  Kernel = this->lzModule->GetKernel(HostFunctionName);
+  // Kernel = this->lzModule->GetKernel(HostFunctionName);
+  Kernel = GetKernelByFunctionName(HostFunctionName);
+  if (!Kernel) {
+    HIP_PROCESS_ERROR_MSG("Hiplz LZModule was not created before invoking kernel?", hipErrorInitializationError);
+  }
+  
   logDebug("LAUNCH HOST FUNCTION {} - {} ", HostFunctionName,  Kernel != nullptr);
   
   if (!Kernel)
@@ -621,6 +641,20 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   // lzCommandList->Execute(lzQueue);
 
   return Arguments->launch(Kernel);
+}
+
+// Get HipLZ kernel via function name 
+LZKernel* LZContext::GetKernelByFunctionName(std::string funcName) {
+  LZKernel* lzKernel = 0;
+  // Go through all modules in current HipLZ context to find the kernel via function name
+  for (auto mod : this->IL2Module) {
+    LZModule* lzModule = mod.second;
+    lzKernel = lzModule->GetKernel(funcName);
+    if (lzKernel)
+      break;
+  }
+  
+  return lzKernel;
 }
 
 // Allocate memory via Level-0 runtime  
@@ -685,6 +719,55 @@ bool LZContext::free(void *p) {
   LZ_PROCESS_ERROR_MSG("HipLZ could not free memory with error code: ", status);
 
   return true;
+}
+
+// Register global variable
+bool LZContext::registerVar(std::string *module, const void *HostVar, const char *VarName) {
+  size_t VarSize = 0;
+  void* VarPtr = 0;
+
+  for (auto mod : this->IL2Module) {
+    LZModule* lzModule = mod.second;
+
+    if (lzModule->getSymbolAddressSize(VarName, &VarPtr, &VarSize)) {
+      // Register HipLZ module, address and size information based on symbol name 
+      GlobalVarsMap[VarName] = std::make_tuple(lzModule, VarPtr, VarSize);
+      // Register size information based on devie pointer
+      globalPtrs.addGlobalPtr(VarPtr, VarSize);
+
+      break;
+    }
+  }
+
+  return VarPtr != 0;
+}
+
+// Get the address and size for the given symbol's name 
+bool LZContext::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) {
+  std::lock_guard<std::mutex> Lock(ContextMutex);
+  // Check if the global variable has been registered
+  auto it = this->GlobalVarsMap.find(name);
+  if (it != this->GlobalVarsMap.end()) {
+    *dptr = std::get<1>(it->second);
+    *bytes = std::get<2>(it->second);
+    
+    return true;
+  }
+
+  // Go through HipLZ modules and identify the relevant global pointer information
+  for (auto mod : IL2Module) {
+    LZModule* lzModule = mod.second;
+    if (lzModule->getSymbolAddressSize(name, dptr, bytes)) {
+      // Register HipLZ module, address and size information based on symbol name
+      GlobalVarsMap[(const char *)name] = std::make_tuple(lzModule, *dptr, *bytes);
+      // Register size information based on devie pointer
+      globalPtrs.addGlobalPtr(*dptr, *bytes);
+
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 // Create stream/queue
@@ -1765,14 +1848,15 @@ bool LZExecItem::launch(LZKernel *Kernel) {
 };
 
 LZModule::LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) {
-  // Create module   
+  // Create module with global address aware 
+  std::string compilerOptions = "-cl-std=CL2.0   -cl-take-global-address";
   ze_module_desc_t moduleDesc = {
     ZE_STRUCTURE_TYPE_MODULE_DESC,
     nullptr,
     ZE_MODULE_FORMAT_IL_SPIRV,
     ilSize,
     funcIL,
-    nullptr,
+    compilerOptions.c_str(),
     nullptr
   };
   ze_result_t status = zeModuleCreate(lzContext->GetContextHandle(),
@@ -1806,6 +1890,35 @@ LZKernel* LZModule::GetKernel(std::string funcName) {
     return nullptr;
 
   return kernels[funcName];
+}
+
+
+// Get hte global pointer related information
+bool LZModule::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes) {
+  ze_result_t status = zeModuleGetGlobalPointer(this->hModule, name, bytes, dptr);
+  if (status != ZE_RESULT_SUCCESS) {
+    std::string varName = (const char *)name;
+    std::cout << "No global variable found: " << varName << "  " << status << "   ";
+    if (status == ZE_RESULT_ERROR_DEVICE_LOST)
+      std::cout << "ZE_RESULT_ERROR_DEVICE_LOST";
+    else if (status == ZE_RESULT_ERROR_UNINITIALIZED)
+      std::cout << "ZE_RESULT_ERROR_UNINITIALIZED";
+    else if (status == ZE_RESULT_ERROR_INVALID_NULL_HANDLE)
+      std::cout << "ZE_RESULT_ERROR_INVALID_NULL_HANDLE";
+    else if (status == ZE_RESULT_ERROR_INVALID_NULL_POINTER)
+      std::cout << "ZE_RESULT_ERROR_INVALID_NULL_POINTER";
+    else if (status == ZE_RESULT_ERROR_INVALID_GLOBAL_NAME)
+      std::cout << "ZE_RESULT_ERROR_INVALID_GLOBAL_NAME";
+    
+    std::cout << std::endl;
+    
+    return false;
+  } else {
+    std::string varName = name;
+    std::cout << "Got global variable: " << varName << "  " << * bytes << "  ptr: " << * dptr << std::endl;
+  }
+  
+  return true;
 }
 
 LZKernel::LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* FuncInfo_) {

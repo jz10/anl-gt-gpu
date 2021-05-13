@@ -209,6 +209,9 @@ public:
   // Regsiter HipLZ module, kernel function name with host function which is a wrapper
   bool registerFunction(std::string *module, const void *HostFunction, const char *FunctionName);
 
+  // Register global variable
+  bool registerVar(std::string *module, const void *HostVar, const char *VarName);
+  
   // Get host function pointer's corresponding name
   std::string GetHostFunctionName(const void* HostFunction);
   
@@ -294,6 +297,14 @@ public:
 
   // Get HipLZ kernel via funciton name
   LZKernel* GetKernel(std::string funcName);
+
+  // Check if support symbol address
+  bool symbolSupported() {
+    return true;
+  }
+  
+  // Get the pointer address and size information via gievn symbol's name
+  bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes);
 };
 
 class LZEventPool;
@@ -398,9 +409,10 @@ protected:
   std::mutex mtx;
   // Reference to HipLZ device
   LZDevice* lzDevice;
-  // Reference to HipLZ module
-  LZModule* lzModule;
-
+  
+  // Map between IL binary to HipLZ module
+  std::map<uint8_t* , LZModule* > IL2Module;
+  
   // Reference to HipLZ command list
   LZCommandList* lzCommandList;
   // Reference to HipLZ queue
@@ -410,11 +422,15 @@ protected:
 
   // HipLZ context handle
   ze_context_handle_t hContext;
+  
   // OpenCL function information map, this is used for presenting SPIR-V kernel funcitons' arguments
   OpenCLFunctionInfoMap FuncInfos;
 
+  // The map between global variable name and its relevant HipLZ module, device poitner and size information
+  std::map<std::string, std::tuple<LZModule *, hipDeviceptr_t, size_t>> GlobalVarsMap;
+  
 public:
-  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzModule(0), lzCommandList(0), 
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzCommandList(0), 
 				       lzQueue(0), defaultEventPool(0) {}
   LZContext(LZDevice* dev);  
 
@@ -499,8 +515,18 @@ public:
   // Allocate memory via Level-0 runtime
   void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
 
+  // Register global variable
+  bool registerVar(std::string *module, const void *HostVar, const char *VarName);
+
+  // Get the address and size for the given symbol's name
+  virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes);
+  
   // Create Level-0 image object
   LZImage* createImage(hipResourceDesc* resDesc, hipTextureDesc* texDesc);
+
+protected:
+   // Get HipLZ kernel via function name
+  LZKernel* GetKernelByFunctionName(std::string funcName);
 };
 
 // HipLZ driver object that manages device objects and the current context
@@ -575,6 +601,16 @@ public:
     return true;
   }
 
+  // Register global variable
+  bool registerVar(std::string *module, const void *HostVar, const char *VarName) {
+    for (int deviceId = 0; deviceId < devices.size(); deviceId ++) {
+      if (!devices[deviceId]->registerVar(module, HostVar, VarName))
+        return false;
+    }
+
+    return true;
+  }
+  
   // Get the HipLZ device driver by ID
   LZDevice& GetDeviceById(int id);
 

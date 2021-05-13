@@ -15,7 +15,8 @@ set_target_properties(hipcl PROPERTIES
                       SOVERSION "${LIB_API_VERSION}"
                       VERSION "${LIB_BUILD_VERSION}")
 
-target_link_libraries(hipcl ${SANITIZER_LIBS} ${PTHREAD_LIBRARY} ${OpenCL_LIBRARIES})
+#target_link_libraries(hipcl ${SANITIZER_LIBS} ${PTHREAD_LIBRARY} ${OpenCL_LIBRARIES})
+target_link_libraries(hipcl ${SANITIZER_LIBS} ${PTHREAD_LIBRARY} ${OpenCL_LIBRARIES} ${Level_0_LIBRARIES})
 
 add_dependencies("hipcl" "kernellib_bc")
 
@@ -58,7 +59,7 @@ target_include_directories(hipcl
     PRIVATE
         "${CMAKE_SOURCE_DIR}"
         "${CMAKE_SOURCE_DIR}/include"
-	"${Level_0_INCLUDE_DIR}"
+        "${Level_0_INCLUDE_DIR}"
 )
 
 install(TARGETS hipcl

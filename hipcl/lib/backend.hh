@@ -318,6 +318,76 @@ public:
 
 class ClDevice;
 
+class ClContext;
+
+class GlobalPtrs {
+protected:
+  // The map between global pointer and its size
+  std::map<void *, size_t> GlobalPointers;
+
+  // The context reference
+  ClContext* context;
+
+public:
+  GlobalPtrs() : context(nullptr) {};
+  GlobalPtrs(ClContext* ctx) : context(ctx) {};
+
+  // Set the context for global pointers
+  void setupContext(ClContext* ctx) {
+    this->context = ctx;
+  }
+  
+  // Assign operator
+  GlobalPtrs &operator=(GlobalPtrs &&rhs) {
+    this->GlobalPointers = std::move(rhs.GlobalPointers);
+    return *this;
+  }
+
+  // Add global pointer
+  void addGlobalPtr(void *ptr, size_t size) {
+    this->GlobalPointers.emplace(ptr, size);
+  }
+
+  // Remove global pointer
+  void removeGlobalPtr(void *ptr) {
+    auto it = this->GlobalPointers.find(ptr);
+    if (it != this->GlobalPointers.end())
+      GlobalPointers.erase(it);
+  }
+
+  // Get the given pointer's size, i.e. the length of pointer memory region, and the given pointer
+  // has to be the base pointer
+  bool pointerSize(void *ptr, size_t *size) {
+    auto it = this->GlobalPointers.find(ptr);
+    if (it != this->GlobalPointers.end()) {
+      *size = it->second;
+      return true;
+    }
+    
+    return false;
+  }
+
+  // Get the given pointer's based pointer and lenght of pointer memory region
+  bool pointerInfo(void *ptr, void **pbase, size_t *psize) {
+    for (auto it : this->GlobalPointers) {
+    if ((it.first <= ptr) && (ptr < ((const char *)it.first + it.second))) {
+      if (pbase)
+        *pbase = it.first;
+      if (psize)
+        *psize = it.second;
+      return true;
+    }
+  }
+    
+    return false;
+  }
+  
+  // Check if the given pointer has been registered
+  bool hasPointer(const void *ptr) {
+    return this->GlobalPointers.find((void *)ptr) != this->GlobalPointers.end();
+  }
+};
+  
 class ClContext {
 protected:
   std::mutex ContextMutex;
@@ -334,6 +404,9 @@ protected:
   std::map<const void *, ClProgram *> BuiltinPrograms;
   std::set<ClProgram *> Programs;
 
+  // The reference for global pointer table
+  GlobalPtrs globalPtrs;
+  
   hipStream_t findQueue(hipStream_t stream);
 
 public:
@@ -380,6 +453,8 @@ public:
 
   ClProgram *createProgram(std::string &binary);
   hipError_t destroyProgram(ClProgram *prog);
+  
+  virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes);
 };
 
 class ClDevice {

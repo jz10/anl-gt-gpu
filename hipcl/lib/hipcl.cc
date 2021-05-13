@@ -474,7 +474,9 @@ const char *hipGetErrorName(hipError_t hip_error) {
     return "hipErrorNotFound";
   case hipErrorIllegalAddress:
     return "hipErrorIllegalAddress";
-
+  case hipErrorInvalidSymbol:
+    return "hipErrorInvalidSymbol";
+    
   case hipErrorMissingConfiguration:
     return "hipErrorMissingConfiguration";
   case hipErrorMemoryAllocation:
@@ -1555,9 +1557,77 @@ hipError_t hipFuncGetAttributes(hipFuncAttributes *attr, const void *func) {
 
 hipError_t hipModuleGetGlobal(hipDeviceptr_t *dptr, size_t *bytes,
                               hipModule_t hmod, const char *name) {
-  // TODO global variable support will require some Clang changes
-  logError("Global variables are not supported ATM\n");
-  return hipErrorNotFound;
+  ERROR_IF((!dptr || !bytes || !name || !hmod), hipErrorInvalidValue);
+  ERROR_IF((!hmod->symbolSupported()), hipErrorNotSupported);
+  ERROR_IF((!hmod->getSymbolAddressSize(name, dptr, bytes)), hipErrorInvalidSymbol);
+
+  RETURN(hipSuccess);
+}
+
+hipError_t hipGetSymbolAddress(void **devPtr, const void *symbol) {
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  size_t bytes;
+  ERROR_IF((!cont->getSymbolAddressSize((const char* )symbol, (hipDeviceptr_t *)devPtr, &bytes)),
+	   hipErrorInvalidSymbol);
+
+  RETURN(hipSuccess);
+}
+
+hipError_t hipGetSymbolSize(size_t *size, const void *symbol) {
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  hipDeviceptr_t devPtr;
+  ERROR_IF((!cont->getSymbolAddressSize((const char* )symbol, &devPtr, size)), hipErrorInvalidSymbol);
+
+  RETURN(hipSuccess);
+}
+
+hipError_t hipMemcpyToSymbol(const void *symbol, const void *src, size_t sizeBytes, size_t offset,
+                             hipMemcpyKind kind) {
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  hipError_t e = hipMemcpyToSymbolAsync(symbol, src, sizeBytes, offset, kind, cont->getDefaultQueue());
+  if (e != hipSuccess)
+    RETURN(e);
+
+  cont->getDefaultQueue()->finish();
+  
+  RETURN(hipSuccess);
+}
+
+hipError_t hipMemcpyToSymbolAsync(const void *symbol, const void *src, size_t sizeBytes, size_t offset,
+                                  hipMemcpyKind kind, hipStream_t stream) {
+  void *symPtr = NULL;
+  size_t symSize = 0;
+  ClContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  ERROR_IF((!cont->getSymbolAddressSize((const char*)symbol, &symPtr, &symSize)), hipErrorInvalidSymbol);
+  RETURN(hipMemcpyAsync((void *)((intptr_t)symPtr + offset), src, sizeBytes, kind, stream));
+}
+
+hipError_t hipMemcpyFromSymbol(void *dst, const void *symbol, size_t sizeBytes, size_t offset,
+			       hipMemcpyKind kind) {
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  hipError_t e = hipMemcpyFromSymbolAsync(dst, symbol, sizeBytes, offset, kind, cont->getDefaultQueue());
+  if (e != hipSuccess)
+    RETURN(e);
+
+  cont->getDefaultQueue()->finish();
+  RETURN(hipSuccess);
+}
+
+hipError_t hipMemcpyFromSymbolAsync(void *dst, const void *symbol, size_t sizeBytes, size_t offset,
+                                    hipMemcpyKind kind, hipStream_t stream) {
+  void *symPtr;
+  size_t symSize;
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  ERROR_IF((!cont->getSymbolAddressSize((const char*)symbol, &symPtr, &symSize)), hipErrorInvalidSymbol);
+  RETURN(hipMemcpyAsync(dst, (void *)((intptr_t)symPtr + offset), sizeBytes, kind, stream));
 }
 
 hipError_t hipModuleLoadData(hipModule_t *module, const void *image) {
@@ -1639,18 +1709,23 @@ hipError_t hipModuleLoad(hipModule_t *module, const char *fname) {
   std::string content(memblock, size);
   delete[] memblock;
 
-  *module = cont->createProgram(content);
+  RETURN(hipErrorNotSupported);
+  /* TODO: fix this by implement hipModule_t related operations via Level-0
+   *module = cont->createProgram(content);
   if (*module == nullptr)
     RETURN(hipErrorInvalidValue);
   else
     RETURN(hipSuccess);
+    */
 }
 
 hipError_t hipModuleUnload(hipModule_t module) {
   ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  RETURN(cont->destroyProgram(module));
+  RETURN(hipErrorNotSupported);
+  // TODO: fix this by implement hipModule_t related operations via Level-0
+  // RETURN(cont->destroyProgram(module));
 }
 
 hipError_t hipModuleGetFunction(hipFunction_t *function, hipModule_t module,
@@ -1817,7 +1892,7 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterFunction on module {}\n", (void *)module);
   
-  for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
+  /*xxx for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
 
     if (CLDeviceById(deviceId).registerFunction(module, hostFunction,
                                                 deviceName)) {
@@ -1827,17 +1902,7 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
                   deviceName);
       std::abort();
     }
-  }
-
-  // HipLZ: here we register HipLZ kernels as well
-  // for (size_t deviceId = 0; deviceId < NumLZDevices; ++ deviceId) {
-  //   if (HipLZDeviceById(deviceId).registerFunction(module, hostFunction, deviceName)) {
-  //     logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName);
-  //   } else {
-  //     logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n", deviceName);
-  //     std::abort();
-  //   }
-  // }
+    }*/
   
   for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
     if (LZDriver::HipLZDriverById(driverId).registerFunction(module, hostFunction, deviceName)) {
@@ -1849,11 +1914,30 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   }
 }
 
-extern "C" void __hipRegisterVar(std::vector<hipModule_t> *modules,
+extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modules,
                                  char *hostVar, char *deviceVar,
                                  const char *deviceName, int ext, int size,
                                  int constant, int global) {
-  logError("__hipRegisterVar not implemented yet\n");
+  // logError("__hipRegisterVar not implemented yet\n");
   InitializeOpenCL();
+
+  std::string devName = deviceName;
+  std::string hostVarName = hostVar;
+  std::string devVar = deviceVar;
+  std::cout << "hostVar " << hostVarName << " deviceVar " << devVar << " deviceName " << devName
+	    << " size " << size << " global " << global << std::endl;
+  // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution
+  InitializeHipLZ();
+
+  std::string *module = reinterpret_cast<std::string *>(data);
+  logDebug("RegisterVar on module {}\n", (void *)module);
+  
+  for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+    if (LZDriver::HipLZDriverById(driverId).registerVar(module, hostVar, deviceName)) {
+      logDebug("__hipRegisterVar: variable {} found\n", deviceName);
+    } else {
+      logError("__hipRegisterVar could not find: {}\n", deviceName);
+    }
+  }
 }
 

@@ -222,7 +222,7 @@ bool ClProgram::setup(std::string &binary) {
   }
 
   std::string name = Device.getInfo<CL_DEVICE_NAME>();
-
+  
   int build_failed = Program.build("-x spir -cl-kernel-arg-info");
 
   std::string log = Program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(Device, &err);
@@ -881,6 +881,8 @@ hipError_t ClContext::createProgramBuiltin(std::string *module,
                                            std::string &FunctionName) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
 
+  std::cout << "call cl create program builtin" << std::endl;
+  
   logDebug("createProgramBuiltin: {}\n", FunctionName);
 
   ClProgram *p = new ClProgram(Context, Device->getDevice());
@@ -1007,6 +1009,7 @@ hipError_t ClContext::launchWithExtraParams(dim3 grid, dim3 block,
 ClProgram *ClContext::createProgram(std::string &binary) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
 
+  std::cout << "call cl create program" << std::endl;
   ClProgram *prog = new ClProgram(Context, Device->getDevice());
   if (prog == nullptr)
     return nullptr;
@@ -1029,6 +1032,13 @@ hipError_t ClContext::destroyProgram(ClProgram *prog) {
 
   Programs.erase(it);
   return hipSuccess;
+}
+
+// Get the address and size for the given symbol's name
+bool ClContext::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) {
+  // TODO: no OpenCL support yet
+  
+  return false;
 }
 
 /***********************************************************************/
