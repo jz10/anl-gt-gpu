@@ -211,6 +211,7 @@ public:
 
   // Register global variable
   bool registerVar(std::string *module, const void *HostVar, const char *VarName);
+  bool registerVar(std::string *module, const void *HostVar, const char *VarName, size_t size);
   
   // Get host function pointer's corresponding name
   std::string GetHostFunctionName(const void* HostFunction);
@@ -517,7 +518,8 @@ public:
 
   // Register global variable
   bool registerVar(std::string *module, const void *HostVar, const char *VarName);
-
+  bool registerVar(std::string *module, const void *HostVar, const char *VarName, size_t size);
+  
   // Get the address and size for the given symbol's name
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes);
   
@@ -605,6 +607,15 @@ public:
   bool registerVar(std::string *module, const void *HostVar, const char *VarName) {
     for (int deviceId = 0; deviceId < devices.size(); deviceId ++) {
       if (!devices[deviceId]->registerVar(module, HostVar, VarName))
+        return false;
+    }
+
+    return true;
+  }
+
+  bool registerVar(std::string *module, const void *HostVar, const char *VarName, size_t size) {
+    for (int deviceId = 0; deviceId < devices.size(); deviceId ++) {
+      if (!devices[deviceId]->registerVar(module, HostVar, VarName, size))
         return false;
     }
 

@@ -1921,11 +1921,11 @@ extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modul
   // logError("__hipRegisterVar not implemented yet\n");
   InitializeOpenCL();
 
-  std::string devName = deviceName;
-  std::string hostVarName = hostVar;
-  std::string devVar = deviceVar;
-  std::cout << "hostVar " << hostVarName << " deviceVar " << devVar << " deviceName " << devName
-	    << " size " << size << " global " << global << std::endl;
+  // std::string devName = deviceName;
+  // std::string hostVarName = hostVar;
+  // std::string devVar = deviceVar;
+  // std::cout << "hipcl hostVar: " << hostVarName << " deviceVar: " << devVar << " deviceName: "
+  // 	    << devName << " size: " << size << " global: " << global << std::endl;
   // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution
   InitializeHipLZ();
 
@@ -1933,7 +1933,7 @@ extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modul
   logDebug("RegisterVar on module {}\n", (void *)module);
   
   for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
-    if (LZDriver::HipLZDriverById(driverId).registerVar(module, hostVar, deviceName)) {
+    if (LZDriver::HipLZDriverById(driverId).registerVar(module, hostVar, deviceName, size)) {
       logDebug("__hipRegisterVar: variable {} found\n", deviceName);
     } else {
       logError("__hipRegisterVar could not find: {}\n", deviceName);

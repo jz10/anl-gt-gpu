@@ -118,7 +118,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
   HostPtrToModuleMap.emplace(std::make_pair(HostFunction, module));
   HostPtrToNameMap.emplace(std::make_pair(HostFunction, FunctionName));
 
-  std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
+  // std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
   // Create HipLZ module
   std::string funcName(FunctionName);
   this->defaultContext->CreateModule((uint8_t* )module->data(), module->length(), funcName);
@@ -128,15 +128,21 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
 
 // Register global variable
 bool LZDevice::registerVar(std::string *module, const void *HostVar, const char *VarName) {
-  std::string varName = (const char* )VarName;
-  std::cout << "Register variable: " <<	varName << "    " << (unsigned long)module->data() << std::endl;
+  // std::string varName = (const char* )VarName;
+  // std::cout << "Register variable: " <<	varName << "   module data address: " << (unsigned long)module->data() << std::endl;
 
   // Register global variable on primary context
-  getPrimaryCtx()->registerVar(module, HostVar, VarName);
-  
-  return true;
+  return getPrimaryCtx()->registerVar(module, HostVar, VarName);
 }
 
+bool LZDevice::registerVar(std::string *module, const void *HostVar, const char *VarName, size_t size) {
+  // std::string varName = (const char* )VarName;
+  // std::cout << "Register variable with size : " << varName << "   module data address: " << (unsigned long)module->data() << std::endl;
+
+  // Register global variable on primary context
+  return getPrimaryCtx()->registerVar(module, HostVar, VarName, size);
+}
+    
 // Get host function pointer's corresponding name 
 std::string LZDevice::GetHostFunctionName(const void* HostFunction) {
   if (HostPtrToNameMap.find(HostFunction) == HostPtrToNameMap.end())
@@ -731,6 +737,26 @@ bool LZContext::registerVar(std::string *module, const void *HostVar, const char
 
     if (lzModule->getSymbolAddressSize(VarName, &VarPtr, &VarSize)) {
       // Register HipLZ module, address and size information based on symbol name 
+      GlobalVarsMap[VarName] = std::make_tuple(lzModule, VarPtr, VarSize);
+      // Register size information based on devie pointer
+      globalPtrs.addGlobalPtr(VarPtr, VarSize);
+
+      break;
+    }
+  }
+
+  return VarPtr != 0;
+}
+
+bool LZContext::registerVar(std::string *module, const void *HostVar, const char *VarName, size_t size) {
+  size_t VarSize = size;
+  void* VarPtr = 0;
+
+  for (auto mod : this->IL2Module) {
+    LZModule* lzModule = mod.second;
+
+    if (lzModule->getSymbolAddressSize(VarName, &VarPtr, &VarSize)) {
+      // Register HipLZ module, address and size information based on symbol name
       GlobalVarsMap[VarName] = std::make_tuple(lzModule, VarPtr, VarSize);
       // Register size information based on devie pointer
       globalPtrs.addGlobalPtr(VarPtr, VarSize);
@@ -1849,7 +1875,7 @@ bool LZExecItem::launch(LZKernel *Kernel) {
 
 LZModule::LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) {
   // Create module with global address aware 
-  std::string compilerOptions = "-cl-std=CL2.0   -cl-take-global-address";
+  std::string compilerOptions = " -cl-std=CL2.0 -cl-take-global-address -cl-match-sincospi";
   ze_module_desc_t moduleDesc = {
     ZE_STRUCTURE_TYPE_MODULE_DESC,
     nullptr,
@@ -1895,7 +1921,8 @@ LZKernel* LZModule::GetKernel(std::string funcName) {
 
 // Get hte global pointer related information
 bool LZModule::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes) {
-  ze_result_t status = zeModuleGetGlobalPointer(this->hModule, name, bytes, dptr);
+  size_t varSize = 0;
+  ze_result_t status = zeModuleGetGlobalPointer(this->hModule, name, &varSize, dptr);
   if (status != ZE_RESULT_SUCCESS) {
     std::string varName = (const char *)name;
     std::cout << "No global variable found: " << varName << "  " << status << "   ";
@@ -1914,9 +1941,12 @@ bool LZModule::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size
     
     return false;
   } else {
-    std::string varName = name;
-    std::cout << "Got global variable: " << varName << "  " << * bytes << "  ptr: " << * dptr << std::endl;
+    // std::string varName = name;
+    // std::cout << "getSymbolAddressSize  --  global variable: " << varName << " bytes: " << varSize << "  ptr: " << * dptr << std::endl;
   }
+
+  if (varSize != 0)
+    * bytes = varSize;
   
   return true;
 }

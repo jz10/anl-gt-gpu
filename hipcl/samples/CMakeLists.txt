@@ -76,6 +76,8 @@ set(SAMPLES
     9_unroll
     10_memcpy3D
     11_device
+    hipSymbol
+    hipDeviceLink
 )
 
 foreach (SAMPLE ${SAMPLES})
