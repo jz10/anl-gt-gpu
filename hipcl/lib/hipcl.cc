@@ -1888,7 +1888,8 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   std::string devFunc = deviceFunction;
   // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution)
   InitializeHipLZ();
-	
+
+  // std::cout << "module data: " << (unsigned long)data << std::endl;
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterFunction on module {}\n", (void *)module);
   

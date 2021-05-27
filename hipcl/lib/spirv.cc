@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <string>
 #include <vector>
@@ -285,7 +286,7 @@ public:
     ++p;
 
     headerOK = true;
-
+    
     // INSTRUCTION STREAM
     parseOK = parseInstructionStream(p, (numWords - 5));
     return valid();

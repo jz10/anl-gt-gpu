@@ -1,6 +1,5 @@
 #include "hipDeviceLink.h"
 
-/*
 __global__ void Write(const int *in) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   global[tid] = in[tid];
@@ -14,4 +13,4 @@ void writeGlobal(int *hostIn) {
   hipFree(deviceIn);
 }
 
-*/
+

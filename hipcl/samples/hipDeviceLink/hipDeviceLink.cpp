@@ -1,7 +1,7 @@
 #include "hipDeviceLinkConsts.h"
 #include <assert.h>
 #include <stdio.h>
-
+ 
 int main() {
   int *hostIn, *hostOut;
   hostIn = new int[NUM];
