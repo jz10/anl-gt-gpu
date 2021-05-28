@@ -188,9 +188,17 @@ void LZDevice::setupProperties(int index) {
     this->deviceComputeProps.subGroupSizes[this->deviceComputeProps.numSubGroupSizes-1];
 
   // Replicate from OpenCL implementation
-  Properties.maxGridSize[0] = this->deviceComputeProps.maxGroupCountX;
-  Properties.maxGridSize[1] = this->deviceComputeProps.maxGroupCountY;
-  Properties.maxGridSize[2] = this->deviceComputeProps.maxGroupCountZ;
+
+  // HIP and LZ uses int and uint32_t, respectively, for storing the
+  // group count. Clamp the group count to INT_MAX to avoid 2^31+ size
+  // being interpreted as negative number.
+  constexpr unsigned int_max = std::numeric_limits<int>::max();
+  Properties.maxGridSize[0] =
+      std::min(this->deviceComputeProps.maxGroupCountX, int_max);
+  Properties.maxGridSize[1] =
+      std::min(this->deviceComputeProps.maxGroupCountY, int_max);
+  Properties.maxGridSize[2] =
+      std::min(this->deviceComputeProps.maxGroupCountZ, int_max);
   Properties.memoryClockRate = this->deviceMemoryProps.maxClockRate;
   Properties.memoryBusWidth = this->deviceMemoryProps.maxBusWidth;
   Properties.major = 2;
