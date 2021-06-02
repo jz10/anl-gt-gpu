@@ -85,7 +85,7 @@ set(SAMPLES
     hiptest
     bit_extract
     hcc_dialects
-#    fp16
+    fp16
     0_MatrixTranspose
     0_MatrixMultiply
     1_hipEvent
@@ -97,7 +97,7 @@ set(SAMPLES
     hipInfo
     7_streams
     9_unroll
-#    10_memcpy3D
+    10_memcpy3D
     11_device
     hipSymbol
     hipDeviceLink
