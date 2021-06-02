@@ -1354,9 +1354,9 @@ static void InitializeOpenCLCallOnce() {
   OpenCLDevices.clear();
   NumDevices = 0;
   std::vector<cl::Device> Devices;
-  const char *selected_platform_str = std::getenv("HIPCL_PLATFORM");
-  const char *selected_device_str = std::getenv("HIPCL_DEVICE");
-  const char *selected_device_type_str = std::getenv("HIPCL_DEVICE_TYPE");
+  const char *selected_platform_str = std::getenv("HIPLZ_PLATFORM");
+  const char *selected_device_str = std::getenv("HIPLZ_DEVICE");
+  const char *selected_device_type_str = std::getenv("HIPLZ_DEVICE_TYPE");
   int selected_platform = -1;
   int selected_device = -1;
   cl_bitfield selected_dev_type = 0;
@@ -1365,7 +1365,7 @@ static void InitializeOpenCLCallOnce() {
       selected_platform = std::stoi(selected_platform_str);
       if ((selected_platform < 0) || (selected_platform >= Platforms.size()))
         throw InvalidPlatformOrDeviceNumber(
-            "HIPCL_PLATFORM: platform number out of range");
+            "HIPLZ_PLATFORM: platform number out of range");
     }
 
     if (selected_device_str) {
@@ -1377,10 +1377,10 @@ static void InitializeOpenCLCallOnce() {
           Platforms[selected_platform].getDevices(CL_DEVICE_TYPE_ALL, &Devices);
       if (err != CL_SUCCESS)
         throw InvalidPlatformOrDeviceNumber(
-            "HIPCL_DEVICE: can't get devices for platform");
+            "HIPLZ_DEVICE: can't get devices for platform");
       if ((selected_device < 0) || (selected_device >= Devices.size()))
         throw InvalidPlatformOrDeviceNumber(
-            "HIPCL_DEVICE: device number out of range");
+            "HIPLZ_DEVICE: device number out of range");
     }
 
     if (selected_device_type_str) {
@@ -1397,7 +1397,7 @@ static void InitializeOpenCLCallOnce() {
         selected_dev_type = CL_DEVICE_TYPE_ACCELERATOR;
       else
         throw InvalidDeviceType(
-            "Unknown value provided for HIPCL_DEVICE_TYPE\n");
+            "Unknown value provided for HIPLZ_DEVICE_TYPE\n");
     }
   } catch (const InvalidDeviceType &e) {
     logCritical("{}\n", e.what());
@@ -1407,10 +1407,10 @@ static void InitializeOpenCLCallOnce() {
     return;
   } catch (const std::invalid_argument &e) {
     logCritical(
-        "Could not convert HIPCL_PLATFORM or HIPCL_DEVICES to a number\n");
+        "Could not convert HIPLZ_PLATFORM or HIPLZ_DEVICES to a number\n");
     return;
   } catch (const std::out_of_range &e) {
-    logCritical("HIPCL_PLATFORM or HIPCL_DEVICES is out of range\n");
+    logCritical("HIPLZ_PLATFORM or HIPLZ_DEVICES is out of range\n");
     return;
   }
 

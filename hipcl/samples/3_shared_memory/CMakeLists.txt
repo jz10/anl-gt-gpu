@@ -1,3 +1,3 @@
 # sharedMemory
 
-add_hipcl_test(sharedMemory sharedMemory PASSED sharedMemory.cpp)
+add_hiplz_test(sharedMemory sharedMemory PASSED sharedMemory.cpp)

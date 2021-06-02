@@ -1,0 +1,16 @@
+#cmakedefine CLANG_BIN_PATH "@CLANG_BIN_PATH@"
+
+#cmakedefine CLANG_ROOT_PATH "@CLANG_ROOT_PATH@"
+
+#cmakedefine HIPLZ_CXX_OPTIONS "@HIPLZ_CXX_OPTIONS@"
+
+#cmakedefine CMAKE_INSTALL_PREFIX "@CMAKE_INSTALL_PREFIX@"
+
+#cmakedefine HIPLZ_LIB_DIR "@HIPLZ_LIB_DIR@"
+#cmakedefine HIPLZ_DATA_DIR "@HIPLZ_DATA_DIR@"
+#cmakedefine HIPLZ_INC_DIR "@HIPLZ_INC_DIR@"
+#cmakedefine HIPLZ_BIN_DIR "@HIPLZ_BIN_DIR@"
+
+#cmakedefine HIPLZ_VERSION_FULL "@HIPLZ_VERSION_FULL@"
+
+#define HIP_PLATFORM "hiplz"

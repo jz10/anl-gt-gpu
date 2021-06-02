@@ -1,3 +1,3 @@
 # deviceManagement
 
-add_hipcl_test(deviceManagement deviceManagement PASSED deviceManagement.cpp)
+add_hiplz_test(deviceManagement deviceManagement PASSED deviceManagement.cpp)

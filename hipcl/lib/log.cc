@@ -12,13 +12,13 @@ static int SpdlogWasSetup = 0;
 void setupSpdlog() {
   if (SpdlogWasSetup)
     return;
-  spdlog::set_default_logger(spdlog::stderr_color_mt("HIPCL"));
+  spdlog::set_default_logger(spdlog::stderr_color_mt("HIPLZ"));
   spdlog::set_level(spdlog::level::debug);
   spdlog::set_pattern("%n %^%l%$ [TID %t] [%E.%F] : %v");
 
   spdlog::level::level_enum spd_loglevel = spdlog::level::err;
 
-  const char *loglevel = getenv("HIPCL_LOGLEVEL");
+  const char *loglevel = getenv("HIPLZ_LOGLEVEL");
   if (loglevel) {
     std::string level(loglevel);
     if (level == "debug")

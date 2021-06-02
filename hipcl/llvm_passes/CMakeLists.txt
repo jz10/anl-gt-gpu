@@ -31,6 +31,6 @@ endif()
 add_library(LLVMHipDynMem MODULE HipDynMem.cpp)
 
 install(TARGETS LLVMHipDynMem
-        LIBRARY DESTINATION "${HIPCL_LLVM_DIR}"
-        ARCHIVE DESTINATION "${HIPCL_LLVM_DIR}"
+        LIBRARY DESTINATION "${HIPLZ_LLVM_DIR}"
+        ARCHIVE DESTINATION "${HIPLZ_LLVM_DIR}"
         )

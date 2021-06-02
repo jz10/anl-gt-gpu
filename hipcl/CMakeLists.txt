@@ -2,16 +2,16 @@
 cmake_minimum_required(VERSION 3.4.3 FATAL_ERROR)
 cmake_policy(VERSION 3.4)
 
-set(HIPCL_VERSION_MAJOR 0)
-set(HIPCL_VERSION_MINOR 9)
-set(HIPCL_VERSION_PATCH 0)
-set(HIPCL_VERSION_FULL "${HIPCL_VERSION_MAJOR}.${HIPCL_VERSION_MINOR}.${HIPCL_VERSION_PATCH}")
+set(HIPLZ_VERSION_MAJOR 0)
+set(HIPLZ_VERSION_MINOR 9)
+set(HIPLZ_VERSION_PATCH 0)
+set(HIPLZ_VERSION_FULL "${HIPLZ_VERSION_MAJOR}.${HIPLZ_VERSION_MINOR}.${HIPLZ_VERSION_PATCH}")
 
-set(LIB_BUILD_VERSION "${HIPCL_VERSION_FULL}")
-set(LIB_API_VERSION "${HIPCL_VERSION_MAJOR}")
+set(LIB_BUILD_VERSION "${HIPLZ_VERSION_FULL}")
+set(LIB_API_VERSION "${HIPLZ_VERSION_MAJOR}")
 
 project(HIP_CL
-        VERSION "${HIPCL_VERSION_FULL}"
+        VERSION "${HIPLZ_VERSION_FULL}"
         DESCRIPTION "Hip implementation over OpenCL"
         LANGUAGES C CXX)
 
@@ -57,18 +57,18 @@ endif()
 enable_testing()
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set(CMAKE_INSTALL_PREFIX "/opt/hipcl" CACHE PATH "Install path prefix" FORCE)
+  set(CMAKE_INSTALL_PREFIX "/opt/hiplz" CACHE PATH "Install path prefix" FORCE)
 endif()
 
 message(STATUS "HipCL will be installed to: ${CMAKE_INSTALL_PREFIX}")
 
-set(HIPCL_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "where libhipcl will be installed")
-set(HIPCL_LLVM_DIR "${CMAKE_INSTALL_PREFIX}/lib/llvm" CACHE PATH "where hip LLVM passes will be installed")
-set(HIPCL_DATA_DIR "${CMAKE_INSTALL_PREFIX}/share" CACHE PATH "where kernel library bitcode will be installed")
-set(HIPCL_INC_DIR "${CMAKE_INSTALL_PREFIX}/include" CACHE PATH "where kernel hipcl headers will be installed")
-set(HIPCL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin" CACHE PATH "where hipcl_config will be installed")
-set(HIPCL_SAMPLE_BINDIR "${CMAKE_INSTALL_PREFIX}/bin/samples" CACHE PATH "where samples will be installed")
-set(HIPCL_CMAKE_DIR "${CMAKE_INSTALL_PREFIX}/cmake" CACHE PATH "where cmake files will be installed")
+set(HIPLZ_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "where libhiplz will be installed")
+set(HIPLZ_LLVM_DIR "${CMAKE_INSTALL_PREFIX}/lib/llvm" CACHE PATH "where hip LLVM passes will be installed")
+set(HIPLZ_DATA_DIR "${CMAKE_INSTALL_PREFIX}/share" CACHE PATH "where kernel library bitcode will be installed")
+set(HIPLZ_INC_DIR "${CMAKE_INSTALL_PREFIX}/include" CACHE PATH "where kernel hiplz headers will be installed")
+set(HIPLZ_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin" CACHE PATH "where hiplz_config will be installed")
+set(HIPLZ_SAMPLE_BINDIR "${CMAKE_INSTALL_PREFIX}/bin/samples" CACHE PATH "where samples will be installed")
+set(HIPLZ_CMAKE_DIR "${CMAKE_INSTALL_PREFIX}/cmake" CACHE PATH "where cmake files will be installed")
 
 if(UNIX AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0.0)
@@ -79,7 +79,7 @@ else()
 endif()
 
 message(STATUS "Using Clang: ${CMAKE_CXX_COMPILER}")
-set(HIPCL_COMPILER "${CMAKE_CXX_COMPILER}")
+set(HIPLZ_COMPILER "${CMAKE_CXX_COMPILER}")
 
 get_filename_component(CLANG_BIN_PATH "${CMAKE_CXX_COMPILER}" DIRECTORY)
 
@@ -140,7 +140,7 @@ set(PTHREAD_LIBRARY Threads::Threads)
 
 add_subdirectory(lib)
 
-# hipcl_config
+# hiplz_config
 add_subdirectory(bin)
 
 # LLVM pass
@@ -148,39 +148,39 @@ add_subdirectory(llvm_passes)
 
 ##########################################
 
-get_target_property(HIPCL_CFLAGS_PRIV "hipcl" COMPILE_OPTIONS)
-message(STATUS "hipcl private compile options: ${HIPCL_CFLAGS_PRIV}")
-get_target_property(HIPCL_IDIR_PRIV "hipcl" INCLUDE_DIRECTORIES)
-message(STATUS "hipcl private include directories: ${HIPCL_IDIR_PRIV}")
+get_target_property(HIPLZ_CFLAGS_PRIV "hiplz" COMPILE_OPTIONS)
+message(STATUS "hiplz private compile options: ${HIPLZ_CFLAGS_PRIV}")
+get_target_property(HIPLZ_IDIR_PRIV "hiplz" INCLUDE_DIRECTORIES)
+message(STATUS "hiplz private include directories: ${HIPLZ_IDIR_PRIV}")
 
 
-get_target_property(HIPCL_CFLAGS_IFC "hipcl" INTERFACE_COMPILE_OPTIONS)
-message(STATUS "hipcl public compile options: ${HIPCL_CFLAGS_IFC}")
-get_target_property(HIPCL_IDIR_IFC "hipcl" INTERFACE_INCLUDE_DIRECTORIES)
-message(STATUS "hipcl public include directories: ${HIPCL_IDIR_IFC}")
+get_target_property(HIPLZ_CFLAGS_IFC "hiplz" INTERFACE_COMPILE_OPTIONS)
+message(STATUS "hiplz public compile options: ${HIPLZ_CFLAGS_IFC}")
+get_target_property(HIPLZ_IDIR_IFC "hiplz" INTERFACE_INCLUDE_DIRECTORIES)
+message(STATUS "hiplz public include directories: ${HIPLZ_IDIR_IFC}")
 
-string(REPLACE "${CMAKE_INSTALL_PREFIX}" "-I${CMAKE_INSTALL_PREFIX}" HIPCL_IDIR_IFC "${HIPCL_IDIR_IFC}")
-# HIPCL_CXX_OPTIONS is what's reported by hipcl-config.
-string(REPLACE ";" " " HIPCL_CXX_OPTIONS "${HIPCL_CFLAGS_IFC};${HIPCL_IDIR_IFC}")
+string(REPLACE "${CMAKE_INSTALL_PREFIX}" "-I${CMAKE_INSTALL_PREFIX}" HIPLZ_IDIR_IFC "${HIPLZ_IDIR_IFC}")
+# HIPLZ_CXX_OPTIONS is what's reported by hiplz-config.
+string(REPLACE ";" " " HIPLZ_CXX_OPTIONS "${HIPLZ_CFLAGS_IFC};${HIPLZ_IDIR_IFC}")
 
-# The hipcl "COMPILE_OPTIONS" target properties contain some generator expressions;
-# we have to get rid of those for hipcl_config.h
+# The hiplz "COMPILE_OPTIONS" target properties contain some generator expressions;
+# we have to get rid of those for hiplz_config.h
 # this is the way Boost does it (until there's a better way)
 # https://gitlab.kitware.com/cmake/cmake/issues/17984
-string(REPLACE "$<BUILD_INTERFACE:" "$<0:" HIPCL_CXX_OPTIONS "${HIPCL_CXX_OPTIONS}")
-string(REPLACE "$<INSTALL_INTERFACE:" "$<1:" HIPCL_CXX_OPTIONS "${HIPCL_CXX_OPTIONS}")
-message(STATUS "HIPCL_CXX_OPTIONS: ${HIPCL_CXX_OPTIONS}")
+string(REPLACE "$<BUILD_INTERFACE:" "$<0:" HIPLZ_CXX_OPTIONS "${HIPLZ_CXX_OPTIONS}")
+string(REPLACE "$<INSTALL_INTERFACE:" "$<1:" HIPLZ_CXX_OPTIONS "${HIPLZ_CXX_OPTIONS}")
+message(STATUS "HIPLZ_CXX_OPTIONS: ${HIPLZ_CXX_OPTIONS}")
 
 ##########################################
 
 configure_file(
-  "${CMAKE_SOURCE_DIR}/hipcl_config.h.in"
-  "${CMAKE_BINARY_DIR}/hipcl_config.h.gen"
+  "${CMAKE_SOURCE_DIR}/hiplz_config.h.in"
+  "${CMAKE_BINARY_DIR}/hiplz_config.h.gen"
   @ONLY)
 
 file(GENERATE
-     OUTPUT "${CMAKE_BINARY_DIR}/hipcl_config.h"
-     INPUT "${CMAKE_BINARY_DIR}/hipcl_config.h.gen")
+     OUTPUT "${CMAKE_BINARY_DIR}/hiplz_config.h"
+     INPUT "${CMAKE_BINARY_DIR}/hiplz_config.h.gen")
 
 install(FILES
   "${CMAKE_SOURCE_DIR}/cmake/FindHIP.cmake"
@@ -188,7 +188,7 @@ install(FILES
   "${CMAKE_SOURCE_DIR}/cmake/run_make2cmake.cmake"
   "${CMAKE_BINARY_DIR}/hipConfigVersion.cmake"
   "${CMAKE_BINARY_DIR}/hipConfig.cmake"
-  DESTINATION "${HIPCL_CMAKE_DIR}")
+  DESTINATION "${HIPLZ_CMAKE_DIR}")
 
 ##########################################
 
