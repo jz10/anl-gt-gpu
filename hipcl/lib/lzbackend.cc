@@ -86,6 +86,7 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   status = zeDeviceGetCacheProperties(this->hDevice, &count, &(this->deviceCacheProps));
 
   // Query device module properties
+  this->deviceModuleProps.pNext = nullptr;
   status = zeDeviceGetModuleProperties(this->hDevice, &(this->deviceModuleProps));
   
   // Create HipLZ context  
