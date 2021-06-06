@@ -1,2 +1,2 @@
 
-add_hipcl_test(hipmath hipmath PASSED hipmath.cc)
+add_hiplz_test(hipmath hipmath PASSED hipmath.cc)

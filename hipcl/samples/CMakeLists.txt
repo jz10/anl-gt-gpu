@@ -11,7 +11,7 @@ if(VERBOSE)
 endif()
 
 # ARGN = test args
-function(add_hipcl_test EXEC_NAME TEST_NAME TEST_PASS SOURCE)
+function(add_hiplz_test EXEC_NAME TEST_NAME TEST_PASS SOURCE)
 
     set(TEST_EXEC_ARGS ${ARGN})
     set_source_files_properties(${SOURCE} PROPERTIES LANGUAGE CXX)
@@ -20,10 +20,10 @@ function(add_hipcl_test EXEC_NAME TEST_NAME TEST_PASS SOURCE)
 
     set_target_properties("${EXEC_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
     
-    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl" "OpenCL" "ze_loader")
+    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hiplz" "OpenCL" "ze_loader")
 
     install(TARGETS "${EXEC_NAME}"
-            RUNTIME DESTINATION "${HIPCL_SAMPLE_BINDIR}")
+            RUNTIME DESTINATION "${HIPLZ_SAMPLE_BINDIR}")
 
     add_test(NAME "${TEST_NAME}"
              COMMAND "${CMAKE_CURRENT_BINARY_DIR}/${EXEC_NAME}" ${TEST_EXEC_ARGS}
@@ -37,7 +37,7 @@ endfunction()
 
 
 # ARGN = sources
-function(add_hipcl_binary EXEC_NAME)
+function(add_hiplz_binary EXEC_NAME)
 
     set(SOURCES ${ARGN})
     set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE CXX)
@@ -46,15 +46,15 @@ function(add_hipcl_binary EXEC_NAME)
 
     set_target_properties("${EXEC_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
 
-    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl" "OpenCL" "ze_loader")
+    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hiplz" "OpenCL" "ze_loader")
 
     install(TARGETS "${EXEC_NAME}"
-            RUNTIME DESTINATION "${HIPCL_SAMPLE_BINDIR}")
+            RUNTIME DESTINATION "${HIPLZ_SAMPLE_BINDIR}")
 
 endfunction()
 
 # ARGN = sources
-function(add_hipcl_binary_device_link EXEC_NAME)
+function(add_hiplz_binary_device_link EXEC_NAME)
     set(SOURCES ${ARGN})
     set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE CXX)
 
@@ -62,20 +62,20 @@ function(add_hipcl_binary_device_link EXEC_NAME)
 
     set_target_properties("${EXEC_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
 
-    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hipcl" "OpenCL" "ze_loader")
+    target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hiplz" "OpenCL" "ze_loader")
 
-    target_compile_options("hipcl" INTERFACE "-fgpu-rdc")
+    target_compile_options("hiplz" INTERFACE "-fgpu-rdc")
   
-    target_link_options("hipcl" INTERFACE
+    target_link_options("hiplz" INTERFACE
 	"--hip-link"
-	"$<INSTALL_INTERFACE:--hip-llvm-pass-path=${HIPCL_LLVM_DIR}>"
+	"$<INSTALL_INTERFACE:--hip-llvm-pass-path=${HIPLZ_LLVM_DIR}>"
 	"$<BUILD_INTERFACE:--hip-llvm-pass-path=${CMAKE_BINARY_DIR}/llvm_passes>"
-	"$<INSTALL_INTERFACE:--hip-device-lib-path=${HIPCL_DATA_DIR}>"
+	"$<INSTALL_INTERFACE:--hip-device-lib-path=${HIPLZ_DATA_DIR}>"
 	"$<BUILD_INTERFACE:--hip-device-lib-path=${CMAKE_BINARY_DIR}>"
 	"--hip-device-lib=kernellib.bc")
 	
     install(TARGETS "${EXEC_NAME}"
-            RUNTIME DESTINATION "${HIPCL_SAMPLE_BINDIR}")
+            RUNTIME DESTINATION "${HIPLZ_SAMPLE_BINDIR}")
 
 endfunction()
 

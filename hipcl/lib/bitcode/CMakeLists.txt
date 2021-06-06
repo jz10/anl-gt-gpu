@@ -53,5 +53,5 @@ add_custom_command(
 
 add_custom_target("kernellib_bc" DEPENDS "${CMAKE_BINARY_DIR}/kernellib.bc")
 
-install(FILES "${CMAKE_BINARY_DIR}/kernellib.bc" DESTINATION "${HIPCL_DATA_DIR}")
+install(FILES "${CMAKE_BINARY_DIR}/kernellib.bc" DESTINATION "${HIPLZ_DATA_DIR}")
 

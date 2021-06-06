@@ -35,7 +35,7 @@ set(HIP_CLANG_PARALLEL_BUILD_COMPILE_OPTIONS "@HIP_CLANG_PARALLEL_BUILD_COMPILE_
 @_HIP_HCC_FLAGS@
 @_HIP_CLANG_FLAGS@
 @_HIP_NVCC_FLAGS@
-@_HIP_HIPCL_FLAGS@
+@_HIP_HIPLZ_FLAGS@
 #Needed to bring the HIP_HIPCC_INCLUDE_ARGS variable in scope
 set(HIP_HIPCC_INCLUDE_ARGS @HIP_HIPCC_INCLUDE_ARGS@) # list
 
@@ -63,7 +63,7 @@ if(NOT host_flag)
             set(__CC_FLAGS ${HIP_CLANG_PARALLEL_BUILD_COMPILE_OPTIONS} ${HIP_HIPCC_FLAGS} ${HIP_HCC_FLAGS} ${HIP_CLANG_FLAGS} ${HIP_HIPCC_FLAGS_${build_configuration}} ${HIP_CLANG_FLAGS_${build_configuration}})
         endif()
     else()
-        set(__CC_FLAGS ${HIP_HIPCC_FLAGS} ${HIP_NVCC_FLAGS} ${HIP_HIPCL_FLAGS} ${HIP_HIPCC_FLAGS_${build_configuration}} ${HIP_NVCC_FLAGS_${build_configuration}} ${HIP_HIPCL_FLAGS_${build_configuration}})
+        set(__CC_FLAGS ${HIP_HIPCC_FLAGS} ${HIP_NVCC_FLAGS} ${HIP_HIPLZ_FLAGS} ${HIP_HIPCC_FLAGS_${build_configuration}} ${HIP_NVCC_FLAGS_${build_configuration}} ${HIP_HIPLZ_FLAGS_${build_configuration}})
     endif()
 else()
     set(__CC ${HIP_HOST_COMPILER})
@@ -109,7 +109,7 @@ hip_execute_process(
     )
 
 # Generate the dependency file
-if("${HIP_PLATFORM}" STREQUAL "hipcl")
+if("${HIP_PLATFORM}" STREQUAL "hiplz")
 hip_execute_process(
     "Generating dependency file: ${cmake_dependency_file}.pre"
     COMMAND "${__CC}"
@@ -168,10 +168,10 @@ if(HIP_result)
     message(FATAL_ERROR "Error generating ${generated_file}")
 endif()
 
-# hipcl needs cflags before the source files, because of "-x hip"
+# hiplz needs cflags before the source files, because of "-x hip"
 # TODO this should be fixed by separating linker flags from C/C++ flags
 # Generate the output file
-if("${HIP_PLATFORM}" STREQUAL "hipcl")
+if("${HIP_PLATFORM}" STREQUAL "hiplz")
 hip_execute_process(
     "Generating ${generated_file}"
     COMMAND "${__CC}"

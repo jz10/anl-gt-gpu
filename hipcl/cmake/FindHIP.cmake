@@ -11,8 +11,8 @@ set(HIP_HIPCC_FLAGS "" CACHE STRING "Semicolon delimited flags for HIPCC")
 set(HIP_HCC_FLAGS "" CACHE STRING "Semicolon delimited flags for HCC")
 set(HIP_CLANG_FLAGS "" CACHE STRING "Semicolon delimited flags for CLANG")
 set(HIP_NVCC_FLAGS "" CACHE STRING "Semicolon delimted flags for NVCC")
-set(HIP_HIPCL_FLAGS "" CACHE STRING "Semicolon delimted flags for HIPCL")
-mark_as_advanced(HIP_HIPCC_FLAGS HIP_HCC_FLAGS HIP_CLANG_FLAGS HIP_NVCC_FLAGS HIP_HIPCL_FLAGS)
+set(HIP_HIPLZ_FLAGS "" CACHE STRING "Semicolon delimted flags for HIPLZ")
+mark_as_advanced(HIP_HIPCC_FLAGS HIP_HCC_FLAGS HIP_CLANG_FLAGS HIP_NVCC_FLAGS HIP_HIPLZ_FLAGS)
 
 set(_hip_configuration_types ${CMAKE_CONFIGURATION_TYPES} ${CMAKE_BUILD_TYPE} Debug MinSizeRel Release RelWithDebInfo)
 list(REMOVE_DUPLICATES _hip_configuration_types)
@@ -23,8 +23,8 @@ foreach(config ${_hip_configuration_types})
     set(HIP_HCC_FLAGS_${config_upper} "" CACHE STRING "Semicolon delimited flags for HCC")
     set(HIP_CLANG_FLAGS_${config_upper} "" CACHE STRING "Semicolon delimited flags for CLANG")
     set(HIP_NVCC_FLAGS_${config_upper} "" CACHE STRING "Semicolon delimited flags for NVCC")
-    set(HIP_HIPCL_FLAGS_${config_upper} "" CACHE STRING "Semicolon delimted flags for HIPCL")
-    mark_as_advanced(HIP_HIPCC_FLAGS_${config_upper} HIP_HCC_FLAGS_${config_upper} HIP_CLANG_FLAGS_${config_upper}  HIP_NVCC_FLAGS_${config_upper} HIP_HIPCL_FLAGS_${config_upper})
+    set(HIP_HIPLZ_FLAGS_${config_upper} "" CACHE STRING "Semicolon delimted flags for HIPLZ")
+    mark_as_advanced(HIP_HIPCC_FLAGS_${config_upper} HIP_HCC_FLAGS_${config_upper} HIP_CLANG_FLAGS_${config_upper}  HIP_NVCC_FLAGS_${config_upper} HIP_HIPLZ_FLAGS_${config_upper})
 endforeach()
 
 option(HIP_HOST_COMPILATION_CPP "Host code compilation mode" ON)
@@ -44,12 +44,12 @@ if(UNIX AND NOT APPLE AND NOT CYGWIN)
         # Search in user specified path first
         find_path(
             HIP_ROOT_DIR
-            NAMES bin/hipcl_config
+            NAMES bin/hiplz_config
             PATHS
-            /opt/hipcl
+            /opt/hiplz
             ${_IMPORT_PREFIX}
-            ENV HIP_PATH HIPCL_PATH
-            DOC "HIPCL installed location"
+            ENV HIP_PATH HIPLZ_PATH
+            DOC "HIPLZ installed location"
             NO_DEFAULT_PATH
             )
         if(NOT EXISTS ${HIP_ROOT_DIR})
@@ -60,30 +60,30 @@ if(UNIX AND NOT APPLE AND NOT CYGWIN)
             endif()
         endif()
         # And push it back to the cache
-        set(HIP_ROOT_DIR ${HIP_ROOT_DIR} CACHE PATH "HIPCL installed location" FORCE)
+        set(HIP_ROOT_DIR ${HIP_ROOT_DIR} CACHE PATH "HIPLZ installed location" FORCE)
     endif()
 
-    # Find HIPCL's clang++ executable
+    # Find HIPLZ's clang++ executable
     find_program(
         HIP_HIPCC_EXECUTABLE
         NAMES clang++
         PATHS
-        /opt/hipcl/llvm
+        /opt/hiplz/llvm
         "${HIP_ROOT_DIR}/llvm"
-        ENV HIP_PATH HIPCL_PATH
+        ENV HIP_PATH HIPLZ_PATH
         PATH_SUFFIXES bin
         NO_DEFAULT_PATH
         )
     mark_as_advanced(HIP_HIPCC_EXECUTABLE)
 
-    # Find HIPCL_CONFIG executable
+    # Find HIPLZ_CONFIG executable
     find_program(
         HIP_HIPCONFIG_EXECUTABLE
-        NAMES hipcl_config
+        NAMES hiplz_config
         PATHS
-        /opt/hipcl
+        /opt/hiplz
         "${HIP_ROOT_DIR}"
-        ENV HIP_PATH HIPCL_PATH
+        ENV HIP_PATH HIPLZ_PATH
         PATH_SUFFIXES bin
         NO_DEFAULT_PATH
         )
@@ -182,8 +182,8 @@ set(CMAKE_SHARED_LIBRARY_LINK_DYNAMIC_HIP_FLAGS ${CMAKE_SHARED_LIBRARY_LINK_DYNA
 set(HIP_CLANG_PARALLEL_BUILD_COMPILE_OPTIONS "")
 set(HIP_CLANG_PARALLEL_BUILD_LINK_OPTIONS "")
 
-if("${HIP_PLATFORM}" STREQUAL "hipcl")
-    # HIPCL doesn't have HIP_HIPCC_CMAKE_LINKER_HELPER
+if("${HIP_PLATFORM}" STREQUAL "hiplz")
+    # HIPLZ doesn't have HIP_HIPCC_CMAKE_LINKER_HELPER
     set(CMAKE_HIP_CREATE_SHARED_LIBRARY "${HIP_HIPCC_EXECUTABLE}  <CMAKE_SHARED_LIBRARY_CXX_FLAGS> <LANGUAGE_COMPILE_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS> <SONAME_FLAG><TARGET_SONAME> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>")
     set(CMAKE_HIP_CREATE_SHARED_MODULE "${HIP_HIPCC_EXECUTABLE} <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> <SONAME_FLAG><TARGET_SONAME> -o <TARGET> <LINK_LIBRARIES> -shared" )
     set(CMAKE_HIP_LINK_EXECUTABLE "${HIP_HIPCC_EXECUTABLE} <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
@@ -244,16 +244,16 @@ hip_find_helper_file(run_make2cmake cmake)
 hip_find_helper_file(run_hipcc cmake)
 ###############################################################################
 
-if("${HIP_PLATFORM}" STREQUAL "hipcl")
+if("${HIP_PLATFORM}" STREQUAL "hiplz")
   set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
   set(THREADS_PREFER_PTHREAD_FLAG TRUE)
   find_package(Threads REQUIRED)
 
   include(hip-targets)
-  get_target_property(HIPCL_COMPILE_OPTIONS hip::hipcl INTERFACE_COMPILE_OPTIONS)
-  get_target_property(HIPCL_INCLUDE_DIRS hip::hipcl INTERFACE_INCLUDE_DIRECTORIES)
-  get_target_property(HIPCL_LINK_LIBRARIES hip::hipcl INTERFACE_LINK_LIBRARIES)
-  set(HIPCL_COMPILE_OPTIONS "-std=c++11;${HIPCL_COMPILE_OPTIONS}")
+  get_target_property(HIPLZ_COMPILE_OPTIONS hip::hiplz INTERFACE_COMPILE_OPTIONS)
+  get_target_property(HIPLZ_INCLUDE_DIRS hip::hiplz INTERFACE_INCLUDE_DIRECTORIES)
+  get_target_property(HIPLZ_LINK_LIBRARIES hip::hiplz INTERFACE_LINK_LIBRARIES)
+  set(HIPLZ_COMPILE_OPTIONS "-std=c++11;${HIPLZ_COMPILE_OPTIONS}")
 endif()
 
 ###############################################################################
@@ -264,64 +264,64 @@ macro(HIP_RESET_FLAGS)
     unset(HIP_HCC_FLAGS)
     unset(HIP_CLANG_FLAGS)
     unset(HIP_NVCC_FLAGS)
-    unset(HIP_HIPCL_FLAGS)
+    unset(HIP_HIPLZ_FLAGS)
     foreach(config ${_hip_configuration_types})
         string(TOUPPER ${config} config_upper)
         unset(HIP_HIPCC_FLAGS_${config_upper})
         unset(HIP_HCC_FLAGS_${config_upper})
         unset(HIP_CLANG_FLAGS_${config_upper})
         unset(HIP_NVCC_FLAGS_${config_upper})
-        unset(HIP_HIPCL_FLAGS_${config_upper})
+        unset(HIP_HIPLZ_FLAGS_${config_upper})
     endforeach()
 endmacro()
 
 ###############################################################################
 # MACRO: Separate the options from the sources
 ###############################################################################
-macro(HIP_GET_SOURCES_AND_OPTIONS _sources _cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hipcl_options)
+macro(HIP_GET_SOURCES_AND_OPTIONS _sources _cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hiplz_options)
     set(${_sources})
     set(${_cmake_options})
     set(${_hipcc_options})
     set(${_hcc_options})
     set(${_clang_options})
     set(${_nvcc_options})
-    set(${_hipcl_options})
+    set(${_hiplz_options})
     set(_hipcc_found_options FALSE)
     set(_hcc_found_options FALSE)
     set(_clang_found_options FALSE)
     set(_nvcc_found_options FALSE)
-    set(_hipcl_found_options FALSE)
+    set(_hiplz_found_options FALSE)
     foreach(arg ${ARGN})
         if("x${arg}" STREQUAL "xHIPCC_OPTIONS")
             set(_hipcc_found_options TRUE)
             set(_hcc_found_options FALSE)
             set(_clang_found_options FALSE)
             set(_nvcc_found_options FALSE)
-            set(_hipcl_found_options FALSE)
+            set(_hiplz_found_options FALSE)
         elseif("x${arg}" STREQUAL "xHCC_OPTIONS")
             set(_hipcc_found_options FALSE)
             set(_hcc_found_options TRUE)
             set(_clang_found_options FALSE)
             set(_nvcc_found_options FALSE)
-            set(_hipcl_found_options FALSE)
+            set(_hiplz_found_options FALSE)
         elseif("x${arg}" STREQUAL "xCLANG_OPTIONS")
             set(_hipcc_found_options FALSE)
             set(_hcc_found_options FALSE)
             set(_clang_found_options TRUE)
             set(_nvcc_found_options FALSE)
-            set(_hipcl_found_options FALSE)
+            set(_hiplz_found_options FALSE)
         elseif("x${arg}" STREQUAL "xNVCC_OPTIONS")
             set(_hipcc_found_options FALSE)
             set(_hcc_found_options FALSE)
             set(_clang_found_options FALSE)
             set(_nvcc_found_options TRUE)
-            set(_hipcl_found_options FALSE)
-        elseif("x${arg}" STREQUAL "xHIPCL_OPTIONS")
+            set(_hiplz_found_options FALSE)
+        elseif("x${arg}" STREQUAL "xHIPLZ_OPTIONS")
             set(_hipcc_found_options FALSE)
             set(_hcc_found_options FALSE)
             set(_clang_found_options FALSE)
             set(_nvcc_found_options FALSE)
-            set(_hipcl_found_options TRUE)
+            set(_hiplz_found_options TRUE)
         elseif(
                 "x${arg}" STREQUAL "xEXCLUDE_FROM_ALL" OR
                 "x${arg}" STREQUAL "xSTATIC" OR
@@ -338,8 +338,8 @@ macro(HIP_GET_SOURCES_AND_OPTIONS _sources _cmake_options _hipcc_options _hcc_op
                 list(APPEND ${_clang_options} ${arg})
             elseif(_nvcc_found_options)
                 list(APPEND ${_nvcc_options} ${arg})
-            elseif(_hipcl_found_options)
-                list(APPEND ${_hipcl_options} ${arg})
+            elseif(_hiplz_found_options)
+                list(APPEND ${_hiplz_options} ${arg})
             else()
                 # Assume this is a file
                 list(APPEND ${_sources} ${arg})
@@ -464,8 +464,8 @@ macro(HIP_PREPARE_TARGET_COMMANDS _target _format _generated_files _source_files
     list(APPEND HIP_HIPCC_INCLUDE_ARGS "$<$<BOOL:${include_directories_generator}>:-I$<JOIN:${include_directories_generator}, -I>>")
 
     get_directory_property(_hip_include_directories INCLUDE_DIRECTORIES)
-    if(HIPCL_INCLUDE_DIRS)
-      list(APPEND _hip_include_directories ${HIPCL_INCLUDE_DIRS})
+    if(HIPLZ_INCLUDE_DIRS)
+      list(APPEND _hip_include_directories ${HIPLZ_INCLUDE_DIRS})
     endif()
     list(REMOVE_DUPLICATES _hip_include_directories)
     if(_hip_include_directories)
@@ -474,14 +474,14 @@ macro(HIP_PREPARE_TARGET_COMMANDS _target _format _generated_files _source_files
         endforeach()
     endif()
 
-    HIP_GET_SOURCES_AND_OPTIONS(_hip_sources _hip_cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hipcl_options ${ARGN})
+    HIP_GET_SOURCES_AND_OPTIONS(_hip_sources _hip_cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hiplz_options ${ARGN})
     HIP_PARSE_HIPCC_OPTIONS(HIP_HIPCC_FLAGS ${_hipcc_options})
     HIP_PARSE_HIPCC_OPTIONS(HIP_HCC_FLAGS ${_hcc_options})
     HIP_PARSE_HIPCC_OPTIONS(HIP_CLANG_FLAGS ${_clang_options})
     HIP_PARSE_HIPCC_OPTIONS(HIP_NVCC_FLAGS ${_nvcc_options})
-    HIP_PARSE_HIPCC_OPTIONS(HIP_HIPCL_FLAGS ${_hipcl_options})
-    if(HIPCL_COMPILE_OPTIONS)
-      list(APPEND HIP_HIPCL_FLAGS ${HIPCL_COMPILE_OPTIONS})
+    HIP_PARSE_HIPCC_OPTIONS(HIP_HIPLZ_FLAGS ${_hiplz_options})
+    if(HIPLZ_COMPILE_OPTIONS)
+      list(APPEND HIP_HIPLZ_FLAGS ${HIPLZ_COMPILE_OPTIONS})
     endif()
 
     # Add the compile definitions
@@ -504,7 +504,7 @@ macro(HIP_PREPARE_TARGET_COMMANDS _target _format _generated_files _source_files
     if(_hip_build_shared_libs)
         list(APPEND HIP_HCC_FLAGS "-fPIC")
         list(APPEND HIP_CLANG_FLAGS "-fPIC")
-        list(APPEND HIP_HIPCL_FLAGS "-fPIC")
+        list(APPEND HIP_HIPLZ_FLAGS "-fPIC")
         list(APPEND HIP_NVCC_FLAGS "--shared -Xcompiler '-fPIC'")
     endif()
 
@@ -517,7 +517,7 @@ macro(HIP_PREPARE_TARGET_COMMANDS _target _format _generated_files _source_files
     set(_HIP_HCC_FLAGS "set(HIP_HCC_FLAGS ${HIP_HCC_FLAGS})")
     set(_HIP_CLANG_FLAGS "set(HIP_CLANG_FLAGS ${HIP_CLANG_FLAGS})")
     set(_HIP_NVCC_FLAGS "set(HIP_NVCC_FLAGS ${HIP_NVCC_FLAGS})")
-    set(_HIP_HIPCL_FLAGS "set(HIP_HIPCL_FLAGS ${HIP_HIPCL_FLAGS})")
+    set(_HIP_HIPLZ_FLAGS "set(HIP_HIPLZ_FLAGS ${HIP_HIPLZ_FLAGS})")
     foreach(config ${_hip_configuration_types})
         string(TOUPPER ${config} config_upper)
         set(_HIP_HOST_FLAGS "${_HIP_HOST_FLAGS}\nset(CMAKE_HOST_FLAGS_${config_upper} ${CMAKE_CXX_FLAGS_${config_upper}})")
@@ -525,7 +525,7 @@ macro(HIP_PREPARE_TARGET_COMMANDS _target _format _generated_files _source_files
         set(_HIP_HCC_FLAGS "${_HIP_HCC_FLAGS}\nset(HIP_HCC_FLAGS_${config_upper} ${HIP_HCC_FLAGS_${config_upper}})")
         set(_HIP_CLANG_FLAGS "${_HIP_CLANG_FLAGS}\nset(HIP_CLANG_FLAGS_${config_upper} ${HIP_CLANG_FLAGS_${config_upper}})")
         set(_HIP_NVCC_FLAGS "${_HIP_NVCC_FLAGS}\nset(HIP_NVCC_FLAGS_${config_upper} ${HIP_NVCC_FLAGS_${config_upper}})")
-        set(_HIP_HIPCL_FLAGS "${_HIP_HIPCL_FLAGS}\nset(HIP_HIPCL_FLAGS_${config_upper} ${HIP_HIPCL_FLAGS_${config_upper}})")
+        set(_HIP_HIPLZ_FLAGS "${_HIP_HIPLZ_FLAGS}\nset(HIP_HIPLZ_FLAGS_${config_upper} ${HIP_HIPLZ_FLAGS_${config_upper}})")
     endforeach()
 
     # Reset the output variable
@@ -630,13 +630,13 @@ endmacro()
 ###############################################################################
 macro(HIP_ADD_EXECUTABLE hip_target)
     # Separate the sources from the options
-    HIP_GET_SOURCES_AND_OPTIONS(_sources _cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hipcl_options ${ARGN})
-    HIP_PREPARE_TARGET_COMMANDS(${hip_target} OBJ _generated_files _source_files ${_sources} ${_cmake_options} HIPCC_OPTIONS ${_hipcc_options} HCC_OPTIONS ${_hcc_options} CLANG_OPTIONS ${_clang_options} NVCC_OPTIONS ${_nvcc_options} HIPCL_OPTIONS ${_hipcl_options})
+    HIP_GET_SOURCES_AND_OPTIONS(_sources _cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hiplz_options ${ARGN})
+    HIP_PREPARE_TARGET_COMMANDS(${hip_target} OBJ _generated_files _source_files ${_sources} ${_cmake_options} HIPCC_OPTIONS ${_hipcc_options} HCC_OPTIONS ${_hcc_options} CLANG_OPTIONS ${_clang_options} NVCC_OPTIONS ${_nvcc_options} HIPLZ_OPTIONS ${_hiplz_options})
     if(_source_files)
         list(REMOVE_ITEM _sources ${_source_files})
     endif()
 
-    if("${HIP_PLATFORM}" STREQUAL "hipcl")
+    if("${HIP_PLATFORM}" STREQUAL "hiplz")
       set(CMAKE_HIP_LINK_EXECUTABLE "${HIP_HIPCC_EXECUTABLE} <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
     elseif("${HIP_COMPILER}" STREQUAL "hcc")
         if("x${HCC_HOME}" STREQUAL "x")
@@ -669,9 +669,9 @@ macro(HIP_ADD_EXECUTABLE hip_target)
         add_executable(${hip_target} ${_cmake_options} ${_generated_files} ${_sources})
     endif()
     set_target_properties(${hip_target} PROPERTIES LINKER_LANGUAGE HIP)
-    if(HIPCL_LINK_LIBRARIES)
-      #target_link_libraries(${hip_target} ${HIPCL_LINK_LIBRARIES})
-      target_link_libraries(${hip_target} hip::hipcl)
+    if(HIPLZ_LINK_LIBRARIES)
+      #target_link_libraries(${hip_target} ${HIPLZ_LINK_LIBRARIES})
+      target_link_libraries(${hip_target} hip::hiplz)
     endif()
 endmacro()
 
@@ -680,8 +680,8 @@ endmacro()
 ###############################################################################
 macro(HIP_ADD_LIBRARY hip_target)
     # Separate the sources from the options
-    HIP_GET_SOURCES_AND_OPTIONS(_sources _cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hipcl_options ${ARGN})
-    HIP_PREPARE_TARGET_COMMANDS(${hip_target} OBJ _generated_files _source_files ${_sources} ${_cmake_options} HIPCC_OPTIONS ${_hipcc_options} HCC_OPTIONS ${_hcc_options} CLANG_OPTIONS ${_clang_options} NVCC_OPTIONS ${_nvcc_options} HIPCL_OPTIONS ${_hipcl_options})
+    HIP_GET_SOURCES_AND_OPTIONS(_sources _cmake_options _hipcc_options _hcc_options _clang_options _nvcc_options _hiplz_options ${ARGN})
+    HIP_PREPARE_TARGET_COMMANDS(${hip_target} OBJ _generated_files _source_files ${_sources} ${_cmake_options} HIPCC_OPTIONS ${_hipcc_options} HCC_OPTIONS ${_hcc_options} CLANG_OPTIONS ${_clang_options} NVCC_OPTIONS ${_nvcc_options} HIPLZ_OPTIONS ${_hiplz_options})
     if(_source_files)
         list(REMOVE_ITEM _sources ${_source_files})
     endif()
@@ -691,8 +691,8 @@ macro(HIP_ADD_LIBRARY hip_target)
         add_library(${hip_target} ${_cmake_options} ${_generated_files} ${_sources})
     endif()
     set_target_properties(${hip_target} PROPERTIES LINKER_LANGUAGE CXX)
-    if(HIPCL_LINK_LIBRARIES)
-      target_link_libraries(${hip_target} hip::hipcl)
+    if(HIPLZ_LINK_LIBRARIES)
+      target_link_libraries(${hip_target} hip::hiplz)
     endif()
 endmacro()
 

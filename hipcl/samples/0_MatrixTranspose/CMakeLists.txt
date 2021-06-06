@@ -1,3 +1,3 @@
 # MatrixTranspose
 
-add_hipcl_test(MatrixTranspose MatrixTranspose PASSED MatrixTranspose.cpp)
+add_hiplz_test(MatrixTranspose MatrixTranspose PASSED MatrixTranspose.cpp)

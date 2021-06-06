@@ -4,15 +4,15 @@
 #include <fstream>
 #include <cxxopts.hpp>
 
-#include "hipcl_config.h"
+#include "hiplz_config.h"
 
 int main(int argc, char const *argv[]) {
 
   try {
 
-    cxxopts::Options options("hipcl_config", "configuration helper for HipCL");
+    cxxopts::Options options("hiplz_config", "configuration helper for HipCL");
 
-    std::string group("hipcl_options");
+    std::string group("hiplz_options");
     options.add_options(group)("p,path", "print HIP_PATH (use env var if set, "
                                          "else determine from hipconfig path)")(
         "C,cpp_config", "print C++ compiler options")(
@@ -31,10 +31,10 @@ int main(int argc, char const *argv[]) {
     const char *hip_compiler = "clang";
     const char *hip_clang_path = CLANG_ROOT_PATH;
     const char *hip_cpp_options =
-        "-D__HIP_PLATFORM_HIPCL__=  " HIPCL_CXX_OPTIONS;
+        "-D__HIP_PLATFORM_HIPLZ__=  " HIPLZ_CXX_OPTIONS;
     const char *hip_platform = HIP_PLATFORM;
     const char *hip_runtime = HIP_PLATFORM;
-    const char *hip_version = HIPCL_VERSION_FULL;
+    const char *hip_version = HIPLZ_VERSION_FULL;
 
     bool noopt_or_help = false;
     if (result.count("p") > 0) {
@@ -52,16 +52,16 @@ int main(int argc, char const *argv[]) {
     } else if (result.count("v") > 0) {
       std::cout << hip_version;
     } else if (result.count("f") > 0) {
-      std::cout << "HIPCL VERSION   : " << hip_version << "\n";
+      std::cout << "HIPLZ VERSION   : " << hip_version << "\n";
       std::cout << "\n";
-      std::cout << "== hipcl_config \n";
+      std::cout << "== hiplz_config \n";
       std::cout << "HIP_PATH        : " << hip_path << "\n";
       std::cout << "HIP_COMPILER    : " << hip_compiler << "\n";
       std::cout << "HIP_PLATFORM    : " << hip_platform << "\n";
       std::cout << "HIP_RUNTIME     : " << hip_runtime << "\n";
       std::cout << "CPP_CONFIG      : " << hip_cpp_options << "\n";
       std::cout << "\n";
-      std::cout << "== hipcl-clang \n";
+      std::cout << "== hiplz-clang \n";
       std::cout << "HIP_CLANG_PATH  : " << hip_clang_path << "\n";
       std::system(CLANG_BIN_PATH "/clang --version");
       std::cout << "\n";
@@ -92,7 +92,7 @@ int main(int argc, char const *argv[]) {
       bool asked_for_help = result.count("h") > 0;
 
       std::vector<std::string> groups;
-      groups.push_back("hipcl_options");
+      groups.push_back("hiplz_options");
       std::cout << options.help(groups);
 
       if (!asked_for_help) {

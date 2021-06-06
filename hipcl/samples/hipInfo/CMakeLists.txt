@@ -1,1 +1,1 @@
-add_hipcl_binary(hipInfo hipInfo.cpp)
+add_hiplz_binary(hipInfo hipInfo.cpp)

@@ -1,9 +1,9 @@
 
-#ifndef HIPCL_HIP_RUNTIME_H
-#define HIPCL_HIP_RUNTIME_H
+#ifndef HIPLZ_HIP_RUNTIME_H
+#define HIPLZ_HIP_RUNTIME_H
 
-#ifndef __HIP_PLATFORM_HIPCL__
-#define __HIP_PLATFORM_HIPCL__
+#ifndef __HIP_PLATFORM_HIPLZ__
+#define __HIP_PLATFORM_HIPLZ__
 #endif
 
 #include <cmath>
