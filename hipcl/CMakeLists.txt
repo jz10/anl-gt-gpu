@@ -193,3 +193,4 @@ install(FILES
 ##########################################
 
 add_subdirectory(samples)
+add_subdirectory(tests)
