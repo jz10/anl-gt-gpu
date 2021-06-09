@@ -1816,7 +1816,8 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
 	
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterFunction on module {}\n", (void *)module);
-  
+
+#if 0
   for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
 
     if (CLDeviceById(deviceId).registerFunction(module, hostFunction,
@@ -1828,6 +1829,7 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
       std::abort();
     }
   }
+#endif
 
   // HipLZ: here we register HipLZ kernels as well
   // for (size_t deviceId = 0; deviceId < NumLZDevices; ++ deviceId) {
