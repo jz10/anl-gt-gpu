@@ -2455,6 +2455,12 @@ hipError_t hipMemcpyPeerAsync(void *dst, int dstDeviceId, const void *src,
 hipError_t hipInit(unsigned int flags);
 
 /**
+ * @brief Explicitly intiialization the HIP runtime with given device, context and queue
+ * 
+ */
+hipError_t hipInitFromOutside(void* driverPtr, void* devicePtr, void* ctxPtr, void* queuePtr);
+
+/**
  *-------------------------------------------------------------------------------------------------
  *-------------------------------------------------------------------------------------------------
  *  @defgroup Context Management

@@ -1548,6 +1548,15 @@ hipError_t hipInit(unsigned int flags) {
   RETURN(hipSuccess);
 }
 
+hipError_t hipInitFromOutside(void* driverPtr, void* devicePtr, void* ctxPtr, void* queuePtr) {
+  LZ_TRY
+  InitializeHipLZFromOutside((ze_driver_handle_t)driverPtr, (ze_device_handle_t)devicePtr,
+                             (ze_context_handle_t)ctxPtr, (ze_command_queue_handle_t)queuePtr);
+  LZ_CATCH
+  RETURN(hipSuccess);
+}
+
+
 /********************************************************************/
 
 hipError_t hipFuncGetAttributes(hipFuncAttributes *attr, const void *func) {

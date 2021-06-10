@@ -67,26 +67,9 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   this->deviceId = id;
   this->hDevice = hDevice_;
   this->driver = driver_;
-  ze_result_t status = ZE_RESULT_SUCCESS;
 
-  // Query device properties
-  status = zeDeviceGetProperties(this->hDevice, &(this->deviceProps));
-  LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties Failed with return code ", status);
-
-  // Query device memory properties
-  uint32_t count = 1;
-  status = zeDeviceGetMemoryProperties(this->hDevice, &count, &(this->deviceMemoryProps));
-  this->TotalUsedMem = 0;
-
-  // Query device computation properties
-  status = zeDeviceGetComputeProperties(this->hDevice, &(this->deviceComputeProps));
-
-  // Query device cache properties
-  count = 1;
-  status = zeDeviceGetCacheProperties(this->hDevice, &count, &(this->deviceCacheProps));
-
-  // Query device module properties
-  status = zeDeviceGetModuleProperties(this->hDevice, &(this->deviceModuleProps));
+  // Retrieve device properties related data
+  retrieveDeviceProperties();
   
   // Create HipLZ context  
   this->defaultContext = new LZContext(this);
@@ -96,6 +79,50 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
       
   // Setup HipLZ device properties
   setupProperties(id);
+}
+
+LZDevice::LZDevice(hipDevice_t id,  ze_device_handle_t hDevice_, LZDriver* driver_,
+		   ze_context_handle_t hContext, ze_command_queue_handle_t hQueue) {
+  this->deviceId = id;
+  this->hDevice = hDevice_;
+  this->driver = driver_;
+
+  // Retrieve device properties related data
+  retrieveDeviceProperties();
+
+  // Create HipLZ context 
+  this->defaultContext = new LZContext(this, hContext, hQueue);
+
+  // Get the copute queue group ordinal
+  retrieveCmdQueueGroupOrdinal(this->cmdQueueGraphOrdinal);
+
+  // Setup HipLZ device properties.
+  setupProperties(id);
+}
+
+// Retrieve device properties related data 
+void LZDevice::retrieveDeviceProperties() {
+  ze_result_t status = ZE_RESULT_SUCCESS;
+
+  // Query device properties 
+  status = zeDeviceGetProperties(this->hDevice, &(this->deviceProps));
+  LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties Failed with return code ", status);
+
+  // Query device memory properties 
+  uint32_t count = 1;
+  status = zeDeviceGetMemoryProperties(this->hDevice, &count, &(this->deviceMemoryProps));
+  this->TotalUsedMem = 0;
+
+  // Query device computation properties 
+  status = zeDeviceGetComputeProperties(this->hDevice, &(this->deviceComputeProps));
+
+  // Query device cache properties
+  count = 1;
+  status = zeDeviceGetCacheProperties(this->hDevice, &count, &(this->deviceCacheProps));
+
+  // Query device module properties   
+  this->deviceModuleProps.pNext = nullptr;
+  status = zeDeviceGetModuleProperties(this->hDevice, &(this->deviceModuleProps));
 }
 
 void LZDevice::registerModule(std::string* module) {
@@ -540,6 +567,17 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
   this->defaultEventPool = new LZEventPool(this);
 }
 
+LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext, ze_command_queue_handle_t hQueue)
+  : ClContext(0, 0) {
+  this->lzDevice = dev;
+
+  // Create a command list for default command queue
+  this->lzCommandList =  LZCommandList::CreateCmdList(this);
+  // Create the default command queue
+  this->DefaultQueue = this->lzQueue = new LZQueue(this, hQueue, this->lzCommandList);
+  // TODO: check if we need to create event pool or retrieve it from outside
+}
+  
 bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
   logDebug("LZ CREATE MODULE {} ", funcName);
   // Parse the SPIR-V fat binary to retrieve kernel function information
@@ -950,29 +988,72 @@ bool LZDriver::InitDrivers(std::vector<LZDriver* >& drivers, const ze_device_typ
   return true;
 }
 
+// Initialize HipLZ driver via pre-initialized resource
+bool LZDriver::InitDriver(std::vector<LZDriver* >& drivers,
+			  const ze_device_type_t deviceType,
+			  ze_driver_handle_t hDriver,
+			  ze_device_handle_t hDevice,
+			  ze_context_handle_t hContext,
+			  ze_command_queue_handle_t hQueue) {
+  const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
+
+  if (drivers.size() != 0) {
+    // Clean the pre-initialized drives
+    drivers.clear();
+    // TODO: check the safeness
+  }
+  
+  if (hDriver == nullptr || hDevice == nullptr || hContext == nullptr || hQueue == nullptr) {
+    logDebug("HipLZ Initialize Driver, Device, Context and Queue from outside failed \n");
+    return false;
+  }
+
+  LZDriver* driver = new LZDriver(hDriver, deviceType, hDevice, hContext, hQueue);
+  drivers.push_back(driver);
+
+  if (NumLZDevices == 0) {
+    HIP_PROCESS_ERROR(hipErrorNoDevice);
+  }
+
+  // Set the number of drivers
+  NumLZDrivers = 1;
+
+  return true;
+}
+
 // Collect HipLZ device that belongs to this driver
-bool LZDriver::FindHipLZDevices() {
+bool LZDriver::FindHipLZDevices(ze_device_handle_t hDevice,
+				ze_context_handle_t hContext,
+				ze_command_queue_handle_t hQueue) {
+  if (hDevice != nullptr && hContext != nullptr && hQueue != nullptr) {
+    this->devices.push_back(new LZDevice(0, hDevice, this, hContext, hQueue));
+    return true;
+  } else if (hDevice != nullptr || hContext != nullptr || hQueue != nullptr) {
+    logDebug("DEVICE OR CONTEXT OR QUEUE WAS MISTAKENLY INITIALIZED\n");
+    return false;
+  }
+  
   // get all devices 
   uint32_t deviceCount = 0;
   zeDeviceGet(this->hDriver, &deviceCount, nullptr);
   logDebug("GET DRIVER'S DEVICE COUNT {} ", deviceCount);
-
+  
   std::vector<ze_device_handle_t> device_handles(deviceCount); 
   ze_result_t status = zeDeviceGet(this->hDriver, &deviceCount, device_handles.data());
   LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGet FAILED with return code ", status);
   logDebug("GET DRIVER'S DEVICE COUNT (via calling zeDeviceGet) -  {} ", deviceCount);
-
+  
   ze_device_handle_t found = nullptr;
   // For each device, find the first one matching the type 
   for (uint32_t deviceId = 0; deviceId < deviceCount; ++ deviceId) {
     auto hDevice = device_handles[deviceId];
     ze_device_properties_t device_properties = {};
     device_properties.stype = ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
-
+    
     status = zeDeviceGetProperties(hDevice, &device_properties);
     LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties FAILED with return code " ,status);
     logDebug("GET DEVICE PROPERTY (via calling zeDeviceGetProperties) {} ", this->deviceType == device_properties.type);
-
+    
     if (this->deviceType == device_properties.type) {
       // Register HipLZ device in driver
       this->devices.push_back(new LZDevice(deviceId, hDevice, this));
@@ -1080,7 +1161,7 @@ void LZQueue::initializeQueue(LZContext* lzContext, bool needDefaultCmdList) {
 }
 
 LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
-   // Initialize super class fields, i.e. ClQueue
+  // Initialize super class fields, i.e. ClQueue
   this->LastEvent = nullptr;
   this->Flags = 0;
   this->Priority = 0;
@@ -1092,6 +1173,20 @@ LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList) {
 
   // Initialize Level-0 queue
   initializeQueue(lzContext);
+}
+
+LZQueue::LZQueue(LZContext* lzContext_, ze_command_queue_handle_t hQueue_, LZCommandList* lzCmdList) {
+  // Initialize super class fields, i.e. ClQueue
+  this->LastEvent = nullptr;
+  this->Flags = 0;
+  this->Priority = 0;
+
+  // Initialize Level-0 related class fields
+  this->lzContext = lzContext_;
+  this->defaultCmdList = lzCmdList;
+  this->monitorThreadId = 0;
+
+  this->hQueue = hQueue_;
 }
 
 // Queue synchronous support                                                                           
@@ -2288,8 +2383,21 @@ static void InitializeHipLZCallOnce() {
 }
 
 void InitializeHipLZ() {
-  static std::once_flag HipLZInitialized;
-  std::call_once(HipLZInitialized, InitializeHipLZCallOnce);
+  // This is to consider the case that InitializeHipLZFromOutside was invoked
+  // TODO: consider for lock protection?
+  if (HipLZDrivers.size() != 0)
+    return;
+  
+  static std::once_flag hipLZInitialized;
+  std::call_once(hipLZInitialized, InitializeHipLZCallOnce);
+}
+
+void InitializeHipLZFromOutside(ze_driver_handle_t hDriver,
+                                ze_device_handle_t hDevice,
+				ze_context_handle_t hContext,
+                                ze_command_queue_handle_t hQueue) {
+  // Initialize HipLZ device drivers and relevant devices
+  LZDriver::InitDriver(HipLZDrivers, ZE_DEVICE_TYPE_GPU, hDriver, hDevice, hContext, hQueue);
 }
 
 LZDevice &HipLZDeviceById(int deviceId) {

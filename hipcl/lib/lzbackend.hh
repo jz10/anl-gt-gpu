@@ -176,6 +176,8 @@ protected:
   
 public:
   LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver);
+  LZDevice(hipDevice_t id,  ze_device_handle_t hDevice, LZDriver* driver, ze_context_handle_t hContext,
+	   ze_command_queue_handle_t hQueue);
   
   // Get device properties
   ze_device_properties_t* GetDeviceProps() { return &(this->deviceProps); };
@@ -252,6 +254,9 @@ public:
   uint32_t GetCmdQueueGroupOrdinal() { return this->cmdQueueGraphOrdinal; };
   
 protected:
+  // Retrieve device properties related data
+  void retrieveDeviceProperties();
+
   // Setup HipLZ device properties 
   void setupProperties(int index);
 
@@ -434,7 +439,8 @@ public:
   LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzCommandList(0), 
 				       lzQueue(0), defaultEventPool(0) {}
   LZContext(LZDevice* dev);  
-
+  LZContext(LZDevice* dev, ze_context_handle_t hContext, ze_command_queue_handle_t hQueue);
+  
   // Create SPIR-V module
   bool CreateModule(uint8_t* moduleIL, size_t ilSize, std::string funcName);
 
@@ -557,10 +563,29 @@ public:
     // Collect HipLZ devices
     FindHipLZDevices();
   };
+
+  LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_,
+	   ze_device_handle_t hDevice, 
+	   ze_context_handle_t hContext, 
+	   ze_command_queue_handle_t hQueue) : primaryDevieId(0) {
+    this->hDriver = hDriver_;
+    this->deviceType = deviceType_;
+
+    // Setup HipLZ devie
+    FindHipLZDevices(hDevice, hContext, hQueue);
+  }
   
   // Get and initialize the drivers
   static bool InitDrivers(std::vector<LZDriver* >& drivers, const ze_device_type_t deviceType);
 
+  // Initialize the driver via pre-initialized resource
+  static bool InitDriver(std::vector<LZDriver* >& drivers,
+			 const ze_device_type_t deviceType,
+			 ze_driver_handle_t driverHandle,
+			 ze_device_handle_t deviceHandle,
+			 ze_context_handle_t ctxPtr,
+			 ze_command_queue_handle_t queueHandle);
+  
   // Get HipLZ driver via integer ID
   static LZDriver& HipLZDriverById(int id);
 
@@ -627,7 +652,9 @@ public:
 
 protected:
   // Collect HipLZ device that belongs to this driver
-  bool FindHipLZDevices();
+  bool FindHipLZDevices(ze_device_handle_t hDevice = nullptr,
+			ze_context_handle_t hContext = nullptr,
+			ze_command_queue_handle_t hQueue = nullptr);
 };
 
 class LZCommandList {
@@ -786,7 +813,8 @@ public:
   };
   LZQueue(LZContext* lzContext, bool needDefaultCmdList = false);
   LZQueue(LZContext* lzContext, LZCommandList* lzCmdList); 
-
+  LZQueue(LZContext* lzContext_, ze_command_queue_handle_t hQueue_, LZCommandList* lzCmdList);
+  
   ~LZQueue() {
     // Detach from LZContext object
     this->lzContext = nullptr; 
@@ -905,6 +933,11 @@ extern size_t NumLZDevices;
 extern size_t NumLZDrivers;
 
 void InitializeHipLZ();
+
+void InitializeHipLZFromOutside(ze_driver_handle_t hDriver,
+				ze_device_handle_t hDevice,
+				ze_context_handle_t hContext,
+				ze_command_queue_handle_t hQueue);
 
 /********************************************************************/
 
