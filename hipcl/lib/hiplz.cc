@@ -1853,13 +1853,11 @@ extern "C" void **__hipRegisterFatBinary(const void *data) {
     CLDeviceById(deviceId).registerModule(module);
   }
 
-  // Register HipLZ Module
-  // for (size_t deviceId = 0; deviceId < NumLZDevices; ++deviceId) {
-  //   HipLZDeviceById(deviceId).registerModule(module);
+  // Put HipLZ module into global fat binary storage
+  // for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+  //   LZDriver::HipLZDriverById(driverId).registerModule(module);
   // }
-  for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
-    LZDriver::HipLZDriverById(driverId).registerModule(module);
-  }
+  LZDriver::FatBinModules.push_back(module);
   
   ++ binaries_loaded;
   logDebug("__hipRegisterFatBinary {}\n", binaries_loaded);
@@ -1896,7 +1894,7 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   
   std::string devFunc = deviceFunction;
   // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution)
-  InitializeHipLZ();
+  //xxx InitializeHipLZ();
 
   // std::cout << "module data: " << (unsigned long)data << std::endl;
   std::string *module = reinterpret_cast<std::string *>(data);

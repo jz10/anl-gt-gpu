@@ -19,6 +19,9 @@ static std::vector<LZDevice *> HipLZDevices INIT_PRIORITY(120);
 // The drivers are managed globally
 static std::vector<LZDriver *> HipLZDrivers INIT_PRIORITY(120);
 
+// The global storage for module binary
+std::vector<std::string *> LZDriver::FatBinModules;
+
 size_t NumLZDevices = 1;
 
 size_t NumLZDrivers = 1;
@@ -557,7 +560,7 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
   ze_result_t status = zeContextCreate(dev->GetDriverHandle(), &ctxtDesc, &this->hContext);
   LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
-  
+
   // TODO: just use DefaultQueue to maintain the context local queu and command list?
   // Create a command list for default command queue
   this->lzCommandList = LZCommandList::CreateCmdList(this); 
@@ -567,12 +570,13 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
   this->defaultEventPool = new LZEventPool(this);
 }
 
-LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext, ze_command_queue_handle_t hQueue)
+LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext_, ze_command_queue_handle_t hQueue)
   : ClContext(0, 0) {
   this->lzDevice = dev;
+  this->hContext = hContext_;
 
   // Create a command list for default command queue
-  this->lzCommandList =  LZCommandList::CreateCmdList(this);
+  this->lzCommandList = LZCommandList::CreateCmdList(this);
   // Create the default command queue
   this->DefaultQueue = this->lzQueue = new LZQueue(this, hQueue, this->lzCommandList);
   // TODO: check if we need to create event pool or retrieve it from outside
@@ -714,8 +718,10 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     hmaDesc.stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC;
     hmaDesc.pNext = NULL;
     hmaDesc.flags = 0;
+   
     ze_result_t status = zeMemAllocShared(this->hContext, &dmaDesc, &hmaDesc, size, alignment,
 					  this->lzDevice->GetDeviceHandle(), &ptr);
+    
     LZ_PROCESS_ERROR_MSG("HipLZ could not allocate shared memory with error code: ", status);
     logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocShared {} ", status);
     
@@ -1032,7 +1038,7 @@ bool LZDriver::FindHipLZDevices(ze_device_handle_t hDevice,
     logDebug("DEVICE OR CONTEXT OR QUEUE WAS MISTAKENLY INITIALIZED\n");
     return false;
   }
-  
+
   // get all devices 
   uint32_t deviceCount = 0;
   zeDeviceGet(this->hDriver, &deviceCount, nullptr);
@@ -1507,7 +1513,7 @@ LZEvent* LZQueue::GetPendingEvent() {
 
   return res;
 }
-    
+
 LZCommandList::LZCommandList(LZContext* lzContext_) {
   this->lzContext = lzContext_;
 
@@ -1568,7 +1574,7 @@ bool LZImmCommandList::initializeCmdList() {
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
   status = zeEventCreate(this->eventPool, &ev_desc, &(this->finishEvent));
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
-
+  
   return true;
 }
 
@@ -2380,6 +2386,13 @@ static void InitializeHipLZCallOnce() {
   
   // Initialize HipLZ device drivers and relevant devices
   LZDriver::InitDrivers(HipLZDrivers, ZE_DEVICE_TYPE_GPU);
+
+  // Register fat binary modules
+  for (std::string* module : LZDriver::FatBinModules) {
+    for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {                                   
+      LZDriver::HipLZDriverById(driverId).registerModule(module);                                       
+    }
+  }
 }
 
 void InitializeHipLZ() {
@@ -2398,6 +2411,13 @@ void InitializeHipLZFromOutside(ze_driver_handle_t hDriver,
                                 ze_command_queue_handle_t hQueue) {
   // Initialize HipLZ device drivers and relevant devices
   LZDriver::InitDriver(HipLZDrivers, ZE_DEVICE_TYPE_GPU, hDriver, hDevice, hContext, hQueue);
+
+  // Register fat binary modules 
+  for (std::string* module : LZDriver::FatBinModules) {
+    for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+      LZDriver::HipLZDriverById(driverId).registerModule(module);
+    }
+  }
 }
 
 LZDevice &HipLZDeviceById(int deviceId) {

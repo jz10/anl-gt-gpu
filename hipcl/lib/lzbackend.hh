@@ -554,6 +554,10 @@ protected:
 
   // The primary device ID
   int primaryDevieId;
+
+public:
+  // The global storage for module binary
+  static std::vector<std::string *> FatBinModules;
   
 public:
   LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_) : primaryDevieId(0) { 
