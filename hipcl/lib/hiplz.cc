@@ -1899,8 +1899,9 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   // std::cout << "module data: " << (unsigned long)data << std::endl;
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterFunction on module {}\n", (void *)module);
-  
-  /*xxx for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
+
+#if 0
+  for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
 
     if (CLDeviceById(deviceId).registerFunction(module, hostFunction,
                                                 deviceName)) {
@@ -1910,8 +1911,9 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
                   deviceName);
       std::abort();
     }
-    }*/
-  
+  }
+#endif
+
   for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
     if (LZDriver::HipLZDriverById(driverId).registerFunction(module, hostFunction, deviceName)) {
       logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName);

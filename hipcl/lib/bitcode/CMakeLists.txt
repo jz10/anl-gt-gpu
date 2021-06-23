@@ -4,7 +4,7 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/BC")
 add_custom_command( OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/BC/mathlib.bc"
                     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mathlib.cl"
         COMMAND "${CMAKE_CXX_COMPILER}"
-        -Xclang -finclude-default-header
+        -cl-no-stdinc -Xclang -finclude-default-header
         -O2 -x cl -cl-std=CL2.0
         --target=spir64-unknown-unknown -emit-llvm
         -o "${CMAKE_CURRENT_BINARY_DIR}/BC/mathlib.bc"
@@ -30,7 +30,7 @@ foreach(SOURCE IN LISTS SOURCES)
         OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/BC/${SOURCE}.bc"
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/OCML/${SOURCE}.cl"
         COMMAND "${CMAKE_CXX_COMPILER}"
-        -Xclang -finclude-default-header
+        -cl-no-stdinc -Xclang -finclude-default-header
         -O2 -pthread -x cl -cl-std=CL2.0
         --target=spir64-unknown-unknown -emit-llvm
         -o "${CMAKE_CURRENT_BINARY_DIR}/BC/${SOURCE}.bc"
