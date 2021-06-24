@@ -558,6 +558,12 @@ protected:
 public:
   // The global storage for module binary
   static std::vector<std::string *> FatBinModules;
+
+  // The global storage for kernel functions, includig module, hostFunction and deviceName
+  static std::vector<std::tuple<std::string *, const void *, const char* >> RegFunctions;
+
+  // The global storage for global variables include module, hostVar, deviceName and size
+  static std::vector<std::tuple<std::string *, char *, const char *, int>> GlobalVars;
   
 public:
   LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_) : primaryDevieId(0) { 

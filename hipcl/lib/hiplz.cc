@@ -1793,7 +1793,8 @@ static unsigned binaries_loaded = 0;
 
 extern "C" void **__hipRegisterFatBinary(const void *data) {
   InitializeOpenCL();
-  InitializeHipLZ();
+  // Here we do not initialize HipLZ but put fat binary into a global temproary storage
+  // xxx InitializeHipLZ();
   
   const __CudaFatBinaryWrapper *fbwrapper =
       reinterpret_cast<const __CudaFatBinaryWrapper *>(data);
@@ -1858,7 +1859,7 @@ extern "C" void **__hipRegisterFatBinary(const void *data) {
   //   LZDriver::HipLZDriverById(driverId).registerModule(module);
   // }
   LZDriver::FatBinModules.push_back(module);
-  
+
   ++ binaries_loaded;
   logDebug("__hipRegisterFatBinary {}\n", binaries_loaded);
 
@@ -1894,24 +1895,14 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
   
   std::string devFunc = deviceFunction;
   // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution)
-  //xxx InitializeHipLZ();
+  // Here we do not initialize HipLZ, but store the function informqtion into a temproary storage
+  // xxx InitializeHipLZ();
 
   // std::cout << "module data: " << (unsigned long)data << std::endl;
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterFunction on module {}\n", (void *)module);
-  
-  /*xxx for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
 
-    if (CLDeviceById(deviceId).registerFunction(module, hostFunction,
-                                                deviceName)) {
-      logDebug("__hipRegisterFunction: kernel {} found\n", deviceName);
-    } else {
-      logCritical("__hipRegisterFunction can NOT find kernel: {} \n",
-                  deviceName);
-      std::abort();
-    }
-    }*/
-  
+  /* xxx
   for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
     if (LZDriver::HipLZDriverById(driverId).registerFunction(module, hostFunction, deviceName)) {
       logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName);
@@ -1919,7 +1910,10 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
       logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n", deviceName);
       std::abort();
     }
-  }
+    }*/
+  
+  // Put the function information into a temproary storage
+  LZDriver::RegFunctions.push_back(std::make_tuple(module, hostFunction, deviceName));
 }
 
 extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modules,
@@ -1929,23 +1923,23 @@ extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modul
   // logError("__hipRegisterVar not implemented yet\n");
   InitializeOpenCL();
 
-  // std::string devName = deviceName;
-  // std::string hostVarName = hostVar;
-  // std::string devVar = deviceVar;
-  // std::cout << "hipcl hostVar: " << hostVarName << " deviceVar: " << devVar << " deviceName: "
-  // 	    << devName << " size: " << size << " global: " << global << std::endl;
   // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution
-  InitializeHipLZ();
+  // Here we do not initialize HipLZ, but store the global variable informqtion into a temproary storage
+  // xxx InitializeHipLZ();
 
   std::string *module = reinterpret_cast<std::string *>(data);
   logDebug("RegisterVar on module {}\n", (void *)module);
-  
+
+  /* xxx
   for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
     if (LZDriver::HipLZDriverById(driverId).registerVar(module, hostVar, deviceName, size)) {
       logDebug("__hipRegisterVar: variable {} found\n", deviceName);
     } else {
       logError("__hipRegisterVar could not find: {}\n", deviceName);
     }
-  }
+    }*/
+  
+  // Put the global variable information into a temproary storage
+  // LZDriver::GlobalVars.push_back(std::make_tuple(module, hostVar, deviceName, size));
 }
 

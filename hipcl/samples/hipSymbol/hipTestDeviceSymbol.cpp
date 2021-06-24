@@ -56,6 +56,8 @@ int main() {
         C[i] = 0;
     }
 
+    hipInit(0);
+    
     hipMalloc((void**)&Ad, SIZE);
     hipHostMalloc((void**)&Am, SIZE);
     hipHostMalloc((void**)&Cm, SIZE);
