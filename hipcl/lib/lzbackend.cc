@@ -22,6 +22,12 @@ static std::vector<LZDriver *> HipLZDrivers INIT_PRIORITY(120);
 // The global storage for module binary
 std::vector<std::string *> LZDriver::FatBinModules;
 
+// The global storage for kernel functions, includig module, hostFunction and deviceName
+std::vector<std::tuple<std::string *, const void *, const char* >> LZDriver::RegFunctions;
+
+// The global storage for global variables include module, hostVar, deviceName and size  
+std::vector<std::tuple<std::string *, char *, const char *, int>> LZDriver::GlobalVars;
+
 size_t NumLZDevices = 1;
 
 size_t NumLZDrivers = 1;
@@ -141,7 +147,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
   logDebug("LZ REGISER FUCNTION {}", FunctionName);
   auto it = std::find(Modules.begin(), Modules.end(), module);
   if (it == Modules.end()) {
-    logError("HipLZ Module PTR not FOUND: {}\n", (void *)module);
+    logCritical("HipLZ Module PTR not FOUND: {}\n", (void *)module);
     return false;
   }
 
@@ -158,7 +164,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
 
 // Register global variable
 bool LZDevice::registerVar(std::string *module, const void *HostVar, const char *VarName) {
-  // std::string varName = (const char* )VarName;
+  std::string varName = (const char* )VarName;
   // std::cout << "Register variable: " <<	varName << "   module data address: " << (unsigned long)module->data() << std::endl;
 
   // Register global variable on primary context
@@ -588,6 +594,7 @@ LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext_, ze_command_qu
   // Create the default command queue
   this->DefaultQueue = this->lzQueue = new LZQueue(this, hQueue, this->lzCommandList);
   // TODO: check if we need to create event pool or retrieve it from outside
+  this->defaultEventPool = new LZEventPool(this);
 }
   
 bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
@@ -2401,11 +2408,42 @@ static void InitializeHipLZCallOnce() {
       LZDriver::HipLZDriverById(driverId).registerModule(module);                                       
     }
   }
+
+  // Register functions
+  for (auto fi : LZDriver::RegFunctions) {
+    std::string * module      = std::get<0>(fi);
+    const void * hostFunction = std::get<1>(fi);
+    const char * deviceName   = std::get<2>(fi);
+    for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) { 
+      if (LZDriver::HipLZDriverById(driverId).registerFunction(module, hostFunction, deviceName)) { 
+	logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName); 
+      } else {
+	logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n", deviceName);
+	std::abort();   
+      }
+    }
+  }
+
+  // Register globale variables
+  for (auto vi : LZDriver::GlobalVars) {
+    std::string * module    = std::get<0>(vi);
+    char * hostVar          = std::get<1>(vi);
+    const char * deviceName = std::get<2>(vi);
+    int size                = std::get<3>(vi);
+    std::string devName = deviceName;
+    for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+      if (LZDriver::HipLZDriverById(driverId).registerVar(module, hostVar, deviceName, size)) {
+	logDebug("__hipRegisterVar: variable {} found\n", deviceName);   
+      } else {  
+	logError("__hipRegisterVar could not find: {}\n", deviceName);  
+      } 
+    }
+  }
 }
 
 void InitializeHipLZ() {
   // This is to consider the case that InitializeHipLZFromOutside was invoked
-  // TODO: consider for lock protection?
+  // TODO: consider for lock protection 
   if (HipLZDrivers.size() != 0)
     return;
   
@@ -2424,6 +2462,37 @@ void InitializeHipLZFromOutside(ze_driver_handle_t hDriver,
   for (std::string* module : LZDriver::FatBinModules) {
     for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
       LZDriver::HipLZDriverById(driverId).registerModule(module);
+    }
+  }
+  
+  // Register functions 
+  for (auto fi : LZDriver::RegFunctions) {
+    std::string * module      = std::get<0>(fi);
+    const void * hostFunction = std::get<1>(fi);
+    const char * deviceName   = std::get<2>(fi);
+    for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+      if (LZDriver::HipLZDriverById(driverId).registerFunction(module, hostFunction, deviceName)) {
+        logDebug("__hipRegisterFunction: HipLZ kernel {} found\n", deviceName);
+      } else {
+        logCritical("__hipRegisterFunction can NOT find HipLZ kernel: {} \n", deviceName);
+        std::abort();
+      }
+    }
+  }
+
+  // Register globale variables
+  for (auto vi : LZDriver::GlobalVars) {
+    std::string * module    = std::get<0>(vi);
+    char * hostVar          = std::get<1>(vi);
+    const char * deviceName = std::get<2>(vi);
+    int size                = std::get<3>(vi);
+    std::string devName = deviceName;
+    for (size_t driverId = 0; driverId < NumLZDrivers; ++ driverId) {
+      if (LZDriver::HipLZDriverById(driverId).registerVar(module, hostVar, deviceName, size)) {
+        logDebug("__hipRegisterVar: variable {} found\n", deviceName);
+      } else {
+        logError("__hipRegisterVar could not find: {}\n", deviceName);
+      }
     }
   }
 }
