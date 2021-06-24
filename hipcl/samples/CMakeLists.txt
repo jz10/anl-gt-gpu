@@ -64,9 +64,9 @@ function(add_hiplz_binary_device_link EXEC_NAME)
 
     target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hiplz" "OpenCL" "ze_loader")
 
-    target_compile_options("hiplz" INTERFACE "-fgpu-rdc")
+    target_compile_options("${EXEC_NAME}" PRIVATE "-fgpu-rdc")
   
-    target_link_options("hiplz" INTERFACE
+    target_link_options("${EXEC_NAME}" PRIVATE
 	"--hip-link"
 	"$<INSTALL_INTERFACE:--hip-llvm-pass-path=${HIPLZ_LLVM_DIR}>"
 	"$<BUILD_INTERFACE:--hip-llvm-pass-path=${CMAKE_BINARY_DIR}/llvm_passes>"
@@ -100,7 +100,7 @@ set(SAMPLES
     10_memcpy3D
     11_device
     hipSymbol
-    hipDeviceLink
+    #    hipDeviceLink
 )
 
 foreach (SAMPLE ${SAMPLES})
