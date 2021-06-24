@@ -100,8 +100,11 @@ set(SAMPLES
     10_memcpy3D
     11_device
     hipSymbol
-    #    hipDeviceLink
 )
+
+if (CLANG_VERSION_STRING VERSION_LESS 13)
+	list(APPEND SAMPLES hipDeviceLink)
+endif ()
 
 foreach (SAMPLE ${SAMPLES})
   add_subdirectory(${SAMPLE})
