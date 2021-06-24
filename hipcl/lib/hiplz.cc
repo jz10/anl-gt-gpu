@@ -54,10 +54,18 @@ static LZContext *getTlsDefaultLzCtx() {
            ((size_t)device >= LZDriver::GetPrimaryDriver().GetNumOfDevices())),\
            hipErrorInvalidDevice)
 
+#define HIPLZ_INIT()                                                           \
+  do {	                                                                       \
+    LZ_TRY                                                                     \
+    InitializeOpenCL();                                                        \
+    InitializeHipLZ();                                                         \
+    LZ_CATCH                                                                   \
+  } while (0)
+
 /***********************************************************************/
 
 hipError_t hipGetDevice(int *deviceId) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
   
   ERROR_IF((deviceId == nullptr), hipErrorInvalidValue);
 
@@ -69,7 +77,7 @@ hipError_t hipGetDevice(int *deviceId) {
 }
 
 hipError_t hipGetDeviceCount(int *count) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
   ERROR_IF((count == nullptr), hipErrorInvalidValue);
   *count = LZDriver::GetPrimaryDriver().GetNumOfDevices();
   
@@ -77,7 +85,7 @@ hipError_t hipGetDeviceCount(int *count) {
 }
 
 hipError_t hipSetDevice(int deviceId) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
 
   ERROR_CHECK_DEVNUM(deviceId);
 
@@ -90,6 +98,8 @@ hipError_t hipSetDevice(int deviceId) {
 }
 
 hipError_t hipDeviceSynchronize(void) {
+  HIPLZ_INIT();
+
   LZ_TRY
 
   LZContext *cont = getTlsDefaultLzCtx();
@@ -102,6 +112,7 @@ hipError_t hipDeviceSynchronize(void) {
 }
 
 hipError_t hipDeviceReset(void) {
+  HIPLZ_INIT();
 
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -113,7 +124,8 @@ hipError_t hipDeviceReset(void) {
 }
 
 hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
+
   ERROR_IF((device == nullptr), hipErrorInvalidDevice);
   ERROR_CHECK_DEVNUM(ordinal);
 
@@ -123,7 +135,8 @@ hipError_t hipDeviceGet(hipDevice_t *device, int ordinal) {
 
 hipError_t hipDeviceComputeCapability(int *major, int *minor,
                                       hipDevice_t deviceId) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   hipDeviceProp_t props;
@@ -139,7 +152,8 @@ hipError_t hipDeviceComputeCapability(int *major, int *minor,
 
 hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
                                  int deviceId) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   if (LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getAttr(pi, attr)) 
@@ -149,9 +163,9 @@ hipError_t hipDeviceGetAttribute(int *pi, hipDeviceAttribute_t attr,
 }
 
 hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
-  // TODO: make a real properties retrieving function
-  InitializeHipLZ();
+  HIPLZ_INIT();
 
+  // TODO: make a real properties retrieving function
   ERROR_CHECK_DEVNUM(deviceId);
   LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).copyProperties(prop);
 
@@ -159,6 +173,8 @@ hipError_t hipGetDeviceProperties(hipDeviceProp_t *prop, int deviceId) {
 }
 
 hipError_t hipDeviceGetLimit(size_t *pValue, enum hipLimit_t limit) {
+  HIPLZ_INIT();
+
   ERROR_IF((pValue == nullptr), hipErrorInvalidValue);
   switch (limit) {
   case hipLimitMallocHeapSize:
@@ -171,7 +187,8 @@ hipError_t hipDeviceGetLimit(size_t *pValue, enum hipLimit_t limit) {
 }
 
 hipError_t hipDeviceGetName(char *name, int len, hipDevice_t deviceId) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   size_t namelen = strlen(LZDriver::GetPrimaryDriver().GetDeviceById(deviceId).getName());
@@ -182,7 +199,8 @@ hipError_t hipDeviceGetName(char *name, int len, hipDevice_t deviceId) {
 }
 
 hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
-  InitializeHipLZ();
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   if (bytes)
@@ -191,30 +209,42 @@ hipError_t hipDeviceTotalMem(size_t *bytes, hipDevice_t deviceId) {
 }
 
 hipError_t hipDeviceSetCacheConfig(hipFuncCache_t cacheConfig) {
+  HIPLZ_INIT();
+
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceGetCacheConfig(hipFuncCache_t *cacheConfig) {
+  HIPLZ_INIT();
+
   if (cacheConfig)
     *cacheConfig = hipFuncCachePreferNone;
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceGetSharedMemConfig(hipSharedMemConfig *pConfig) {
+  HIPLZ_INIT();
+
   if (pConfig)
     *pConfig = hipSharedMemBankSizeFourByte;
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceSetSharedMemConfig(hipSharedMemConfig pConfig) {
+  HIPLZ_INIT();
+
   RETURN(hipSuccess);
 }
 
 hipError_t hipFuncSetCacheConfig(const void *func, hipFuncCache_t config) {
+  HIPLZ_INIT();
+
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceGetPCIBusId(char *pciBusId, int len, int deviceId) {
+  HIPLZ_INIT();
+
   LZDevice& device = LZDriver::GetPrimaryDriver().GetDeviceById(deviceId);
   
   hipDeviceProp_t prop;
@@ -225,6 +255,8 @@ hipError_t hipDeviceGetPCIBusId(char *pciBusId, int len, int deviceId) {
 }
 
 hipError_t hipDeviceGetByPCIBusId(int * deviceId, const char * pciBusId) {
+  HIPLZ_INIT();
+
   int pciDomainID, pciBusID, pciDeviceID;
   int err = sscanf(pciBusId, "%4x:%4x:%4x", &pciDomainID, &pciBusID, &pciDeviceID);
   if (err == EOF || err < 3)
@@ -241,12 +273,16 @@ hipError_t hipDeviceGetByPCIBusId(int * deviceId, const char * pciBusId) {
 }
 
 hipError_t hipSetDeviceFlags(unsigned flags) {
+  HIPLZ_INIT();
+
   // TODO
   RETURN(hipSuccess);
 }
 
 hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
                                   int peerDeviceId) {
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
   ERROR_CHECK_DEVNUM(peerDeviceId);
   if (deviceId == peerDeviceId) {
@@ -266,6 +302,8 @@ hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
 }
 
 hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
+  HIPLZ_INIT();
+
   // TODO
   int deviceId = getTlsDefaultLzCtx()->GetDevice()->getHipDeviceT();
 
@@ -281,6 +319,8 @@ hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
 }
 
 hipError_t hipDeviceDisablePeerAccess(int peerDeviceId) {
+  HIPLZ_INIT();
+
   // TODO
   int deviceId = getTlsDefaultLzCtx()->GetDevice()->getHipDeviceT();
 
@@ -296,6 +336,8 @@ hipError_t hipDeviceDisablePeerAccess(int peerDeviceId) {
 }
 
 hipError_t hipChooseDevice(int *device, const hipDeviceProp_t *prop) {
+  HIPLZ_INIT();
+
   hipDeviceProp_t tempProp;
   ERROR_IF(((device == nullptr) || (prop == nullptr)), hipErrorInvalidValue);
 
@@ -377,6 +419,8 @@ hipError_t hipChooseDevice(int *device, const hipDeviceProp_t *prop) {
 }
 
 hipError_t hipDriverGetVersion(int *driverVersion) {
+  HIPLZ_INIT();
+
   if (driverVersion) {
     *driverVersion = 4;
     RETURN(hipSuccess);
@@ -385,6 +429,8 @@ hipError_t hipDriverGetVersion(int *driverVersion) {
 }
 
 hipError_t hipRuntimeGetVersion(int *runtimeVersion) {
+  HIPLZ_INIT();
+
   if (runtimeVersion) {
     *runtimeVersion = 1;
     RETURN(hipSuccess);
@@ -395,12 +441,18 @@ hipError_t hipRuntimeGetVersion(int *runtimeVersion) {
 /********************************************************************/
 
 hipError_t hipGetLastError(void) {
+  HIPLZ_INIT();
+
   hipError_t temp = tls_LastError;
   tls_LastError = hipSuccess;
   return temp;
 }
 
-hipError_t hipPeekAtLastError(void) { return tls_LastError; }
+hipError_t hipPeekAtLastError(void) {
+  HIPLZ_INIT();
+
+  return tls_LastError;
+}
 
 const char *hipGetErrorName(hipError_t hip_error) {
   switch (hip_error) {
@@ -548,6 +600,8 @@ hipError_t hipStreamCreateWithFlags(hipStream_t *stream, unsigned int flags) {
 
 hipError_t hipStreamCreateWithPriority(hipStream_t *stream, unsigned int flags,
                                        int priority) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidResourceHandle);
 
   LZ_TRY
@@ -581,6 +635,8 @@ hipError_t hipDeviceGetStreamPriorityRange(int *leastPriority,
 }
 
 hipError_t hipStreamDestroy(hipStream_t stream) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidResourceHandle);
 
   ClContext *cont = getTlsDefaultCtx();
@@ -593,12 +649,16 @@ hipError_t hipStreamDestroy(hipStream_t stream) {
 }
 
 hipError_t hipStreamQuery(hipStream_t stream) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
   // TODO requires OpenCL extension
   return hipSuccess;
 }
 
 hipError_t hipStreamSynchronize(hipStream_t stream) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
   stream->finish();
   RETURN(hipSuccess);
@@ -606,6 +666,8 @@ hipError_t hipStreamSynchronize(hipStream_t stream) {
 
 hipError_t hipStreamWaitEvent(hipStream_t stream, hipEvent_t event,
                               unsigned int flags) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -616,6 +678,8 @@ hipError_t hipStreamWaitEvent(hipStream_t stream, hipEvent_t event,
 }
 
 hipError_t hipStreamGetFlags(hipStream_t stream, unsigned int *flags) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
   ERROR_IF((flags == nullptr), hipErrorInvalidValue);
 
@@ -624,6 +688,8 @@ hipError_t hipStreamGetFlags(hipStream_t stream, unsigned int *flags) {
 }
 
 hipError_t hipStreamGetPriority(hipStream_t stream, int *priority) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
   ERROR_IF((priority == nullptr), hipErrorInvalidValue);
 
@@ -634,6 +700,8 @@ hipError_t hipStreamGetPriority(hipStream_t stream, int *priority) {
 hipError_t hipStreamAddCallback(hipStream_t stream,
                                 hipStreamCallback_t callback, void *userData,
                                 unsigned int flags) {
+  HIPLZ_INIT();
+
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
   ERROR_IF((callback == nullptr), hipErrorInvalidValue);
 
@@ -647,6 +715,8 @@ hipError_t hipStreamAddCallback(hipStream_t stream,
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxCreate(hipCtx_t *ctx, unsigned int flags, hipDevice_t device) {
+  HIPLZ_INIT();
+
   ERROR_IF((ctx == nullptr), hipErrorInvalidValue);
   ERROR_CHECK_DEVNUM(device);
 
@@ -664,6 +734,8 @@ hipError_t hipCtxCreate(hipCtx_t *ctx, unsigned int flags, hipDevice_t device) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxDestroy(hipCtx_t ctx) {
+  HIPLZ_INIT();
+
   ClContext *primaryCtx = ctx->getDevice()->getPrimaryCtx();
   ERROR_IF((primaryCtx == ctx), hipErrorInvalidValue);
 
@@ -680,6 +752,8 @@ hipError_t hipCtxDestroy(hipCtx_t ctx) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxPopCurrent(hipCtx_t *ctx) {
+  HIPLZ_INIT();
+
   ERROR_IF((ctx == nullptr), hipErrorInvalidValue);
   ClContext *currentCtx = getTlsDefaultCtx();
   ClDevice *device = currentCtx->getDevice();
@@ -701,6 +775,8 @@ hipError_t hipCtxPopCurrent(hipCtx_t *ctx) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxPushCurrent(hipCtx_t ctx) {
+  HIPLZ_INIT();
+
   ERROR_IF((ctx == nullptr), hipErrorInvalidContext);
 
   tls_defaultCtx = ctx;
@@ -711,6 +787,8 @@ hipError_t hipCtxPushCurrent(hipCtx_t ctx) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxSetCurrent(hipCtx_t ctx) {
+  HIPLZ_INIT();
+
   if (ctx == nullptr) {
     tls_ctxStack.pop();
   } else {
@@ -723,6 +801,8 @@ hipError_t hipCtxSetCurrent(hipCtx_t ctx) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxGetCurrent(hipCtx_t *ctx) {
+  HIPLZ_INIT();
+
   if ((tls_getPrimaryCtx) || tls_ctxStack.empty()) {
     *ctx = getTlsDefaultCtx();
   } else {
@@ -733,6 +813,7 @@ hipError_t hipCtxGetCurrent(hipCtx_t *ctx) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxGetDevice(hipDevice_t *device) {
+  HIPLZ_INIT();
 
   ClContext *ctx = getTlsDefaultCtx();
 
@@ -745,6 +826,8 @@ hipError_t hipCtxGetDevice(hipDevice_t *device) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxGetApiVersion(hipCtx_t ctx, int *apiVersion) {
+  HIPLZ_INIT();
+
   if (apiVersion) {
     *apiVersion = 4;
   }
@@ -753,6 +836,8 @@ hipError_t hipCtxGetApiVersion(hipCtx_t ctx, int *apiVersion) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxGetCacheConfig(hipFuncCache_t *cacheConfig) {
+  HIPLZ_INIT();
+
   if (cacheConfig)
     *cacheConfig = hipFuncCachePreferNone;
 
@@ -761,16 +846,22 @@ hipError_t hipCtxGetCacheConfig(hipFuncCache_t *cacheConfig) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxSetCacheConfig(hipFuncCache_t cacheConfig) {
+  HIPLZ_INIT();
+
   RETURN(hipSuccess);
 }
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxSetSharedMemConfig(hipSharedMemConfig config) {
+  HIPLZ_INIT();
+
   RETURN(hipSuccess);
 }
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxGetSharedMemConfig(hipSharedMemConfig *pConfig) {
+  HIPLZ_INIT();
+
   if (pConfig)
     *pConfig = hipSharedMemBankSizeFourByte;
   RETURN(hipSuccess);
@@ -778,6 +869,8 @@ hipError_t hipCtxGetSharedMemConfig(hipSharedMemConfig *pConfig) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxSynchronize(void) {
+  HIPLZ_INIT();
+
   ClContext *ctx = getTlsDefaultCtx();
   ctx->finishAll();
   return hipSuccess;
@@ -785,6 +878,8 @@ hipError_t hipCtxSynchronize(void) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxGetFlags(unsigned int *flags) {
+  HIPLZ_INIT();
+
   ClContext *ctx = getTlsDefaultCtx();
   ERROR_IF((flags == nullptr), hipErrorInvalidValue);
 
@@ -794,16 +889,22 @@ hipError_t hipCtxGetFlags(unsigned int *flags) {
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxEnablePeerAccess(hipCtx_t peerCtx, unsigned int flags) {
+  HIPLZ_INIT();
+
   RETURN(hipErrorInvalidValue);
 }
 
 DEPRECATED(DEPRECATED_MSG)
 hipError_t hipCtxDisablePeerAccess(hipCtx_t peerCtx) {
+  HIPLZ_INIT();
+
   RETURN(hipErrorInvalidValue);
 }
 
 hipError_t hipMemGetAddressRange(hipDeviceptr_t *pbase, size_t *psize,
                                  hipDeviceptr_t dptr) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *ctx = getTlsDefaultLzCtx();
   ERROR_IF((ctx == nullptr), hipErrorInvalidContext);
@@ -817,6 +918,8 @@ hipError_t hipMemGetAddressRange(hipDeviceptr_t *pbase, size_t *psize,
 
 hipError_t hipDevicePrimaryCtxGetState(hipDevice_t deviceId,
                                        unsigned int *flags, int *active) {
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   ERROR_IF((flags == nullptr || active == nullptr), hipErrorInvalidValue);
@@ -831,16 +934,22 @@ hipError_t hipDevicePrimaryCtxGetState(hipDevice_t deviceId,
 }
 
 hipError_t hipDevicePrimaryCtxRelease(hipDevice_t deviceId) {
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
   RETURN(hipSuccess);
 }
 
 hipError_t hipDevicePrimaryCtxRetain(hipCtx_t *pctx, hipDevice_t deviceId) {
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
   RETURN(hipSuccess);
 }
 
 hipError_t hipDevicePrimaryCtxReset(hipDevice_t deviceId) {
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   CLDeviceById(deviceId).getPrimaryCtx()->reset();
@@ -850,6 +959,8 @@ hipError_t hipDevicePrimaryCtxReset(hipDevice_t deviceId) {
 
 hipError_t hipDevicePrimaryCtxSetFlags(hipDevice_t deviceId,
                                        unsigned int flags) {
+  HIPLZ_INIT();
+
   ERROR_CHECK_DEVNUM(deviceId);
 
   RETURN(hipErrorContextAlreadyInUse);
@@ -862,6 +973,8 @@ hipError_t hipEventCreate(hipEvent_t *event) {
 }
 
 hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
+  HIPLZ_INIT();
+
   LZ_TRY
 
   LZContext* cont = getTlsDefaultLzCtx();
@@ -880,6 +993,8 @@ hipError_t hipEventCreateWithFlags(hipEvent_t *event, unsigned flags) {
 }
 
 hipError_t hipEventRecord(hipEvent_t event, hipStream_t stream) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -892,6 +1007,8 @@ hipError_t hipEventRecord(hipEvent_t event, hipStream_t stream) {
 }
 
 hipError_t hipEventDestroy(hipEvent_t event) {
+  HIPLZ_INIT();
+
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
   delete event;
@@ -899,6 +1016,8 @@ hipError_t hipEventDestroy(hipEvent_t event) {
 }
 
 hipError_t hipEventSynchronize(hipEvent_t event) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
@@ -910,6 +1029,8 @@ hipError_t hipEventSynchronize(hipEvent_t event) {
 }
 
 hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((start == nullptr), hipErrorInvalidValue);
   ERROR_IF((stop == nullptr), hipErrorInvalidValue);
@@ -922,6 +1043,8 @@ hipError_t hipEventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
 }
 
 hipError_t hipEventQuery(hipEvent_t event) {
+  HIPLZ_INIT();
+
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
   if (event->isFinished())
@@ -933,6 +1056,8 @@ hipError_t hipEventQuery(hipEvent_t event) {
 /********************************************************************/
 
 hipError_t hipMalloc(void **ptr, size_t size) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
 
@@ -977,6 +1102,8 @@ hipError_t hipFree(void *ptr) {
 }
 
 hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -985,13 +1112,17 @@ hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
   RETURN(hipSuccess);
 }
 
-hipError_t hipHostFree(void *ptr) { return hipFree(ptr); }
+hipError_t hipHostFree(void *ptr) {
+  return hipFree(ptr);
+}
 
 DEPRECATED("use hipHostFree instead")
 hipError_t hipFreeHost(void *ptr) { return hipHostFree(ptr); }
 
 hipError_t hipHostGetDevicePointer(void **devPtr, void *hstPtr,
                                    unsigned int flags) {
+  HIPLZ_INIT();
+
   ERROR_IF(((hstPtr == nullptr) || (devPtr == nullptr)), hipErrorInvalidValue);
 
   *devPtr = hstPtr;
@@ -999,6 +1130,8 @@ hipError_t hipHostGetDevicePointer(void **devPtr, void *hstPtr,
 }
 
 hipError_t hipHostGetFlags(unsigned int *flagsPtr, void *hostPtr) {
+  HIPLZ_INIT();
+
   // TODO dummy implementation
   *flagsPtr = 0;
   RETURN(hipSuccess);
@@ -1006,13 +1139,21 @@ hipError_t hipHostGetFlags(unsigned int *flagsPtr, void *hostPtr) {
 
 hipError_t hipHostRegister(void *hostPtr, size_t sizeBytes,
                            unsigned int flags) {
+  HIPLZ_INIT();
+
   RETURN(hipSuccess);
 }
 
-hipError_t hipHostUnregister(void *hostPtr) { RETURN(hipSuccess); }
+hipError_t hipHostUnregister(void *hostPtr) {
+  HIPLZ_INIT();
+
+  RETURN(hipSuccess);
+}
 
 static hipError_t hipMallocPitch3D(void **ptr, size_t *pitch, size_t width,
                                    size_t height, size_t depth) {
+  HIPLZ_INIT();
+
   ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
 
   *pitch = ((((int)width - 1) / SVM_ALIGNMENT) + 1) * SVM_ALIGNMENT;
@@ -1030,6 +1171,8 @@ static hipError_t hipMallocPitch3D(void **ptr, size_t *pitch, size_t width,
 
 hipError_t hipMallocPitch(void **ptr, size_t *pitch, size_t width,
                           size_t height) {
+  HIPLZ_INIT();
+
   LZ_TRY
   return hipMallocPitch3D(ptr, pitch, width, height, 0);
   LZ_CATCH
@@ -1037,6 +1180,8 @@ hipError_t hipMallocPitch(void **ptr, size_t *pitch, size_t width,
 
 hipError_t hipMallocArray(hipArray **array, const hipChannelFormatDesc *desc,
                           size_t width, size_t height, unsigned int flags) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((width == 0), hipErrorInvalidValue);
 
@@ -1071,6 +1216,8 @@ hipError_t hipMallocArray(hipArray **array, const hipChannelFormatDesc *desc,
 
 hipError_t hipArrayCreate(hipArray **array,
                           const HIP_ARRAY_DESCRIPTOR *pAllocateArray) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((pAllocateArray->width == 0), hipErrorInvalidValue);
 
@@ -1131,6 +1278,8 @@ hipError_t hipArrayCreate(hipArray **array,
 }
 
 hipError_t hipFreeArray(hipArray *array) {
+  HIPLZ_INIT();
+
   ERROR_IF((array == nullptr), hipErrorInvalidValue);
 
   assert(array->data != nullptr);
@@ -1143,6 +1292,8 @@ hipError_t hipFreeArray(hipArray *array) {
 }
 
 hipError_t hipMalloc3D(hipPitchedPtr *pitchedDevPtr, hipExtent extent) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((extent.width == 0 || extent.height == 0), hipErrorInvalidValue);
   ERROR_IF((pitchedDevPtr == nullptr), hipErrorInvalidValue);
@@ -1162,6 +1313,8 @@ hipError_t hipMalloc3D(hipPitchedPtr *pitchedDevPtr, hipExtent extent) {
 }
 
 hipError_t hipMemGetInfo(size_t *free, size_t *total) {
+  HIPLZ_INIT();
+
 
   ERROR_IF((total == nullptr || free == nullptr), hipErrorInvalidValue);
 
@@ -1177,6 +1330,8 @@ hipError_t hipMemGetInfo(size_t *free, size_t *total) {
 }
 
 hipError_t hipMemPtrGetInfo(void *ptr, size_t *size) {
+  HIPLZ_INIT();
+
   LZ_TRY
   ERROR_IF((ptr == nullptr || size == nullptr), hipErrorInvalidValue);
 
@@ -1194,6 +1349,8 @@ hipError_t hipMemPtrGetInfo(void *ptr, size_t *size) {
 
 hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
                           hipMemcpyKind kind, hipStream_t stream) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -1219,6 +1376,8 @@ hipError_t hipMemcpyAsync(void *dst, const void *src, size_t sizeBytes,
 
 hipError_t hipMemcpy(void *dst, const void *src, size_t sizeBytes,
                      hipMemcpyKind kind) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -1269,6 +1428,8 @@ hipError_t hipMemcpyDtoH(void *dst, hipDeviceptr_t src, size_t sizeBytes) {
 
 hipError_t hipMemsetD32Async(hipDeviceptr_t dst, int value, size_t count,
                              hipStream_t stream) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -1278,6 +1439,8 @@ hipError_t hipMemsetD32Async(hipDeviceptr_t dst, int value, size_t count,
 }
 
 hipError_t hipMemsetD32(hipDeviceptr_t dst, int value, size_t count) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -1316,6 +1479,8 @@ hipError_t hipMemset3D(hipPitchedPtr pitchedDevPtr, int value,
 
 hipError_t hipMemsetAsync(void *dst, int value, size_t sizeBytes,
                           hipStream_t stream) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -1325,6 +1490,8 @@ hipError_t hipMemsetAsync(void *dst, int value, size_t sizeBytes,
 }
 
 hipError_t hipMemset(void *dst, int value, size_t sizeBytes) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -1351,6 +1518,8 @@ hipError_t hipMemcpyParam2D(const hip_Memcpy2D *pCopy) {
 hipError_t hipMemcpy2DAsync(void *dst, size_t dpitch, const void *src,
                             size_t spitch, size_t width, size_t height,
                             hipMemcpyKind kind, hipStream_t stream) {
+  HIPLZ_INIT();
+
   if (spitch == 0)
     spitch = width;
   if (dpitch == 0)
@@ -1370,6 +1539,8 @@ hipError_t hipMemcpy2DAsync(void *dst, size_t dpitch, const void *src,
 
 hipError_t hipMemcpy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
                        size_t width, size_t height, hipMemcpyKind kind) {
+  HIPLZ_INIT();
+
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
@@ -1385,6 +1556,8 @@ hipError_t hipMemcpy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 hipError_t hipMemcpy2DToArray(hipArray *dst, size_t wOffset, size_t hOffset,
                               const void *src, size_t spitch, size_t width,
                               size_t height, hipMemcpyKind kind) {
+  HIPLZ_INIT();
+
   size_t byteSize;
   if (dst) {
     switch (dst[0].desc.f) {
@@ -1454,6 +1627,7 @@ hipError_t hipMemcpyHtoA(hipArray *dstArray, size_t dstOffset,
 }
 
 hipError_t hipMemcpy3D(const struct hipMemcpy3DParms *p) {
+  HIPLZ_INIT();
 
   ERROR_IF((p == nullptr), hipErrorInvalidValue);
 
@@ -1541,10 +1715,8 @@ hipError_t hipMemcpy3D(const struct hipMemcpy3DParms *p) {
 /********************************************************************/
 
 hipError_t hipInit(unsigned int flags) {
-  LZ_TRY
-  InitializeOpenCL();
-  InitializeHipLZ();
-  LZ_CATCH
+  HIPLZ_INIT();
+
   RETURN(hipSuccess);
 }
 
@@ -1566,6 +1738,8 @@ hipError_t hipFuncGetAttributes(hipFuncAttributes *attr, const void *func) {
 
 hipError_t hipModuleGetGlobal(hipDeviceptr_t *dptr, size_t *bytes,
                               hipModule_t hmod, const char *name) {
+  HIPLZ_INIT();
+
   ERROR_IF((!dptr || !bytes || !name || !hmod), hipErrorInvalidValue);
   ERROR_IF((!hmod->symbolSupported()), hipErrorNotSupported);
   ERROR_IF((!hmod->getSymbolAddressSize(name, dptr, bytes)), hipErrorInvalidSymbol);
@@ -1574,6 +1748,8 @@ hipError_t hipModuleGetGlobal(hipDeviceptr_t *dptr, size_t *bytes,
 }
 
 hipError_t hipGetSymbolAddress(void **devPtr, const void *symbol) {
+  HIPLZ_INIT();
+
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   size_t bytes;
@@ -1584,6 +1760,8 @@ hipError_t hipGetSymbolAddress(void **devPtr, const void *symbol) {
 }
 
 hipError_t hipGetSymbolSize(size_t *size, const void *symbol) {
+  HIPLZ_INIT();
+
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   hipDeviceptr_t devPtr;
@@ -1594,6 +1772,8 @@ hipError_t hipGetSymbolSize(size_t *size, const void *symbol) {
 
 hipError_t hipMemcpyToSymbol(const void *symbol, const void *src, size_t sizeBytes, size_t offset,
                              hipMemcpyKind kind) {
+  HIPLZ_INIT();
+
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
@@ -1608,6 +1788,8 @@ hipError_t hipMemcpyToSymbol(const void *symbol, const void *src, size_t sizeByt
 
 hipError_t hipMemcpyToSymbolAsync(const void *symbol, const void *src, size_t sizeBytes, size_t offset,
                                   hipMemcpyKind kind, hipStream_t stream) {
+  HIPLZ_INIT();
+
   void *symPtr = NULL;
   size_t symSize = 0;
   ClContext *cont = getTlsDefaultLzCtx();
@@ -1618,6 +1800,8 @@ hipError_t hipMemcpyToSymbolAsync(const void *symbol, const void *src, size_t si
 
 hipError_t hipMemcpyFromSymbol(void *dst, const void *symbol, size_t sizeBytes, size_t offset,
 			       hipMemcpyKind kind) {
+  HIPLZ_INIT();
+
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
@@ -1631,6 +1815,8 @@ hipError_t hipMemcpyFromSymbol(void *dst, const void *symbol, size_t sizeBytes, 
 
 hipError_t hipMemcpyFromSymbolAsync(void *dst, const void *symbol, size_t sizeBytes, size_t offset,
                                     hipMemcpyKind kind, hipStream_t stream) {
+  HIPLZ_INIT();
+
   void *symPtr;
   size_t symSize;
   LZContext *cont = getTlsDefaultLzCtx();
@@ -1652,6 +1838,8 @@ hipError_t hipModuleLoadDataEx(hipModule_t *module, const void *image,
 
 hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
                             hipStream_t stream) {
+  HIPLZ_INIT();
+
   LZ_TRY
 
   LZContext* lzCtx = getTlsDefaultLzCtx();
@@ -1662,6 +1850,8 @@ hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
 }
 
 hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
+  HIPLZ_INIT();
+
   LZ_TRY 
 
   // Try for HipLZ kernel at first
@@ -1673,6 +1863,8 @@ hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
 }
 
 hipError_t hipLaunchByPtr(const void *hostFunction) {
+  HIPLZ_INIT();
+
   LZ_TRY
 
   // Try for HipLZ kernel at first
@@ -1689,6 +1881,8 @@ hipError_t hipLaunchByPtr(const void *hostFunction) {
 /********************************************************************/
 hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* resDesc,
 				  hipTextureDesc* texDesc, void* opt) {
+  HIPLZ_INIT();
+
   LZ_TRY
   LZContext* lzCtx = getTlsDefaultLzCtx();
   ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
@@ -1703,6 +1897,7 @@ hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* r
 
 /********************************************************************/
 hipError_t hipModuleLoad(hipModule_t *module, const char *fname) {
+  HIPLZ_INIT();
 
   ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
@@ -1729,6 +1924,8 @@ hipError_t hipModuleLoad(hipModule_t *module, const char *fname) {
 }
 
 hipError_t hipModuleUnload(hipModule_t module) {
+  HIPLZ_INIT();
+
   ClContext *cont = getTlsDefaultCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
@@ -1739,6 +1936,7 @@ hipError_t hipModuleUnload(hipModule_t module) {
 
 hipError_t hipModuleGetFunction(hipFunction_t *function, hipModule_t module,
                                 const char *kname) {
+  HIPLZ_INIT();
 
   ClProgram *p = (ClProgram *)module;
   ClKernel *k = p->getKernel(kname);
@@ -1756,6 +1954,7 @@ hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
                                  unsigned int sharedMemBytes,
                                  hipStream_t stream, void **kernelParams,
                                  void **extra) {
+  HIPLZ_INIT();
 
   logDebug("hipModuleLaunchKernel\n");
 
