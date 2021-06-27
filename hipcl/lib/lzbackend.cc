@@ -1529,6 +1529,27 @@ LZEvent* LZQueue::GetPendingEvent() {
   return res;
 }
 
+bool LZQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
+  // Here we retrieve 4 handler inforations, Driver, Device, Context and Queue
+  * size = 4;
+
+  // Get queue handler
+  nativeInfo[3] = (unsigned long)this->GetQueueHandle();
+
+  // Get context handler
+  LZContext* ctx = this->GetContext();
+  nativeInfo[2] = (unsigned long)ctx->GetContextHandle();
+  
+  // Get device handler
+  LZDevice* device = ctx->GetDevice();
+  nativeInfo[1] = (unsigned long)device->GetDeviceHandle();
+  
+  // Get driver handler
+  nativeInfo[0] = (unsigned long)device->GetDriverHandle();
+  
+  return true;
+}
+
 LZCommandList::LZCommandList(LZContext* lzContext_) {
   this->lzContext = lzContext_;
 

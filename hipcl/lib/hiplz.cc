@@ -656,6 +656,16 @@ hipError_t hipStreamQuery(hipStream_t stream) {
   return hipSuccess;
 }
 
+hipError_t hipStreamNativeInfo(hipStream_t stream, unsigned long* nativeInfo, int* size) {
+  ERROR_IF((stream == nullptr), hipErrorInvalidValue);
+
+  LZQueue* lzQueue = (LZQueue* )stream;
+  // TODO: consider the saft type cast
+  lzQueue->getNativeInfo(nativeInfo, size);
+
+  return hipSuccess;
+}
+
 hipError_t hipStreamSynchronize(hipStream_t stream) {
   HIPLZ_INIT();
 

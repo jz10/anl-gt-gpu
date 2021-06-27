@@ -835,6 +835,8 @@ public:
   // Get Level-0 queue handler
   ze_command_queue_handle_t GetQueueHandle() { return this->hQueue; }
 
+  // Get the Level-0 context object
+  
   // Get OpenCL command queue
   virtual cl::CommandQueue &getQueue();
   // Get queue flags
@@ -905,6 +907,9 @@ public:
 
   // Get the default command list
   LZCommandList* GetDefaultCmdList() { return this->defaultCmdList; };
+
+  // Get the native information
+  virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
   
 protected:
   // Initialize Level-0 queue

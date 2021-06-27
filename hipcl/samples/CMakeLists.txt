@@ -79,6 +79,45 @@ function(add_hiplz_binary_device_link EXEC_NAME)
 
 endfunction()
 
+# ARGN = sources
+function(add_hiplz_binary_lib LIB_NAME)
+    set(SOURCES ${ARGN})
+    set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE CXX)
+
+    add_library("${LIB_NAME}" SHARED ${SOURCES})
+
+    set_target_properties("${LIB_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
+
+    target_compile_options("hiplz" PRIVATE "-fPIC")
+
+    target_link_options("hiplz" PRIVATE "-shared")
+
+    target_link_libraries("${LIB_NAME}" "${SANITIZER_LIBS}" "hiplz" "OpenCL" "ze_loader")
+
+    install(TARGETS "${LIB_NAME}"
+            RUNTIME DESTINATION "${HIPLZ_SAMPLE_BINDIR}")
+endfunction()
+
+# ARGN = sources
+function(add_sycl_binary_lib LIB_NAME)
+    #set(CMAKE_CXX_COMPILER /home/jzhao/intel/oneapi/compiler/latest/linux/bin/clang++)
+    
+    set(SOURCES ${ARGN})
+    set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE CXX)
+
+    add_library("${LIB_NAME}" SHARED ${SOURCES})
+
+    set_target_properties("${LIB_NAME}" PROPERTIES CXX_STANDARD_REQUIRED ON)
+
+    target_compile_options("hiplz" PRIVATE "-fPIC")
+
+    target_link_options("hiplz" PRIVATE "-shared")
+
+    target_link_libraries("${LIB_NAME}" "${SANITIZER_LIBS}" "hiplz" "OpenCL" "ze_loader")
+
+    install(TARGETS "${LIB_NAME}"
+            RUNTIME DESTINATION "${HIPLZ_SAMPLE_BINDIR}")
+endfunction()
 
 set(SAMPLES
     hipmath
@@ -100,6 +139,8 @@ set(SAMPLES
     10_memcpy3D
     11_device
     hipSymbol
+    sycl_hip_interop
+    # hip_sycl_interop
 )
 
 if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13)

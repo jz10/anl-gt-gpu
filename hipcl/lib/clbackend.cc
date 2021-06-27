@@ -408,6 +408,10 @@ bool ClQueue::recordEvent(hipEvent_t event) {
   HIP_PROCESS_ERROR_MSG("Supported in LZQueue::recordEvent!", hipErrorNotSupported);
 }
 
+bool ClQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::getNativeInfo!", hipErrorNotSupported);
+}
+
 hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
   std::lock_guard<std::mutex> Lock(QueueMutex);
   

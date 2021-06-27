@@ -291,6 +291,9 @@ public:
   
   // If this queue object support HipLZ 
   virtual bool SupportLZ() { return false; };
+
+  // Get the native information
+  virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
 };
 
 class ExecItem {
