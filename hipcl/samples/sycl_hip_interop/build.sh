@@ -1,0 +1,6 @@
+# Pre-requirement
+# export PATH=${ONEAPI_COMPILER_PREFIX}/bin/:${PATH}
+# export LD_LIBRARY_PATH=${ONEAPI_COMPILER_PREFIX}/lib:${ONEAPI_COMPILER_PREFIX}/compiler/lib:${LD_LIBRARY_PATH}
+# The ONEAPI_COMPILER_PREFIX is the intallation of DPC++, e.g. ~/intel/oneapi/compiler/latest/linux
+# Sst the HIPLZ_INSTALL_PREFIX as HipLZ installation since the dynamic shared library that encapsulates HIP matrix muplication was pre-built and installed at ${HIPLZ_INSTALL_PREFIX}/lib
+clang++ sycl_hiplz_interop.cpp -o sycl_hiplz_interop.exe -fsycl  -lze_loader -L${HIPLZ_INSTALL_PREFIX}/lib -lSyCL2HipLZMM

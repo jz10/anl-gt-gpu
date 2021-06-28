@@ -9,14 +9,16 @@
 
 using namespace sycl;
 
-const int WIDTH = 10;
+// #define USM
 
-const int size = 100;
+const int WIDTH = 16;
+
+const int size = 1024;
 
 // CPU implementation of matrix transpose
 void matrixMultiplyCPUReference(const float * __restrict A,
                                 const float * __restrict B,
-                                float * __restrict C) {
+				float * __restrict C) {
   for (uint i = 0; i < WIDTH; i++) {
     for (uint j = 0; j < WIDTH; j++) {
       float acc = 0.0f;
@@ -31,7 +33,8 @@ void matrixMultiplyCPUReference(const float * __restrict A,
 
 int main() {
   queue myQueue;
-  
+
+#ifdef USM
   // USM allocator for data of type int in shared memory
   typedef usm_allocator<float, usm::alloc::shared> vec_alloc;
   // Create allocator for device associated with q
@@ -41,7 +44,10 @@ int main() {
     a(size, myAlloc),
     b(size, myAlloc),
     c(size, myAlloc);
-
+#else
+  std::vector<float> a(size), b(size), c(size);
+#endif
+  
   for (int i = 0; i < size; i++) {
     a[i] = i;
     b[i] = i;
@@ -66,8 +72,13 @@ int main() {
               Ctx.template get_native<sycl::backend::level_zero>(),
               myQueue.template get_native<sycl::backend::level_zero>());
 
-    // Run GEMM test via HipLZ  
+#ifdef USM
+    // Run GEMM test via HipLZ and USM data transfer  
+    hipMatrixMultiplicationUSMTest(A, B, C, WIDTH, WIDTH);
+#else
+    // Run GEMM test via HipLZ
     hipMatrixMultiplicationTest(A, B, C, WIDTH, WIDTH);
+#endif
   }
 
   // Alloc memory on host
@@ -77,10 +88,10 @@ int main() {
   matrixMultiplyCPUReference(A, B, C_ref);
 
   int err = 0;
-  for (int i = 0; i < size; i ++) {
+  for (int i = 0; i < 256; i ++) {
     err += (int)(c[i] - c_ref[i]) * 1000;
-    std::cout << "c[" << i << "] = " << c[i] << " c_ref[" << i << "] = " << c_ref[i]
-	      << " and difference is: " << (int)(c[i] - c_ref[i]) * 1000 << std::endl;
+    // std::cout << "c[" << i << "] = " << c[i] << " c_ref[" << i << "] = " << c_ref[i]
+    // 	      << " and difference is: " << (int)(c[i] - c_ref[i]) * 1000 << std::endl;
   }
   
   if (err != 0) {

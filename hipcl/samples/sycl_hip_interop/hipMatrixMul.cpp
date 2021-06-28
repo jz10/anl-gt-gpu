@@ -13,7 +13,7 @@
  
 #define MM_SHARED
 
-#define WIDTH 1024
+#define WIDTH 16 // 1024
 // the required shared memory is (2 * 4 * THREADS_PER_BLOCK * THREADS_PER_BLOCK) bytes
 #define THREADS_PER_BLOCK 16
 
@@ -63,15 +63,13 @@ int hiplzInit(void* driverPtr, void* deviePtr, void* contextPtr, void* queuePtr)
   return 0;
 }
 
-int hipMatrixMultiplicationTest(const float* A, const float* B, float* C, int M, int N) {
+int hipMatrixMultiplicationUSMTest(const float* A, const float* B, float* C, int M, int N) {
 
   hipError_t err;
 
   hipDeviceProp_t devProp;
   err = hipGetDeviceProperties(&devProp, 0);
   ERR_CHECK;
-  
-  std::cout << "RunTestMM 3 " << std::endl;
 
   // Lauching kernel from host
   hipLaunchKernelGGL(gpuMatrixMul,
@@ -80,14 +78,56 @@ int hipMatrixMultiplicationTest(const float* A, const float* B, float* C, int M,
 		     0, 0,
 		     A, B, C, M, N, M);
   ERR_CHECK_2;
-
-  std::cout << "RunTestMM 4 " << std::endl;
-  // Memory transfer from device to host
-  // err = hipMemcpy(MultiplyMatrix, gpuMultiplyMatrix, NUM * sizeof(float), hipMemcpyDeviceToHost);
-  ERR_CHECK;
   
   err = hipDeviceSynchronize();
   ERR_CHECK;
   
   return 0;
 }
+
+int hipMatrixMultiplicationTest(const float* A, const float* B, float* C, int M, int N) {
+
+  hipError_t err;
+
+  hipDeviceProp_t devProp;
+  err = hipGetDeviceProperties(&devProp, 0);
+  ERR_CHECK;
+
+  float* gpuMatrix1;
+  float* gpuMatrix2;
+  float* gpuMultiplyMatrix;
+  
+  int NUM = M * N;
+  // allocate the memory on the device side  
+  err = hipMalloc((void**)&gpuMatrix1, NUM * sizeof(float));
+  ERR_CHECK;
+  err = hipMalloc((void**)&gpuMatrix2, NUM * sizeof(float));
+  ERR_CHECK;
+  err = hipMalloc((void**)&gpuMultiplyMatrix, NUM * sizeof(float));
+  ERR_CHECK;
+
+  // Memory transfer from host to device   
+  err = hipMemcpy(gpuMatrix1, A, NUM * sizeof(float), hipMemcpyHostToDevice);
+  ERR_CHECK;
+
+  err = hipMemcpy(gpuMatrix2, B, NUM * sizeof(float), hipMemcpyHostToDevice);
+  ERR_CHECK;
+  
+  // Lauching kernel from host 
+  hipLaunchKernelGGL(gpuMatrixMul,
+                     dim3(WIDTH / THREADS_PER_BLOCK, WIDTH / THREADS_PER_BLOCK),
+                     dim3(THREADS_PER_BLOCK, THREADS_PER_BLOCK),
+                     0, 0,
+                     gpuMatrix1, gpuMatrix2, gpuMultiplyMatrix, M, N, M);
+  ERR_CHECK_2;
+
+  // Memory transfer from device to host   
+  err = hipMemcpy(C, gpuMultiplyMatrix, NUM * sizeof(float), hipMemcpyDeviceToHost);
+  ERR_CHECK;
+
+  err = hipDeviceSynchronize();
+  ERR_CHECK;
+
+  return 0;
+}
+
