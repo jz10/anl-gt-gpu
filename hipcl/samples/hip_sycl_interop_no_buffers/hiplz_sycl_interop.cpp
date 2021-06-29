@@ -90,15 +90,15 @@ int main() {
   }
 
   // copy A and B to the device
-  hipMemcpyAsync(d_A, A, WIDTH*WIDTH*sizeof(double), hipMemcpyHostToDevice, stream);
-  hipMemcpyAsync(d_B, B, WIDTH*WIDTH*sizeof(double), hipMemcpyHostToDevice, stream);
-  
+  hipMemcpy(d_A, A, WIDTH*WIDTH*sizeof(double), hipMemcpyHostToDevice);
+  hipMemcpy(d_B, B, WIDTH*WIDTH*sizeof(double), hipMemcpyHostToDevice);
+
   // Invoke oneMKL GEMM
   oneMKLGemmTest(nativeHandlers, d_A, d_B, d_C, WIDTH, WIDTH, WIDTH, ldA, ldB, ldC, alpha, beta);
 
   // copy back C
-  hipMemcpyAsync(C, d_C, WIDTH*WIDTH*sizeof(double), hipMemcpyDeviceToHost, stream);
-    
+  hipMemcpy(C, d_C, WIDTH*WIDTH*sizeof(double), hipMemcpyDeviceToHost);
+
   // check results
   std::cout << "Verify results between OneMKL & Serial: ";  
   VerifyResult(C, C_serial);
