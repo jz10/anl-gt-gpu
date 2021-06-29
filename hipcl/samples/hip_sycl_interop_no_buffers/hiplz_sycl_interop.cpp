@@ -98,7 +98,10 @@ int main() {
 
   // copy back C
   hipMemcpyAsync(C, d_C, WIDTH*WIDTH*sizeof(double), hipMemcpyDeviceToHost, stream);
-    
+
+  // synchronize the stream
+  hipStreamSynchronize( stream );
+  
   // check results
   std::cout << "Verify results between OneMKL & Serial: ";  
   VerifyResult(C, C_serial);
