@@ -93,13 +93,9 @@ int main() {
   hipMemcpy(d_A, A, WIDTH*WIDTH*sizeof(double), hipMemcpyHostToDevice);
   hipMemcpy(d_B, B, WIDTH*WIDTH*sizeof(double), hipMemcpyHostToDevice);
 
-  hipDeviceSynchronize();
-  
   // Invoke oneMKL GEMM
   oneMKLGemmTest(nativeHandlers, d_A, d_B, d_C, WIDTH, WIDTH, WIDTH, ldA, ldB, ldC, alpha, beta);
 
-  hipDeviceSynchronize();
-  
   // copy back C
   hipMemcpy(C, d_C, WIDTH*WIDTH*sizeof(double), hipMemcpyDeviceToHost);
 
