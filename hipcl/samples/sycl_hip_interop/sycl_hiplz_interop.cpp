@@ -1,11 +1,13 @@
-#include <vector>
-#include <iostream>
+#include <stdint.h>
 
 #include "level_zero/ze_api.h"
 #include <CL/sycl.hpp>
 #include "CL/sycl/backend/level_zero.hpp"
 
 #include "sycl_hiplz_interop.h"
+
+#include <vector>
+#include <iostream>
 
 using namespace sycl;
 
@@ -90,8 +92,6 @@ int main() {
   int err = 0;
   for (int i = 0; i < 256; i ++) {
     err += (int)(c[i] - c_ref[i]) * 1000;
-    // std::cout << "c[" << i << "] = " << c[i] << " c_ref[" << i << "] = " << c_ref[i]
-    // 	      << " and difference is: " << (int)(c[i] - c_ref[i]) * 1000 << std::endl;
   }
   
   if (err != 0) {

@@ -1230,7 +1230,7 @@ hipError_t hipStreamQuery(hipStream_t stream);
 /**
  * Query the hip stream related native informtions
  */
-hipError_t hipStreamNativeInfo(hipStream_t stream, unsigned long* nativeInfo, int* size);
+hipError_t hiplzStreamNativeInfo(hipStream_t stream, unsigned long* nativeInfo, int* size);
 
 /**
  * @brief Wait for all commands in stream to complete.

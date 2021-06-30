@@ -656,7 +656,7 @@ hipError_t hipStreamQuery(hipStream_t stream) {
   return hipSuccess;
 }
 
-hipError_t hipStreamNativeInfo(hipStream_t stream, unsigned long* nativeInfo, int* size) {
+hipError_t hiplzStreamNativeInfo(hipStream_t stream, unsigned long* nativeInfo, int* size) {
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
 
   LZQueue* lzQueue = (LZQueue* )stream;
