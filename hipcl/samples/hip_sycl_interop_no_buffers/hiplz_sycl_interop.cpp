@@ -60,7 +60,7 @@ int main() {
 
   unsigned long nativeHandlers[4];
   int numItems = 0;
-  hipStreamNativeInfo(stream, nativeHandlers, &numItems);
+  hiplzStreamNativeInfo(stream, nativeHandlers, &numItems);
 
   // allocate memory
   hipMalloc( &d_A, WIDTH*WIDTH*sizeof(double));
