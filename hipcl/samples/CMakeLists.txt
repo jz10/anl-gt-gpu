@@ -65,15 +65,16 @@ function(add_hiplz_binary_device_link EXEC_NAME)
     target_link_libraries("${EXEC_NAME}" "${SANITIZER_LIBS}" "hiplz" "OpenCL" "ze_loader")
 
     target_compile_options("${EXEC_NAME}" PRIVATE "-fgpu-rdc")
-  
+
     target_link_options("${EXEC_NAME}" PRIVATE
-	"--hip-link"
-	"$<INSTALL_INTERFACE:--hip-llvm-pass-path=${HIPLZ_LLVM_DIR}>"
-	"$<BUILD_INTERFACE:--hip-llvm-pass-path=${CMAKE_BINARY_DIR}/llvm_passes>"
-	"$<INSTALL_INTERFACE:--hip-device-lib-path=${HIPLZ_DATA_DIR}>"
-	"$<BUILD_INTERFACE:--hip-device-lib-path=${CMAKE_BINARY_DIR}>"
-	"--hip-device-lib=kernellib.bc")
-	
+        "-fgpu-rdc"
+        "--hip-link"
+        "$<INSTALL_INTERFACE:--hip-llvm-pass-path=${HIPLZ_LLVM_DIR}>"
+        "$<BUILD_INTERFACE:--hip-llvm-pass-path=${CMAKE_BINARY_DIR}/llvm_passes>"
+        "$<INSTALL_INTERFACE:--hip-device-lib-path=${HIPLZ_DATA_DIR}>"
+        "$<BUILD_INTERFACE:--hip-device-lib-path=${CMAKE_BINARY_DIR}>"
+        "--hip-device-lib=kernellib.bc")
+
     install(TARGETS "${EXEC_NAME}"
             RUNTIME DESTINATION "${HIPLZ_SAMPLE_BINDIR}")
 
@@ -139,13 +140,10 @@ set(SAMPLES
     10_memcpy3D
     11_device
     hipSymbol
+    hipDeviceLink
     sycl_hip_interop
     #hip_sycl_interop
 )
-
-if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13)
-	list(APPEND SAMPLES hipDeviceLink)
-endif ()
 
 foreach (SAMPLE ${SAMPLES})
   add_subdirectory(${SAMPLE})
