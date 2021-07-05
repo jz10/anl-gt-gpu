@@ -412,6 +412,16 @@ bool ClQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
   HIP_PROCESS_ERROR_MSG("Supported in LZQueue::getNativeInfo!", hipErrorNotSupported);
 }
 
+// Make meory prefetch 
+bool ClQueue::memPrefetch(const void* ptr, size_t size) {
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memPrefetch!", hipErrorNotSupported);
+}
+
+// Make the advise for the managed memory (i.e. unified shared memory)
+bool ClQueue::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice) {
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memAdvise!", hipErrorNotSupported);
+}
+
 hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
   std::lock_guard<std::mutex> Lock(QueueMutex);
   

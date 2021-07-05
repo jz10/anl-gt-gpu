@@ -294,6 +294,12 @@ public:
 
   // Get the native information
   virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
+
+  // Make meory prefetch 
+  virtual bool memPrefetch(const void* ptr, size_t size);
+  
+  // Make the advise for the managed memory (i.e. unified shared memory)
+  virtual bool memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice);
 };
 
 class ExecItem {

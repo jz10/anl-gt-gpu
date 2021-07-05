@@ -775,8 +775,8 @@ bool LZContext::findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase, size
   return true;
 }
 
-void * LZContext::allocate(size_t size) {
-  return allocate(size, 0x1000, LZMemoryType::Device); // Shared);
+void * LZContext::allocate(size_t size, LZMemoryType memTy) {
+  return allocate(size, 0x1000, memTy); // LZMemoryType::Device); // Shared);
 }
 
 bool LZContext::free(void *p) {
@@ -960,6 +960,24 @@ void LZContext::reset() {
   // this->Memory.clear();
 
   // TODO: check if the default queue still need to be initialized?
+}
+
+// Make the advise for the managed memory (i.e. unified shared memory)
+bool LZContext::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advise, hipStream_t stream) {
+  if (stream != 0) {
+    return stream->memAdvise(ptr, count, advise);
+  } else {
+    return this->DefaultQueue->memAdvise(ptr, count, advise);
+  }
+}
+
+// Make meory prefetch   
+bool LZContext::memPrefetch(const void* ptr, size_t size, hipStream_t stream) {
+  if (stream != 0) {
+    return stream->memPrefetch(ptr, size);
+  } else {
+    return this->DefaultQueue->memPrefetch(ptr, size);
+  }
 }
 
 // Create Level-0 image object  
@@ -1550,6 +1568,22 @@ bool LZQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
   return true;
 }
 
+// Make meory prefetch 
+bool LZQueue::memPrefetch(const void* ptr, size_t size) {
+  if (this->GetDefaultCmdList() == 0)
+    return false;
+  else
+    return this->GetDefaultCmdList()->ExecuteMemPrefetch(this, ptr, size);
+}
+
+// Make the advise for the managed memory (i.e. unified shared memory) 
+bool LZQueue::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advise) {
+  if (this->GetDefaultCmdList() == 0)
+    return false;
+  else
+    return this->GetDefaultCmdList()->ExecuteMemAdvise(this, ptr, count, advise);
+}
+
 LZCommandList::LZCommandList(LZContext* lzContext_) {
   this->lzContext = lzContext_;
 
@@ -1834,6 +1868,45 @@ uint64_t LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue) {
   uint64_t ret = * (uint64_t*)(shared_buf);
 
   return ret;
+}
+
+// Execute HipLZ memory prefetch
+bool LZCommandList::ExecuteMemPrefetch(LZQueue* lzQueue, const void* ptr, size_t size) {
+  ze_result_t status = zeCommandListAppendMemoryPrefetch(hCommandList, ptr, size);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryPrefetch FAILED with return code ", status);
+
+  return Execute(lzQueue);
+}
+
+// Execute HipLZ memory advise
+bool LZCommandList::ExecuteMemAdvise(LZQueue* lzQueue, const void* ptr, size_t size, hipMemoryAdvise advise) {
+  ze_memory_advice_t zeAdvise = ZE_MEMORY_ADVICE_FORCE_UINT32;
+  switch (advise) {
+  case hipMemAdviseSetReadMostly:
+    zeAdvise = ZE_MEMORY_ADVICE_SET_READ_MOSTLY;
+  case hipMemAdviseUnsetReadMostly:
+    zeAdvise = ZE_MEMORY_ADVICE_CLEAR_READ_MOSTLY;
+  case hipMemAdviseSetPreferredLocation:
+    zeAdvise = ZE_MEMORY_ADVICE_SET_PREFERRED_LOCATION;
+  case hipMemAdviseUnsetPreferredLocation:
+    zeAdvise = ZE_MEMORY_ADVICE_CLEAR_PREFERRED_LOCATION;
+  case hipMemAdviseSetAccessedBy:
+    zeAdvise = ZE_MEMORY_ADVICE_BIAS_CACHED;
+  case hipMemAdviseUnsetAccessedBy:
+    zeAdvise = ZE_MEMORY_ADVICE_BIAS_UNCACHED;
+  default:
+    zeAdvise = ZE_MEMORY_ADVICE_FORCE_UINT32;
+  }
+  
+  ze_result_t status = zeCommandListAppendMemAdvise(hCommandList,
+						    lzQueue->GetContext()->GetDevice()->GetDeviceHandle(),
+						    (void* )ptr,
+						    size,
+						    zeAdvise);
+  
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemAdvise FAILED with return code ", status);
+  
+  return Execute(lzQueue);
 }
 
 bool LZCommandList::finish() {

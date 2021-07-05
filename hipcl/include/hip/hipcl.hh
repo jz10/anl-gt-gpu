@@ -184,6 +184,16 @@ typedef enum hipChannelFormatKind {
   hipChannelFormatKindNone = 3
 } hipChannelFormatKind;
 
+// Here we define the enum for unify memory related advice with the same content as CUDA
+typedef enum hipMemoryAdvise {
+  hipMemAdviseSetReadMostly = 1,          // Data will mostly be read and only occassionally be written to
+  hipMemAdviseUnsetReadMostly = 2,        // Undo the effect of cudaMemAdviseSetReadMostly
+  hipMemAdviseSetPreferredLocation = 3,   // Set the preferred location for the data as the specified device
+  hipMemAdviseUnsetPreferredLocation = 4, // Clear the preferred location for the data
+  hipMemAdviseSetAccessedBy = 5,          // Data will be accessed by the specified device, so prevent page faults as much as possible
+  hipMemAdviseUnsetAccessedBy = 6         // Let the Unified Memory subsystem decide on the page faulting policy for the specified device
+} hipMemoryAdvise;
+  
 typedef struct hipChannelFormatDesc {
   int x;
   int y;
@@ -1585,6 +1595,37 @@ hipError_t hipMalloc(void **ptr, size_t size);
  */
 hipError_t hipExtMallocWithFlags(void **ptr, size_t sizeBytes,
                                  unsigned int flags);
+
+/**
+ * @brief Allocates memory that will be automatically managed by the unified memory system
+ *
+ * @param[out] ptr Pointer to the allocated memory 
+ * @param[in]  size Requested memory size
+ * 
+ */
+hipError_t hipMallocManaged(void ** ptr, size_t size);
+
+/**
+ * @brief Prefetches memory to the specified destination device
+ * 
+ * @param[in] devPtr Pointer to be prefetched
+ * @param[in] Size in bytes
+ * @param[in] Destination device to prefetch to
+ * @param[in] Stream to enqueue prefetch operation
+ * 
+ */
+hipError_t hipMemPrefetchAsync(const void* devPtr, size_t count, int dstDevice, hipStream_t stream = 0);
+
+/**
+ * @brief Advise about the usage of a given memory range.
+ * 
+ * @param[in] Pointer to memory to set the advice for
+ * @param[in] Size in bytes of the memory range
+ * @param[in] Advice to be applied for the specified memory range
+ * @param[in] Device to apply the advice for
+ * 
+ */
+hipError_t hipMemAdvise(const void* devPtr, size_t count, hipMemoryAdvise advice, int deviceId);
 
 /**
  *  @brief Allocate pinned host memory [Deprecated]

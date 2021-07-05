@@ -1087,6 +1087,72 @@ hipError_t hipMalloc(void **ptr, size_t size) {
   RETURN(hipSuccess);
 }
 
+hipError_t hipMallocManaged(void ** ptr, size_t size) {
+  HIPLZ_INIT();
+
+  LZ_TRY
+  ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
+
+  if (size == 0) {
+    *ptr = nullptr;
+    RETURN(hipSuccess);
+  }
+
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  void *retval = cont->allocate(size, LZMemoryType::Shared);
+  ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
+
+  *ptr = retval;
+  LZ_CATCH
+  RETURN(hipSuccess);
+}
+
+hipError_t hipMemPrefetchAsync(const void* ptr, size_t count, int dstDevId, hipStream_t stream) {
+  HIPLZ_INIT();
+
+  LZ_TRY
+  ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
+
+  // Get the relevant context
+  LZDevice& dev = LZDriver::HipLZDriverById(0).GetDeviceById(dstDevId);
+  
+  LZContext *cont = dev.getPrimaryCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  bool retval = cont->memPrefetch(ptr, count, stream);
+  ERROR_IF(retval, hipErrorInvalidDevice);
+  
+  LZ_CATCH
+  RETURN(hipSuccess);
+}
+
+hipError_t hipMemAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, int dstDevId) {
+  HIPLZ_INIT();
+
+  LZ_TRY
+  ERROR_IF((ptr == nullptr), hipErrorInvalidValue);
+
+  if (ptr == 0 || count == 0) {
+    RETURN(hipSuccess);
+  }
+
+  // Get the relevant context
+  LZDevice& dev = LZDriver::HipLZDriverById(0).GetDeviceById(dstDevId);
+
+  // Get the relevant context
+  LZContext *cont = dev.getPrimaryCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+
+  // Make the advise
+  bool retval = cont->memAdvise(ptr, count, advice);
+  ERROR_IF(retval, hipErrorInvalidDevice);
+  
+  LZ_CATCH
+  RETURN(hipSuccess);
+}
+
 DEPRECATED("use hipHostMalloc instead")
 hipError_t hipMallocHost(void **ptr, size_t size) {
   return hipMalloc(ptr, size);

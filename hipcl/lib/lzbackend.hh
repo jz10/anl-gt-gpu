@@ -463,7 +463,7 @@ public:
   bool launchHostFunc(const void* HostFunction);
 
   // Memory allocation
-  void *allocate(size_t size);
+  void *allocate(size_t size, LZMemoryType memTy = LZMemoryType::Device);
 
   // Memory free
   bool free(void *p);
@@ -528,7 +528,13 @@ public:
   
   // Get the address and size for the given symbol's name
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes);
+
+  // Make meory prefetch
+  bool memPrefetch(const void* ptr, size_t size, hipStream_t stream = 0);
   
+  // Make the advise for the managed memory (i.e. unified shared memory)
+  bool memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, hipStream_t stream = 0);
+
   // Create Level-0 image object
   LZImage* createImage(hipResourceDesc* resDesc, hipTextureDesc* texDesc);
 
@@ -723,6 +729,12 @@ public:
   // Execute HipLZ write global timestamp  
   uint64_t ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue);
 
+  // Execute the memory prefetch
+  bool ExecuteMemPrefetch(LZQueue* lzQueue, const void* ptr, size_t size);
+  
+  // Make the advise for the managed memory (i.e. unified shared memory) 
+  bool ExecuteMemAdvise(LZQueue* lzQueue, const void* ptr, size_t count, hipMemoryAdvise advice);
+		 
   // Execute HipLZ command list 
   virtual bool Execute(LZQueue* lzQueue);
 
@@ -910,7 +922,13 @@ public:
 
   // Get the native information
   virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
+
+  // Make meory prefetch
+  virtual bool memPrefetch(const void* ptr, size_t size);
   
+  // Make the advise for the managed memory (i.e. unified shared memory) 
+  virtual bool memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice);
+		 
 protected:
   // Initialize Level-0 queue
   void initializeQueue(LZContext* lzContext, bool needDefaultCmdList = false);
