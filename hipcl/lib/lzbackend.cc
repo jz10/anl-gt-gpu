@@ -113,6 +113,13 @@ LZDevice::LZDevice(hipDevice_t id,  ze_device_handle_t hDevice_, LZDriver* drive
 void LZDevice::retrieveDeviceProperties() {
   ze_result_t status = ZE_RESULT_SUCCESS;
 
+  // Initialize members used as input for zeDeviceGet*Properties() calls.
+  this->deviceMemoryProps.pNext = nullptr;
+  this->deviceComputeProps.pNext = nullptr;
+  this->deviceCacheProps.pNext = nullptr;
+  this->deviceModuleProps.pNext = nullptr;
+  this->deviceProps.pNext = nullptr;
+
   // Query device properties 
   status = zeDeviceGetProperties(this->hDevice, &(this->deviceProps));
   LZ_PROCESS_ERROR_MSG("HipLZ zeDeviceGetProperties Failed with return code ", status);
@@ -130,7 +137,6 @@ void LZDevice::retrieveDeviceProperties() {
   status = zeDeviceGetCacheProperties(this->hDevice, &count, &(this->deviceCacheProps));
 
   // Query device module properties
-  this->deviceModuleProps.pNext = nullptr;
   status = zeDeviceGetModuleProperties(this->hDevice, &(this->deviceModuleProps));
 }
 
