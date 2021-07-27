@@ -29,7 +29,7 @@ typedef llvm::SmallPtrSet<Function *, 8> FSet;
 
 class HipDynMemExternReplacePass : public ModulePass {
 private:
-  void recursivelyFindFunctions(Value *V, FSet &FS) {
+  static void recursivelyFindFunctions(Value *V, FSet &FS) {
     for (auto U : V->users()) {
       Instruction *Inst = dyn_cast<Instruction>(U);
       if (Inst) {
@@ -45,7 +45,7 @@ private:
 
   // Recursively descend a Value's users and convert any constant expressions
   // into regular instructions. returns true if it modified Func
-  bool breakConstantExpressions(Value *Val, Function *Func) {
+  static bool breakConstantExpressions(Value *Val, Function *Func) {
     bool Modified = false;
     std::vector<Value *> Users(Val->user_begin(), Val->user_end());
     for (auto *U : Users) {
@@ -65,7 +65,7 @@ private:
     return Modified;
   }
 
-  Function *getFunctionUsingGlobalVar(GlobalVariable *GV) {
+  static Function *getFunctionUsingGlobalVar(GlobalVariable *GV) {
     FSet FuncSet;
     recursivelyFindFunctions(GV, FuncSet);
     /* Assuming dynamic shmem variables are always used only by one function.
@@ -78,14 +78,14 @@ private:
       return nullptr;
   }
 
-  bool isValueUsedByFunction(Value *V, Function *F) {
+  static bool isValueUsedByFunction(Value *V, Function *F) {
     FSet FuncSet;
     recursivelyFindFunctions(V, FuncSet);
     return (FuncSet.find(F) != FuncSet.end());
   }
 
   // get Function metadata "MDName" and append NN to it
-  void appendMD(Function *F, StringRef MDName, MDNode *NN) {
+  static void appendMD(Function *F, StringRef MDName, MDNode *NN) {
     unsigned MDKind = F->getContext().getMDKindID(MDName);
     MDNode *OldMD = F->getMetadata(MDKind);
 
@@ -102,7 +102,8 @@ private:
     F->setMetadata(MDKind, MDNode::get(F->getContext(), NewMDNodes));
   }
 
-  void updateFunctionMD(Function *F, Module &M, PointerType *ArgTypeWithoutAS) {
+  static void updateFunctionMD(Function *F, Module &M,
+                               PointerType *ArgTypeWithoutAS) {
     IntegerType *I32Type = IntegerType::get(M.getContext(), 32);
     MDNode *MD = MDNode::get(
         M.getContext(),
@@ -126,7 +127,7 @@ private:
   }
 
   /* clones a function with an additional argument */
-  Function *cloneFunctionWithDynMemArg(Function *F, Module &M,
+  static Function *cloneFunctionWithDynMemArg(Function *F, Module &M,
                                        GlobalVariable *GV) {
 
     SmallVector<Type *, 8> Parameters;
@@ -197,7 +198,7 @@ private:
     return NewF;
   }
 
-  bool transformDynamicShMemVars(Module &M) {
+  static bool transformDynamicShMemVarsImpl(Module &M) {
 
     bool Modified = false;
 
@@ -240,10 +241,16 @@ public:
   static char ID;
   HipDynMemExternReplacePass() : ModulePass(ID) {}
 
-  bool runOnModule(Module &M) override { return transformDynamicShMemVars(M); }
+  bool runOnModule(Module &M) override {
+    return transformDynamicShMemVarsImpl(M);
+  }
 
   StringRef getPassName() const override {
     return "convert HIP dynamic shared memory to OpenCL kernel argument";
+  }
+
+  static bool transformDynamicShMemVars(Module &M) {
+    return transformDynamicShMemVarsImpl(M);
   }
 };
 
@@ -251,3 +258,39 @@ char HipDynMemExternReplacePass::ID = 0;
 static RegisterPass<HipDynMemExternReplacePass>
     X("hip-dyn-mem",
       "convert HIP dynamic shared memory to OpenCL kernel argument");
+
+
+// Pass hook for the new pass manager.
+#if LLVM_VERSION_MAJOR > 11
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
+
+namespace {
+class HipDynMemExternReplaceNewPass
+    : public PassInfoMixin<HipDynMemExternReplaceNewPass> {
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
+    if (HipDynMemExternReplacePass::transformDynamicShMemVars(M))
+      return PreservedAnalyses::none();
+    return PreservedAnalyses::all();
+  }
+};
+}
+
+extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
+llvmGetPassPluginInfo() {
+  return {LLVM_PLUGIN_API_VERSION, "hip-dyn-mem", LLVM_VERSION_STRING,
+          [](PassBuilder &PB) {
+            PB.registerPipelineParsingCallback(
+                [](StringRef Name, ModulePassManager &FPM,
+                   ArrayRef<PassBuilder::PipelineElement>) {
+                  if (Name == "hip-dyn-mem") {
+                    FPM.addPass(HipDynMemExternReplaceNewPass());
+                    return true;
+                  }
+                  return false;
+                });
+          }};
+}
+
+#endif // LLVM_VERSION_MAJOR > 11
