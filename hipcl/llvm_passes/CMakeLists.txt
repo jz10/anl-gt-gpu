@@ -29,8 +29,9 @@ if(NOT LLVM_ENABLE_EH)
 endif()
 
 add_library(LLVMHipDynMem MODULE HipDynMem.cpp)
+add_library(LLVMHipStripCompilerUsed MODULE HipStripCompilerUsed.cpp)
 
-install(TARGETS LLVMHipDynMem
+install(TARGETS LLVMHipDynMem LLVMHipStripCompilerUsed
         LIBRARY DESTINATION "${HIPLZ_LLVM_DIR}"
         ARCHIVE DESTINATION "${HIPLZ_LLVM_DIR}"
         )
