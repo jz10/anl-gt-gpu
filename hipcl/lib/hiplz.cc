@@ -1912,6 +1912,7 @@ hipError_t hipModuleLoadDataEx(hipModule_t *module, const void *image,
   return hipModuleLoadData(module, image);
 }
 
+// For old kernel HIP launch API.
 hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
                             hipStream_t stream) {
   HIPLZ_INIT();
@@ -1925,6 +1926,7 @@ hipError_t hipConfigureCall(dim3 gridDim, dim3 blockDim, size_t sharedMem,
   LZ_CATCH
 }
 
+// For old kernel HIP launch API.
 hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
   HIPLZ_INIT();
 
@@ -1938,6 +1940,7 @@ hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
   LZ_CATCH
 }
 
+// For old kernel HIP launch API.
 hipError_t hipLaunchByPtr(const void *hostFunction) {
   HIPLZ_INIT();
 
@@ -1953,6 +1956,45 @@ hipError_t hipLaunchByPtr(const void *hostFunction) {
 
   LZ_CATCH
 }
+
+// For new kernel HIP launch API.
+hipError_t __hipPushCallConfiguration(dim3 gridDim, dim3 blockDim,
+                                      size_t sharedMem, hipStream_t stream) {
+  HIPLZ_INIT();
+  LZ_TRY
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
+  RETURN(lzCtx->configureCall(gridDim, blockDim, sharedMem, stream));
+  LZ_CATCH
+}
+
+// For new kernel HIP launch API.
+hipError_t __hipPopCallConfiguration(dim3 *gridDim, dim3 *blockDim,
+                                     size_t *sharedMem, hipStream_t *stream) {
+  HIPLZ_INIT();
+  LZ_TRY
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
+  RETURN(lzCtx->popCallConfiguration(gridDim, blockDim, sharedMem, stream));
+  LZ_CATCH
+}
+
+// For new kernel HIP launch API.
+hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
+                           dim3 blockDim, void **args, size_t sharedMem,
+                           hipStream_t stream) {
+  HIPLZ_INIT();
+  LZ_TRY
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
+  if (lzCtx->launchHostFunc(hostFunction, gridDim, blockDim, args,
+                            sharedMem, stream))
+    RETURN(hipSuccess);
+  else
+    RETURN(hipErrorLaunchFailure);
+  LZ_CATCH
+}
+
 
 /********************************************************************/
 hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* resDesc,

@@ -304,22 +304,32 @@ public:
 
 class ExecItem {
 protected:
-  size_t SharedMem;
-  hipStream_t Stream;
+  // Only one HIP launch API can be active. The old API is active if
+  // ArgsPointer is nullptr. Otherwise, the new API is active.
+
+  // Structures for old HIP launch API.
   std::vector<uint8_t> ArgData;
   std::vector<std::tuple<size_t, size_t>> OffsetsSizes;
 
+  // Structures for New HIP launch API.
+  void** ArgsPointer = nullptr;
+
 public:
-  dim3 GridDim;
-  dim3 BlockDim;
+  const dim3 GridDim;
+  const dim3 BlockDim;
+  const size_t SharedMem;
+  const hipStream_t Stream;
 
   ExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t q)
       : SharedMem(shared), Stream(q), GridDim(grid), BlockDim(block) {}
 
+  // Records an argument for the old HIP launch API.
   void setArg(const void *arg, size_t size, size_t offset);
+  // Records argument pointer for the new HIP launch API.
+  void setArgsPointer(void** args);
   int setupAllArgs(ClKernel *kernel);
 
-  virtual hipError_t launch(ClKernel *Kernel);  //  { return Stream->launch(Kernel, this); }
+  virtual hipError_t launch(ClKernel *Kernel);
 
   // If this execution item object support HipLZ
   virtual bool SupportLZ() { return false; };

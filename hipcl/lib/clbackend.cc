@@ -525,12 +525,19 @@ bool ClQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t p
 /***********************************************************************/
 
 void ExecItem::setArg(const void *arg, size_t size, size_t offset) {
+  assert(!ArgsPointer && "New HIP Launch API is active!");
+
   if ((offset + size) > ArgData.size())
     ArgData.resize(offset + size + 1024);
 
   std::memcpy(ArgData.data() + offset, arg, size);
   logDebug("setArg on {} size {} offset {}\n", (void *)this, size, offset);
   OffsetsSizes.push_back(std::make_tuple(offset, size));
+}
+
+void ExecItem::setArgsPointer(void** args) {
+  assert(ArgData.empty() && "Old HIP launch API is active!");
+  ArgsPointer = args;
 }
 
 int ExecItem::setupAllArgs(ClKernel *kernel) {
@@ -543,6 +550,10 @@ int ExecItem::setupAllArgs(ClKernel *kernel) {
   // there can only be one dynamic shared mem variable, per cuda spec
   assert (NumLocals <= 1);
 
+  // Argument processing for the new HIP launch API.
+  assert(!ArgsPointer && "UNIMPLEMENTED: setupAllArgs for new launch API.");
+
+  // Argument processing for the old HIP launch API.
   if ((OffsetsSizes.size()+NumLocals) != FuncInfo->ArgTypeInfo.size()) {
       logError("Some arguments are still unset\n");
       return CL_INVALID_VALUE;

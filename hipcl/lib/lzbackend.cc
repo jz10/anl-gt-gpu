@@ -646,6 +646,17 @@ hipError_t LZContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStr
   return hipSuccess;
 }
 
+hipError_t LZContext::popCallConfiguration(dim3 *grid, dim3 *block,
+                                           size_t *shared, hipStream_t *q) {
+  const auto *ei = this->ExecStack.top();
+  *grid = ei->GridDim;
+  *block = ei->BlockDim;
+  *shared = ei->SharedMem;
+  *q = ei->Stream;
+  ExecStack.pop();
+  return hipSuccess;
+}
+
 // Set argument
 hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
   std::lock_guard<std::mutex> Lock(this->mtx);
@@ -655,7 +666,7 @@ hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
   return hipSuccess;
 }
 
-// Launch HipLZ kernel 
+// Launch HipLZ kernel (old HIP launch API).
 bool LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(this->mtx);
   LZKernel* Kernel = 0;
@@ -711,6 +722,28 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
 
   return Arguments->launch(Kernel);
 }
+
+// Launch HipLZ kernel (new HIP launch API).
+bool LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
+                               dim3 dimBlocks, void **args,
+                               size_t sharedMemBytes, hipStream_t stream) {
+  std::lock_guard<std::mutex> Lock(this->mtx);
+  logDebug("Launch kernel via new HIP launch API.");
+
+  std::string hostFunctionName =
+      this->lzDevice->GetHostFunctionName(hostFunction);
+  LZKernel *kernel = GetKernelByFunctionName(hostFunctionName);
+  if (!kernel) {
+    HIP_PROCESS_ERROR_MSG(
+        "Hiplz LZModule was not created before invoking kernel?",
+        hipErrorInitializationError);
+  }
+
+  LZExecItem Arguments(numBlocks, dimBlocks, sharedMemBytes, stream);
+  Arguments.setArgsPointer(args);
+  return Arguments.launch(kernel);
+}
+
 
 // Get HipLZ kernel via function name 
 LZKernel* LZContext::GetKernelByFunctionName(std::string funcName) {
@@ -2002,75 +2035,97 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
   }
   // there can only be one dynamic shared mem variable, per cuda spec 
   assert(NumLocals <= 1);
-  
-  if ((OffsetsSizes.size() + NumLocals) != FuncInfo->ArgTypeInfo.size()) {
-    logError("Some arguments are still unset\n");
-    return CL_INVALID_VALUE;
-  }
 
-  if (OffsetsSizes.size() == 0)
-    return CL_SUCCESS;
-  
-  std::sort(OffsetsSizes.begin(), OffsetsSizes.end());
-  if ((std::get<0>(OffsetsSizes[0]) != 0) ||
-      (std::get<1>(OffsetsSizes[0]) == 0)) {
-    logError("Invalid offset/size\n");
-    return CL_INVALID_VALUE;
-  }
-  
-  // check args are set  
-  if (OffsetsSizes.size() > 1) {
-    for (size_t i = 1; i < OffsetsSizes.size(); ++i) {
-      if ( (std::get<0>(OffsetsSizes[i]) == 0) ||
-           (std::get<1>(OffsetsSizes[i]) == 0) ||
-           (
-	    (std::get<0>(OffsetsSizes[i - 1]) + std::get<1>(OffsetsSizes[i - 1])) >
-            std::get<0>(OffsetsSizes[i]))
-           ) {
-	logError("Invalid offset/size\n");
-	return CL_INVALID_VALUE;
+  // Argument processing for the new HIP launch API.
+  if (ArgsPointer) {
+    for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
+      OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
+      logDebug("setArg {} size {}\n", i, ai.size);
+      ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
+                                                    i, ai.size, ArgsPointer[i]);
+      if (status != ZE_RESULT_SUCCESS) {
+        logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
+        return CL_INVALID_VALUE;
+      }
+      logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ",
+               status);
+    }
+  } else {
+    // Argument processing for the old HIP launch API.
+    if ((OffsetsSizes.size() + NumLocals) != FuncInfo->ArgTypeInfo.size()) {
+      logError("Some arguments are still unset\n");
+      return CL_INVALID_VALUE;
+    }
+
+    if (OffsetsSizes.size() == 0)
+      return CL_SUCCESS;
+
+    std::sort(OffsetsSizes.begin(), OffsetsSizes.end());
+    if ((std::get<0>(OffsetsSizes[0]) != 0) ||
+        (std::get<1>(OffsetsSizes[0]) == 0)) {
+      logError("Invalid offset/size\n");
+      return CL_INVALID_VALUE;
+    }
+
+    // check args are set
+    if (OffsetsSizes.size() > 1) {
+      for (size_t i = 1; i < OffsetsSizes.size(); ++i) {
+        if ((std::get<0>(OffsetsSizes[i]) == 0) ||
+            (std::get<1>(OffsetsSizes[i]) == 0) ||
+            ((std::get<0>(OffsetsSizes[i - 1]) +
+              std::get<1>(OffsetsSizes[i - 1])) >
+             std::get<0>(OffsetsSizes[i]))) {
+          logError("Invalid offset/size\n");
+          return CL_INVALID_VALUE;
+        }
       }
     }
-  }
 
-  const unsigned char *start = ArgData.data();
-  void *p;
-  int err;
-  for (cl_uint i = 0; i < OffsetsSizes.size(); ++ i) {
-    OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
-    logDebug("ARG {}: OS[0]: {} OS[1]: {} \n      TYPE {} SPAC {} SIZE {}\n", i,
-             std::get<0>(OffsetsSizes[i]), std::get<1>(OffsetsSizes[i]),
-             (unsigned)ai.type, (unsigned)ai.space, ai.size);
-    
-    if (ai.type == OCLType::Pointer) {
-      // TODO: sync with ExecItem's solution   
-      assert(ai.size == sizeof(void *));
-      assert(std::get<1>(OffsetsSizes[i]) == ai.size);
-      size_t size = std::get<1>(OffsetsSizes[i]);
-      size_t offs = std::get<0>(OffsetsSizes[i]);
-      const void* value = (void*)(start + offs);
-      logDebug("setArg SVM {} to {}\n", i, p);
-      ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(), i, size, value);
+    const unsigned char *start = ArgData.data();
+    void *p;
+    int err;
+    for (cl_uint i = 0; i < OffsetsSizes.size(); ++i) {
+      OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
+      logDebug("ARG {}: OS[0]: {} OS[1]: {} \n      TYPE {} SPAC {} SIZE {}\n",
+               i, std::get<0>(OffsetsSizes[i]), std::get<1>(OffsetsSizes[i]),
+               (unsigned)ai.type, (unsigned)ai.space, ai.size);
 
-      if (status != ZE_RESULT_SUCCESS) {
-        logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
-        return CL_INVALID_VALUE;
+      if (ai.type == OCLType::Pointer) {
+        // TODO: sync with ExecItem's solution
+        assert(ai.size == sizeof(void *));
+        assert(std::get<1>(OffsetsSizes[i]) == ai.size);
+        size_t size = std::get<1>(OffsetsSizes[i]);
+        size_t offs = std::get<0>(OffsetsSizes[i]);
+        const void *value = (void *)(start + offs);
+        logDebug("setArg SVM {} to {}\n", i, p);
+        ze_result_t status =
+            zeKernelSetArgumentValue(kernel->GetKernelHandle(), i, size, value);
+
+        if (status != ZE_RESULT_SUCCESS) {
+          logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
+          return CL_INVALID_VALUE;
+        }
+
+        logDebug(
+            "LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ",
+            status);
+      } else {
+        size_t size = std::get<1>(OffsetsSizes[i]);
+        size_t offs = std::get<0>(OffsetsSizes[i]);
+        const void *value = (void *)(start + offs);
+        logDebug("setArg {} size {} offs {}\n", i, size, offs);
+        ze_result_t status =
+            zeKernelSetArgumentValue(kernel->GetKernelHandle(), i, size, value);
+
+        if (status != ZE_RESULT_SUCCESS) {
+          logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
+          return CL_INVALID_VALUE;
+        }
+
+        logDebug(
+            "LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ",
+            status);
       }
-
-      logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
-    } else {
-      size_t size = std::get<1>(OffsetsSizes[i]);
-      size_t offs = std::get<0>(OffsetsSizes[i]);
-      const void* value = (void*)(start + offs);
-      logDebug("setArg {} size {} offs {}\n", i, size, offs);
-      ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(), i, size, value);
-
-      if (status != ZE_RESULT_SUCCESS) {
-        logDebug("zeKernelSetArgumentValue failed with error {}\n", err);
-        return CL_INVALID_VALUE;
-      }
-
-      logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
     }
   }
 

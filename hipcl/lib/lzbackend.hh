@@ -94,13 +94,8 @@ class LZKernel;
 
 class LZExecItem : public ExecItem {
 public:
-  dim3 GridDim;
-  dim3 BlockDim;
-
-  LZExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t stream) : ExecItem(grid, block, shared, stream) {
-    GridDim = grid;
-    BlockDim = block;
-  }
+  LZExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t stream)
+      : ExecItem(grid, block, shared, stream) {}
 
   // Setup all arguments for HipLZ kernel funciton invocation
   int setupAllArgs(LZKernel *kernel);
@@ -452,15 +447,25 @@ public:
 
   // Get Level-0 queue object
   LZQueue*  GetQueue() { return this->lzQueue; };
-  
-  // Configure the call for kernel
+
+  // Pushes a kernel call configuration to the stack.
   hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
-  
+
+  // Pops kernel call configuration from the stack.
+  // This is used for new HIP launch API.
+  hipError_t popCallConfiguration(dim3 *grid, dim3 *block, size_t *shared,
+                                  hipStream_t *q);
+
   // Set argument
   hipError_t setArg(const void *arg, size_t size, size_t offset);
 
-  // Launch HipLZ kernel
+  // Launch HipLZ kernel (old HIP launch API).
   bool launchHostFunc(const void* HostFunction);
+
+  // Launch HipLZ kernel (new HIP launch API).
+  bool launchHostFunc(const void *function_address, dim3 numBlocks,
+                      dim3 dimBlocks, void **args, size_t sharedMemBytes,
+                      hipStream_t stream);
 
   // Memory allocation
   void *allocate(size_t size, LZMemoryType memTy = LZMemoryType::Device);
