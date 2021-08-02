@@ -30,8 +30,17 @@ endif()
 
 add_library(LLVMHipDynMem MODULE HipDynMem.cpp)
 add_library(LLVMHipStripCompilerUsed MODULE HipStripCompilerUsed.cpp)
-
 install(TARGETS LLVMHipDynMem LLVMHipStripCompilerUsed
         LIBRARY DESTINATION "${HIPLZ_LLVM_DIR}"
         ARCHIVE DESTINATION "${HIPLZ_LLVM_DIR}"
         )
+
+if(DEFINED LLVM_VERSION_MAJOR AND "${LLVM_VERSION_MAJOR}" VERSION_GREATER 10)
+  add_library(LLVMHipPasses MODULE HipPasses.cpp
+              HipDynMem.cpp HipStripCompilerUsed.cpp)
+
+  install(TARGETS LLVMHipPasses
+          LIBRARY DESTINATION "${HIPLZ_LLVM_DIR}"
+          ARCHIVE DESTINATION "${HIPLZ_LLVM_DIR}"
+          )
+endif()

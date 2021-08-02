@@ -9,9 +9,8 @@
 // This pass is likely not needed when SPIR-V backend land on LLVM in the
 // future.
 
-#include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Pass.h"
+#include "HipStripCompilerUsed.h"
+
 
 using namespace llvm;
 
@@ -49,18 +48,12 @@ static RegisterPass<HipStripCompilerUsedLegacyPass>
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 
-namespace {
-class HipStripCompilerUsedPass
-    : public PassInfoMixin<HipStripCompilerUsedPass> {
-public:
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
-    if (stripCompilerUsedVar(M))
-      return PreservedAnalyses::none();
-    return PreservedAnalyses::all();
-  }
-};
-
-} // namespace
+PreservedAnalyses HipStripCompilerUsedPass::run(Module &M,
+                                                ModuleAnalysisManager &AM) {
+  if (stripCompilerUsedVar(M))
+    return PreservedAnalyses::none();
+  return PreservedAnalyses::all();
+}
 
 extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
 llvmGetPassPluginInfo() {

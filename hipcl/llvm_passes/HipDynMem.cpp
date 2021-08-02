@@ -2,6 +2,8 @@
 // with a function argument. This is required because CUDA/HIP use a "magic variable"
 // for dynamically sized shared memory, while OpenCL API uses a kernel argument
 
+#include "HipDynMem.h"
+
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Function.h"
@@ -265,16 +267,11 @@ static RegisterPass<HipDynMemExternReplacePass>
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 
-namespace {
-class HipDynMemExternReplaceNewPass
-    : public PassInfoMixin<HipDynMemExternReplaceNewPass> {
-public:
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
-    if (HipDynMemExternReplacePass::transformDynamicShMemVars(M))
-      return PreservedAnalyses::none();
-    return PreservedAnalyses::all();
-  }
-};
+PreservedAnalyses
+HipDynMemExternReplaceNewPass::run(Module &M, ModuleAnalysisManager &AM) {
+  if (HipDynMemExternReplacePass::transformDynamicShMemVars(M))
+    return PreservedAnalyses::none();
+  return PreservedAnalyses::all();
 }
 
 extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
