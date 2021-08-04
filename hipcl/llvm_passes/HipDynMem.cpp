@@ -106,6 +106,14 @@ private:
 
   static void updateFunctionMD(Function *F, Module &M,
                                PointerType *ArgTypeWithoutAS) {
+    // No need to update if the function does not have kernel metadata to begin
+    // with. We update the kernel metadata because the consumer of this code may
+    // get confused if the metadata is not complete (level-zero is known to
+    // crash).
+    if (!F->hasMetadata("kernel_arg_addr_space"))
+      // Assuming that other kernel metadata kinds are absent if this one is.
+      return;
+
     IntegerType *I32Type = IntegerType::get(M.getContext(), 32);
     MDNode *MD = MDNode::get(
         M.getContext(),
