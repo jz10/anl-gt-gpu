@@ -1,5 +1,6 @@
 // Define a pass plugin that runs a collection of HIP passes.
 
+#include "HipDefrost.h"
 #include "HipDynMem.h"
 #include "HipStripCompilerUsed.h"
 
@@ -19,6 +20,8 @@ llvmGetPassPluginInfo() {
                     // Run a collection of passes run at device link time.
                     FPM.addPass(HipStripCompilerUsedPass());
                     FPM.addPass(HipDynMemExternReplaceNewPass());
+                    FPM.addPass(
+                        createModuleToFunctionPassAdaptor(HipDefrostPass()));
                     return true;
                   }
                   return false;

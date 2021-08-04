@@ -35,9 +35,17 @@ install(TARGETS LLVMHipDynMem LLVMHipStripCompilerUsed
         ARCHIVE DESTINATION "${HIPLZ_LLVM_DIR}"
         )
 
+if(DEFINED LLVM_VERSION_MAJOR AND "${LLVM_VERSION_MAJOR}" VERSION_GREATER 9)
+  add_library(LLVMHipDefrost MODULE HipDefrost.cpp)
+  install(TARGETS LLVMHipDefrost
+          LIBRARY DESTINATION "${HIPLZ_LLVM_DIR}"
+          ARCHIVE DESTINATION "${HIPLZ_LLVM_DIR}"
+          )
+endif()
+
 if(DEFINED LLVM_VERSION_MAJOR AND "${LLVM_VERSION_MAJOR}" VERSION_GREATER 10)
   add_library(LLVMHipPasses MODULE HipPasses.cpp
-              HipDynMem.cpp HipStripCompilerUsed.cpp)
+              HipDynMem.cpp HipStripCompilerUsed.cpp HipDefrost.cpp)
 
   install(TARGETS LLVMHipPasses
           LIBRARY DESTINATION "${HIPLZ_LLVM_DIR}"
