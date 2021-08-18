@@ -1961,8 +1961,8 @@ bool LZStdCommandList::finish() {
 
 // Synchronize host with device kernel execution 
 bool LZImmCommandList::finish() {
-  ze_result_t status = zeCommandListAppendSignalEvent(hCommandList, finishEvent);
-  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendSignalEvent FAILED with return code ", status);
+  ze_result_t status = zeCommandListAppendBarrier(hCommandList, finishEvent, 0, nullptr);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendBarrier FAILED with return code ", status);
   status = zeEventHostSynchronize(finishEvent, UINT64_MAX);
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostSynchronize FAILED with return code ", status);
   status = zeEventHostReset(finishEvent);
