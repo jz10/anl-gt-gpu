@@ -325,15 +325,16 @@ protected:
 
   // The associated HipLZ context
   LZContext* cont;
+  LZEventPool* evPool;
   
-  // The handler of HipLZ event
+  // The handler of HipLZ event_pool and event
   ze_event_handle_t hEvent;
 
   // The timestamp value
   uint64_t timestamp;
 
 public:
-  LZEvent(LZContext* c, unsigned flags, LZEventPool* eventPool);
+  LZEvent(LZContext* c, unsigned flags, LZEventPool* eventPool = nullptr);
 
   LZEvent(cl::Context &c, unsigned flags) {
     // TODO:
@@ -343,9 +344,6 @@ public:
     if (Event)
       delete Event;
   }
-
-  // The memory space for global timestamp
-  alignas(8) char timestamp_buf[32];
 
   virtual uint64_t getFinishTime();
   
@@ -733,6 +731,7 @@ public:
 
   // Execute HipLZ write global timestamp  
   uint64_t ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue);
+  bool ExecuteWriteGlobalTimeStampAsync(LZQueue* lzQueue, LZEvent *event, uint64_t *timestamp);
 
   // Execute the memory prefetch
   bool ExecuteMemPrefetch(LZQueue* lzQueue, const void* ptr, size_t size);
