@@ -1914,7 +1914,7 @@ bool LZCommandList::ExecuteMemPrefetch(LZQueue* lzQueue, const void* ptr, size_t
   ze_result_t status = zeCommandListAppendMemoryPrefetch(hCommandList, ptr, size);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryPrefetch FAILED with return code ", status);
 
-  return Execute(lzQueue);
+  return ExecuteAsync(lzQueue);
 }
 
 // Execute HipLZ memory advise
