@@ -700,34 +700,35 @@ public:
 
   // Execute Level-0 kernel
   bool ExecuteKernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments);
+  bool ExecuteKernelAsync(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments);
   
   // Execute HipLZ memory copy command 
   bool ExecuteMemCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
+  bool ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
 
-  // Execute memory HipLZ copy regiion
+  // Execute memory HipLZ copy region
   bool ExecuteMemCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, const void *src, size_t spitch,
 			    size_t width, size_t height);
+  bool ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_t dpitch, const void *src,
+				 size_t spitch,  size_t width, size_t height);
 
   bool ExecuteMemCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
 			    const void *src, size_t spitch, size_t sspitch,
 			    size_t width, size_t height, size_t depth);
-  
-  // Execute HipLZ memory copy command asynchronously
-  bool ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
-
-  // Execute memory HipLZ copy asynchronously
-  bool ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_t dpitch, const void *src,
-				 size_t spitch,  size_t width, size_t height);
-
   bool ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
 				 const void *src, size_t spitch, size_t sspitch,
 				 size_t width, size_t height, size_t depth);
   
+  // Execute HipLZ memory copy command asynchronously
+
+  // Execute memory HipLZ copy asynchronously
+
+  
   // Execute HipLZ memory fill command
   bool ExecuteMemFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
+  bool ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
 
   // Execute HipLZ memory fill command asynchronously
-  bool ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
 
   // Execute HipLZ write global timestamp  
   bool ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue, uint64_t *timestamp);
@@ -735,9 +736,11 @@ public:
 
   // Execute the memory prefetch
   bool ExecuteMemPrefetch(LZQueue* lzQueue, const void* ptr, size_t size);
+  bool ExecuteMemPrefetchAsync(LZQueue* lzQueue, const void* ptr, size_t size);
   
   // Make the advise for the managed memory (i.e. unified shared memory) 
   bool ExecuteMemAdvise(LZQueue* lzQueue, const void* ptr, size_t count, hipMemoryAdvise advice);
+  bool ExecuteMemAdviseAsync(LZQueue* lzQueue, const void* ptr, size_t count, hipMemoryAdvise advice);
 		 
   // Execute HipLZ command list 
   virtual bool Execute(LZQueue* lzQueue);
@@ -751,6 +754,17 @@ public:
 protected:
   // Get the potential signal event 
   LZEvent* GetSignalEvent(LZQueue* lzQueue);
+private:
+  void kernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments);
+  void memCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
+  void memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, const void *src, size_t spitch,
+                     size_t width, size_t height);
+  void memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
+                     const void *src, size_t spitch, size_t sspitch,
+                     size_t width, size_t height, size_t depth);
+  void memFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
+  void memPrefetch(LZQueue* lzQueue, const void* ptr, size_t size);
+  void memAdvise(LZQueue* lzQueue, const void* ptr, size_t count, hipMemoryAdvise advice);
 };
 
 // The standard level-0 command list
