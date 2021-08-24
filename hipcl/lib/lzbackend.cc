@@ -1486,7 +1486,7 @@ hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
     HIP_PROCESS_ERROR_MSG("Invalid command list", hipErrorInitializationError);
   } else {
     if (Kernel->SupportLZ() && Arguments->SupportLZ()) {
-      this->defaultCmdList->ExecuteKernel(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
+      this->defaultCmdList->ExecuteKernelAsync(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
     } else
       HIP_PROCESS_ERROR_MSG("Not support LZQueue::launch yet!", hipErrorNotSupported); 
   }
