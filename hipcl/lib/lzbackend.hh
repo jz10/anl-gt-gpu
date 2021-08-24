@@ -730,8 +730,8 @@ public:
   bool ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
 
   // Execute HipLZ write global timestamp  
-  uint64_t ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue);
-  bool ExecuteWriteGlobalTimeStampAsync(LZQueue* lzQueue, LZEvent *event, uint64_t *timestamp);
+  bool ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue, uint64_t *timestamp);
+  bool ExecuteWriteGlobalTimeStampAsync(LZQueue* lzQueue, uint64_t *timestamp, LZEvent *event);
 
   // Execute the memory prefetch
   bool ExecuteMemPrefetch(LZQueue* lzQueue, const void* ptr, size_t size);

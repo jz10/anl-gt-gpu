@@ -1429,9 +1429,12 @@ bool LZQueue::recordEvent(hipEvent_t event) {
   event->recordStream(this, nullptr);
   
   // Record timestamp got from execution write global timestamp from command list
-  ((LZEvent* )event)->recordTimeStamp(this->defaultCmdList->ExecuteWriteGlobalTimeStamp(this));
+  uint64_t timestamp;
+  bool res = this->defaultCmdList->ExecuteWriteGlobalTimeStamp(this, &timestamp);
+  if (res)
+    ((LZEvent* )event)->recordTimeStamp(timestamp);
 
-  return true;
+  return res;
 }
 
 // Memory copy support   
@@ -1891,17 +1894,16 @@ bool LZCommandList::ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size
 }
 
 // Execute HipLZ write global timestamp
-uint64_t LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue) {
+bool LZCommandList::ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue, uint64_t *timestamp) {
   ze_result_t status = zeCommandListAppendWriteGlobalTimestamp(hCommandList, (uint64_t*)(shared_buf), nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendWriteGlobalTimestamp FAILED with return code ", status);
-  Execute(lzQueue);
-
-  uint64_t ret = * (uint64_t*)(shared_buf);
-
-  return ret;
+  bool res = Execute(lzQueue);
+  if (res)
+    *timestamp = *(uint64_t*)(shared_buf);
+  return res;
 }
 
-bool LZCommandList::ExecuteWriteGlobalTimeStampAsync(LZQueue* lzQueue, LZEvent *event, uint64_t *timestamp) {
+bool LZCommandList::ExecuteWriteGlobalTimeStampAsync(LZQueue* lzQueue, uint64_t *timestamp, LZEvent *event) {
   ze_result_t status = zeCommandListAppendBarrier(hCommandList, nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendBarrier FAILED with return code ", status);
   status = zeCommandListAppendWriteGlobalTimestamp(hCommandList, (uint64_t *)(shared_buf), nullptr, 0, nullptr);
@@ -1991,11 +1993,11 @@ bool LZStdCommandList::Execute(LZQueue* lzQueue) {
   // Execute command list in command queue
   status = zeCommandQueueExecuteCommandLists(lzQueue->GetQueueHandle(), 1, &hCommandList, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandQueueExecuteCommandLists FAILED with return code ", status);
-
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueExecuteCommandLists {} ", status);
 
+  status = zeCommandQueueSynchronize(lzQueue->GetQueueHandle(), UINT64_MAX);
   logDebug("LZ KERNEL EXECUTION via calling zeCommandQueueSynchronize {} ", status);
-  
+ 
   // Reset (recycle) command list for new commands
   status = zeCommandListReset(hCommandList);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListReset FAILED with return code ", status);
@@ -2020,6 +2022,7 @@ bool LZCommandList::ExecuteAsync(LZQueue* lzQueue) {
 // Execute HipLZ command list asynchronously in standard command list
 bool LZStdCommandList::ExecuteAsync(LZQueue* lzQueue) {
   HIP_PROCESS_ERROR_MSG("HipLZ does not support LZStdCommandList::ExecuteAsync! ", hipErrorNotSupported);
+  return true;
 }
 
 // Execute HipLZ command list asynchronously in immediate command list
@@ -2311,7 +2314,7 @@ bool LZEvent::recordStream(hipStream_t S, cl_event E) {
   }
  
   Stream = S;
-  ((LZQueue* )Stream)->GetDefaultCmdList()->ExecuteWriteGlobalTimeStampAsync((LZQueue* )Stream, this, &timestamp);
+  ((LZQueue* )Stream)->GetDefaultCmdList()->ExecuteWriteGlobalTimeStampAsync((LZQueue* )Stream, &timestamp, this);
   Status = EVENT_STATUS_RECORDING;
 
   return true;
