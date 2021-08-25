@@ -86,6 +86,12 @@ struct hipStreamCallbackData {
   hipStreamCallback_t Callback;
 };
 
+struct hipContextSyncData {
+  ze_event_pool_handle_t eventPool;
+  ze_event_handle_t waitEvent;
+  std::vector<ze_event_handle_t> signaledEvents;
+};
+
 enum class LZMemoryType : unsigned { Host = 0, Device = 1, Shared = 2};
 
 class LZExecItem;
@@ -404,18 +410,12 @@ class LZCommandList;
 
 class LZContext : public ClContext {
 protected:
-  // Lock for thread safeness
-  std::mutex mtx;
   // Reference to HipLZ device
   LZDevice* lzDevice;
 
   // Map between IL binary to HipLZ module
   std::map<uint8_t* , LZModule* > IL2Module;
 
-  // Reference to HipLZ command list
-  LZCommandList* lzCommandList;
-  // Reference to HipLZ queue
-  LZQueue* lzQueue;
   // The default event ppol
   LZEventPool* defaultEventPool;
 
@@ -430,9 +430,12 @@ protected:
 
   // Monitor thread to release events for stream synchronization
   pthread_t monitorThreadId;
+
+  // List of events to release
+  std::list<hipContextSyncData> syncData;
+
 public:
-  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), lzCommandList(0),
-				       lzQueue(0), defaultEventPool(0) {}
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), defaultEventPool(0) {}
   LZContext(LZDevice* dev);
   LZContext(LZDevice* dev, ze_context_handle_t hContext, ze_command_queue_handle_t hQueue);
 
@@ -444,9 +447,6 @@ public:
 
   // Get Level-0 device object
   LZDevice* GetDevice() { return this->lzDevice; };
-
-  // Get Level-0 queue object
-  LZQueue*  GetQueue() { return this->lzQueue; };
 
   // Pushes a kernel call configuration to the stack.
   hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
@@ -478,36 +478,32 @@ public:
   bool getPointerSize(void *ptr, size_t *size);
 
   // Memory copy
-  hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
-  hipError_t memCopy(void *dst, const void *src, size_t sizeBytes);
+  virtual hipError_t memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
+  virtual hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
+
+  // Memory fill
+  virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream);
+  virtual hipError_t memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream);
 
   // Memory copy 2D
   virtual hipError_t memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 			       size_t width, size_t height, hipStream_t stream);
+  virtual hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+			    size_t width, size_t height, hipStream_t stream);
 
   // Memory copy 3D
   virtual hipError_t memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 		       const void *src, size_t spitch, size_t sspitch,
 		       size_t width, size_t height, size_t depth, hipStream_t stream);
-
-  // Asynchronous memory copy
-  virtual hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream);
-
-  // Asynchronous memory copy 2D
-  virtual hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
-			    size_t width, size_t height, hipStream_t stream);
-
-  // Asynchronous memory copy 3D
   virtual hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
 			    const void *src, size_t spitch, size_t sspitch,
 			    size_t width, size_t height, size_t depth, hipStream_t stream);
 
-  // Memory fill
-  hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream);
-  hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size);
+  // Make meory prefetch
+  virtual hipError_t memPrefetch(const void* ptr, size_t size, hipStream_t stream = 0);
 
-  // Asynchronous memory fill
-  hipError_t memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream);
+  // Make the advise for the managed memory (i.e. unified shared memory)
+  virtual hipError_t memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, hipStream_t stream = 0);
 
   // Cteate HipLZ event
   LZEvent* createEvent(unsigned flags);
@@ -533,12 +529,6 @@ public:
 
   // Get the address and size for the given symbol's name
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes);
-
-  // Make meory prefetch
-  bool memPrefetch(const void* ptr, size_t size, hipStream_t stream = 0);
-
-  // Make the advise for the managed memory (i.e. unified shared memory)
-  bool memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, hipStream_t stream = 0);
 
   // Create Level-0 image object
   LZImage* createImage(hipResourceDesc* resDesc, hipTextureDesc* texDesc);
@@ -721,16 +711,9 @@ public:
 				 const void *src, size_t spitch, size_t sspitch,
 				 size_t width, size_t height, size_t depth);
 
-  // Execute HipLZ memory copy command asynchronously
-
-  // Execute memory HipLZ copy asynchronously
-
-
   // Execute HipLZ memory fill command
   bool ExecuteMemFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
   bool ExecuteMemFillAsync(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
-
-  // Execute HipLZ memory fill command asynchronously
 
   // Execute HipLZ write global timestamp
   bool ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue, uint64_t *timestamp);
@@ -753,9 +736,6 @@ public:
   // Synchronize host with device kernel execution
   virtual bool finish();
 
-protected:
-  // Get the potential signal event
-  LZEvent* GetSignalEvent(LZQueue* lzQueue);
 private:
   void kernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments);
   void memCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes);
@@ -887,15 +867,28 @@ public:
 
   // Memory copy support
   virtual hipError_t memCopy(void *dst, const void *src, size_t size);
+  virtual hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes);
+  // Memory fill support
+  virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size);
+  virtual hipError_t memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size);
   // The memory copy 2D support
   virtual hipError_t memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 			       size_t width, size_t height);
+  virtual hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+			    size_t width, size_t height);
   // The memory copy 3D support
   virtual hipError_t memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 			       const void *src, size_t spitch, size_t sspitch,
 			       size_t width, size_t height, size_t depth);
-  // Memory fill support
-  virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pattern_size);
+  virtual hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
+			    const void *src, size_t spitch, size_t sspitch,
+			    size_t width, size_t height, size_t depth);
+  // Make meory prefetch
+  virtual hipError_t memPrefetch(const void* ptr, size_t size);
+
+  // Make the advise for the managed memory (i.e. unified shared memory)
+  virtual hipError_t memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice);
+
   // Launch kernel support
   virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
   // Launch kernel support
@@ -905,34 +898,15 @@ public:
   virtual bool SupportLZ() { return true; };
 
   // The asynchronously memory copy support
-  virtual bool memCopyAsync(void *dst, const void *src, size_t sizeBytes);
 
   // The memory copy 2D support
-  virtual hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
-			    size_t width, size_t height);
   // The memory copy 3D support
-  virtual hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
-			    const void *src, size_t spitch, size_t sspitch,
-			    size_t width, size_t height, size_t depth);
   // The asynchronously memory fill support
-  virtual bool memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size);
-
-  // The set the current event
-  bool SetEvent(LZEvent* event);
-
-  // Get and clear current event
-  LZEvent* GetAndClearEvent();
-
-  // Create and monitor event
-  LZEvent* CreateAndMonitorEvent(LZEvent* event);
 
   // Get HipLZ context object
   LZContext* GetContext() {
     return this->lzContext;
   };
-
-  // Get an event from event list
-  LZEvent* GetPendingEvent();
 
   // Get callback from lock protected callback list
   bool GetCallback(hipStreamCallbackData* data);
@@ -943,11 +917,8 @@ public:
   // Get the native information
   virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
 
-  // Make meory prefetch
-  virtual bool memPrefetch(const void* ptr, size_t size);
-
-  // Make the advise for the managed memory (i.e. unified shared memory)
-  virtual bool memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice);
+  // Is this the NULL stream
+  bool isNULLStream() { return this == lzContext->getDefaultQueue();}
 
 protected:
   // Initialize Level-0 queue
@@ -958,6 +929,9 @@ protected:
 
   // Synchronize on the event monitor thread
   void WaitEventMonitor();
+
+  // Enforce HIP correct stream synchronization
+  void synchronizeQueues();
 };
 
 class LZImage {

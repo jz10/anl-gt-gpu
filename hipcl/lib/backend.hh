@@ -137,7 +137,7 @@ public:
   ClEvent() : Event(0) {
     // TODO:
   }
-  
+
   virtual  ~ClEvent() {
     if (Event)
       delete Event;
@@ -265,41 +265,43 @@ public:
   virtual cl::CommandQueue &getQueue() { return Queue; }
   virtual unsigned int getFlags() const { return Flags; }
   virtual int getPriority() const { return Priority; }
-  
+
   virtual bool finish();
   virtual bool enqueueBarrierForEvent(hipEvent_t event);
   virtual bool addCallback(hipStreamCallback_t callback, void *userData);
   virtual bool recordEvent(hipEvent_t e);
 
   virtual hipError_t memCopy(void *dst, const void *src, size_t size);
+  virtual hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes);
   virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pat_size);
+  virtual hipError_t memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size);
   virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
   virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
 
   virtual hipError_t memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 			       size_t width, size_t height);
+  virtual hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+				    size_t width, size_t height);
   virtual hipError_t memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 		       const void *src, size_t spitch, size_t sspitch,
                        size_t width, size_t height, size_t depth);
-  virtual bool memCopyAsync(void *dst, const void *src, size_t sizeBytes);
-  virtual hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
-				    size_t width, size_t height);
   virtual hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
 				    const void *src, size_t spitch, size_t sspitch,
 				    size_t width, size_t height, size_t depth);
-  virtual bool memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size);
-  
-  // If this queue object support HipLZ 
+  // Make meory prefetch
+  virtual hipError_t memPrefetch(const void* ptr, size_t size);
+
+  // Make the advise for the managed memory (i.e. unified shared memory)
+  virtual hipError_t memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice);
+
+  // If this queue object support HipLZ
   virtual bool SupportLZ() { return false; };
 
   // Get the native information
   virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
 
-  // Make meory prefetch 
-  virtual bool memPrefetch(const void* ptr, size_t size);
-  
-  // Make the advise for the managed memory (i.e. unified shared memory)
-  virtual bool memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice);
+  // Was stream created with the non-blocking flag
+  bool isNonBlocking() { return 0 != (Flags & hipStreamNonBlocking);}
 };
 
 class ExecItem {
@@ -355,7 +357,7 @@ public:
   void setupContext(ClContext* ctx) {
     this->context = ctx;
   }
-  
+
   // Assign operator
   GlobalPtrs &operator=(GlobalPtrs &&rhs) {
     this->GlobalPointers = std::move(rhs.GlobalPointers);
@@ -382,7 +384,7 @@ public:
       *size = it->second;
       return true;
     }
-    
+
     return false;
   }
 
@@ -397,16 +399,16 @@ public:
       return true;
     }
   }
-    
+
     return false;
   }
-  
+
   // Check if the given pointer has been registered
   bool hasPointer(const void *ptr) {
     return this->GlobalPointers.find((void *)ptr) != this->GlobalPointers.end();
   }
 };
-  
+
 class ClContext {
 protected:
   std::mutex ContextMutex;
@@ -425,7 +427,7 @@ protected:
 
   // The reference for global pointer table
   GlobalPtrs globalPtrs;
-  
+
   hipStream_t findQueue(hipStream_t stream);
 
 public:
@@ -435,6 +437,7 @@ public:
   ClDevice *getDevice() const { return Device; }
   unsigned getFlags() const { return Flags; }
   hipStream_t getDefaultQueue() { return DefaultQueue; }
+  const std::set<hipStream_t> & getQueues() { return Queues; };
   virtual void reset();
 
   virtual hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
@@ -442,10 +445,6 @@ public:
   virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
   hipStream_t createRTSpecificQueue(cl::CommandQueue q, unsigned int f, int p);
   bool releaseQueue(hipStream_t stream);
-  hipError_t memCopy(void *dst, const void *src, size_t size,
-                     hipStream_t stream);
-  hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pat_size,
-                     hipStream_t stream);
   hipError_t recordEvent(hipStream_t stream, hipEvent_t event);
   virtual bool finishAll();
 
@@ -472,8 +471,9 @@ public:
 
   ClProgram *createProgram(std::string &binary);
   hipError_t destroyProgram(ClProgram *prog);
-  
+
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes);
+  void synchronizeQueues(hipStream_t queue);
 };
 
 class ClDevice {

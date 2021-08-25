@@ -349,50 +349,6 @@ void SVMemoryRegion::clear() {
 
 /***********************************************************************/
 
-hipError_t ClQueue::memCopy(void *dst, const void *src, size_t size) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-
-  logDebug("clSVMmemcpy {} -> {} / {} B\n", src, dst, size);
-  cl_event ev = nullptr;
-  int retval =
-      ::clEnqueueSVMMemcpy(Queue(), CL_FALSE, dst, src, size, 0, nullptr, &ev);
-  if (retval == CL_SUCCESS) {
-    if (LastEvent != nullptr) {
-      logDebug("memCopy: LastEvent == {}, will be: {}", (void *)LastEvent,
-               (void *)ev);
-      clReleaseEvent(LastEvent);
-    } else
-      logDebug("memCopy: LastEvent == NULL, will be: {}\n", (void *)ev);
-    LastEvent = ev;
-  } else {
-    logError("clEnqueueSVMMemCopy() failed with error {}\n", retval);
-  }
-  return (retval == CL_SUCCESS) ? hipSuccess : hipErrorLaunchFailure;
-}
-
-hipError_t ClQueue::memFill(void *dst, size_t size, const void *pattern,
-                            size_t patt_size) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-
-  logDebug("clSVMmemfill {} / {} B\n", dst, size);
-  cl_event ev = nullptr;
-  int retval = ::clEnqueueSVMMemFill(Queue(), dst, pattern, patt_size, size, 0,
-                                     nullptr, &ev);
-  if (retval == CL_SUCCESS) {
-    if (LastEvent != nullptr) {
-      logDebug("memFill: LastEvent == {}, will be: {}", (void *)LastEvent,
-               (void *)ev);
-      clReleaseEvent(LastEvent);
-    } else
-      logDebug("memFill: LastEvent == NULL, will be: {}\n", (void *)ev);
-    LastEvent = ev;
-  } else {
-    logError("clEnqueueSVMMemFill() failed with error {}\n", retval);
-  }
-
-  return (retval == CL_SUCCESS) ? hipSuccess : hipErrorLaunchFailure;
-}
-
 bool ClQueue::finish() {
   int err = Queue.finish();
   if (err != CL_SUCCESS)
@@ -410,16 +366,6 @@ bool ClQueue::recordEvent(hipEvent_t event) {
 
 bool ClQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
   HIP_PROCESS_ERROR_MSG("Supported in LZQueue::getNativeInfo!", hipErrorNotSupported);
-}
-
-// Make meory prefetch 
-bool ClQueue::memPrefetch(const void* ptr, size_t size) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memPrefetch!", hipErrorNotSupported);
-}
-
-// Make the advise for the managed memory (i.e. unified shared memory)
-bool ClQueue::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memAdvise!", hipErrorNotSupported);
 }
 
 hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
@@ -492,6 +438,22 @@ hipError_t ClQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
   return retval;
 }
 
+hipError_t ClQueue::memCopy(void *dst, const void *src, size_t size) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy", hipErrorNotSupported);
+}
+
+hipError_t ClQueue::memCopyAsync(void *dst, const void *src, size_t sizeByte) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopyAsync", hipErrorNotSupported);
+}
+
+hipError_t ClQueue::memFill(void *dst, size_t size, const void *pattern, size_t pat_size) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memFill", hipErrorNotSupported);
+}
+
+hipError_t ClQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memFillAsync", hipErrorNotSupported);
+}
+
 hipError_t ClQueue::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 			      size_t width, size_t height) {
   HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy2D", hipErrorNotSupported);
@@ -501,10 +463,6 @@ hipError_t ClQueue::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 			      const void *src, size_t spitch, size_t sspitch,
 			      size_t width, size_t height, size_t depth) {
   HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy3D", hipErrorNotSupported);
-}
-
-bool ClQueue::memCopyAsync(void *dst, const void *src, size_t sizeByte) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopyAsync", hipErrorNotSupported);
 }
 
 hipError_t ClQueue::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
@@ -518,8 +476,14 @@ hipError_t ClQueue::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
   HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy3DAsync", hipErrorNotSupported);
 }
 
-bool ClQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memFillAsync", hipErrorNotSupported);
+// Make meory prefetch 
+hipError_t ClQueue::memPrefetch(const void* ptr, size_t size) {
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memPrefetch!", hipErrorNotSupported);
+}
+
+// Make the advise for the managed memory (i.e. unified shared memory)
+hipError_t ClQueue::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice) {
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memAdvise!", hipErrorNotSupported);
 }
 
 /***********************************************************************/
@@ -776,26 +740,6 @@ bool ClContext::findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase,
                                 size_t *psize) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
   return Memory.pointerInfo(dptr, pbase, psize);
-}
-
-hipError_t ClContext::memCopy(void *dst, const void *src, size_t size,
-                              hipStream_t stream) {
-  FIND_QUEUE_LOCKED(stream);
-
-  if (Memory.hasPointer(dst) || Memory.hasPointer(src))
-    return Queue->memCopy(dst, src, size);
-  else
-    return hipErrorInvalidDevicePointer;
-}
-
-hipError_t ClContext::memFill(void *dst, size_t size, const void *pattern,
-                              size_t pat_size, hipStream_t stream) {
-  FIND_QUEUE_LOCKED(stream);
-
-  if (!Memory.hasPointer(dst))
-    return hipErrorInvalidDevicePointer;
-
-  return Queue->memFill(dst, size, pattern, pat_size);
 }
 
 hipError_t ClContext::recordEvent(hipStream_t stream, hipEvent_t event) {

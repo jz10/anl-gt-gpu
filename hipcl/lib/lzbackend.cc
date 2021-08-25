@@ -13,6 +13,16 @@
 #define NANOSECS 1000000000
 #endif
 
+#define FIND_QUEUE_LOCKED(stream)                                              \
+  std::lock_guard<std::mutex> Lock(ContextMutex);                              \
+  LZQueue *Queue = (LZQueue *)findQueue(stream);                               \
+  if (Queue == nullptr)                                                        \
+    return hipErrorInvalidResourceHandle
+
+#define CHECK_QUEUE_COMMAND_LIST()                                             \
+  if (this->defaultCmdList == nullptr)                                         \
+    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError)
+
 /***********************************************************************/
 // HipLZ support
 static std::vector<LZDevice *> HipLZDevices INIT_PRIORITY(120);
@@ -433,141 +443,63 @@ bool LZDevice::HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID) {
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
-  if (stream == nullptr) {
-    // Here we use default queue in  LZ context to do the synchronous copy
-    ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src,
-						       sizeBytes, NULL, 0, NULL);
-    LZ_RETURN_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
-    logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memCopy(dst, src, sizeBytes);
+}
 
-    // Execute memory copy asynchronously via lz context's default command list
-    if (!lzCommandList->Execute(lzQueue))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memCopy(dst, src, sizeBytes))
-      return hipErrorInvalidDevice;
-  }
+hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memCopyAsync(dst, src, sizeBytes);
+}
 
-  return hipSuccess;
+hipError_t LZContext::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memFill(dst, size, pattern, pattern_size);
+}
+
+hipError_t LZContext::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memFillAsync(dst, size, pattern, pattern_size);
 }
 
 // The memory copy 2D support
 hipError_t LZContext::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 				size_t width, size_t height, hipStream_t stream) {
-  if (stream == nullptr) {
-    if (!lzQueue->memCopy2D(dst, dpitch, src, spitch, width, height))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memCopy2D(dst, dpitch, src, spitch, width, height))
-      return hipErrorInvalidDevice;
-  }
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memCopy2D(dst, dpitch, src, spitch, width, height);
+}
 
-  return hipSuccess;
+hipError_t LZContext::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+				     size_t width, size_t height, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memCopy2DAsync(dst, dpitch, src, spitch, width, height);
 }
 
 // The memory copy 3D support
 hipError_t LZContext::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 				const void *src, size_t spitch, size_t sspitch,
 				size_t width, size_t height, size_t depth, hipStream_t stream) {
-  if (stream == nullptr) {
-    if (!lzQueue->memCopy3D(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memCopy3D(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
-      return hipErrorInvalidDevice;
-  }
-
-  return hipSuccess;
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memCopy3D(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth);
 }
 
-hipError_t LZContext::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
-  if (stream == nullptr) {
-    // Here we use default queue in  LZ context to do the synchronous copy
-    ze_result_t status = zeCommandListAppendMemoryFill(lzCommandList->GetCommandListHandle(), dst, pattern, pattern_size, size, NULL, 0, NULL);
-    LZ_RETURN_ERROR_MSG("HipLZ zeCommandListAppendMemoryFill FAILED with return code ", status);
-    logDebug("LZ MEMFILL {} via calling zeCommandListAppendMemoryFill ", status);
-
-    if (!lzCommandList->Execute(lzQueue))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memFill(dst, size, pattern, pattern_size))
-      return hipErrorInvalidDevice;
-  }
-  return hipSuccess;
-}
-
-hipError_t LZContext::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  lzCommandList->ExecuteMemFill(lzQueue, dst, size, pattern, pattern_size);
-  return hipSuccess;
-}
-
-hipError_t LZContext::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
-  if (stream == nullptr) {
-    // Here we use default queue in  LZ context to do the asynchronous copy
-    ze_result_t status = zeCommandListAppendMemoryFill(lzCommandList->GetCommandListHandle(), dst, pattern, pattern_size, size, NULL, 0, NULL);
-    logDebug("LZ MEMFILL {} via calling zeCommandListAppendMemoryFill ", status);
-
-    // Execute memory copy asynchronously via lz context's default command list
-    if (!lzCommandList->ExecuteAsync(lzQueue))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memFillAsync(dst, size, pattern, pattern_size))
-      return hipErrorInvalidDevice;
-  }
-  return hipSuccess;
-}
-
-hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
-  if (stream == nullptr) {
-    // Here we use default queue in  LZ context to do the asynchronous copy
-    ze_result_t status = zeCommandListAppendMemoryCopy(lzCommandList->GetCommandListHandle(), dst, src,
-                                                       sizeBytes, NULL, 0, NULL);
-    LZ_RETURN_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
-    logDebug("LZ MEMCPY {} via calling zeCommandListAppendMemoryCopy ", status);
-
-    // Execute memory copy asynchronously via lz context's default command list
-    if (!lzCommandList->ExecuteAsync(lzQueue))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memCopyAsync(dst, src, sizeBytes))
-      return hipErrorInvalidDevice;
-  }
-  return hipSuccess;
-}
-
-// The asynchronous memory copy 2D support
-hipError_t LZContext::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
-				     size_t width, size_t height, hipStream_t stream) {
-  if (stream == nullptr) {
-    if (!lzQueue->memCopy2DAsync(dst, dpitch, src, spitch, width, height))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memCopy2DAsync(dst, dpitch, src, spitch, width, height))
-      return hipErrorInvalidDevice;
-  }
-
-  return hipSuccess;
-}
-
-// The asynchronous memory copy 3D support
 hipError_t LZContext::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
 				     const void *src, size_t spitch, size_t sspitch,
 				     size_t width, size_t height, size_t depth, hipStream_t stream) {
-  if (stream == nullptr) {
-    if (!lzQueue->memCopy3DAsync(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
-      return hipErrorInvalidDevice;
-  } else {
-    if (!stream->memCopy3DAsync(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth))
-      return hipErrorInvalidDevice;
-  }
-
-  return hipSuccess;
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memCopy3DAsync(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth);
 }
 
-hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes) {
-  // Execute memory copy
-  lzCommandList->ExecuteMemCopy(lzQueue, dst, src, sizeBytes);
-  return hipSuccess;
+// Make the advise for the managed memory (i.e. unified shared memory)
+hipError_t LZContext::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advise, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memAdvise(ptr, count, advise);
+}
+
+// Make meory prefetch
+hipError_t LZContext::memPrefetch(const void* ptr, size_t size, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->memPrefetch(ptr, size);
 }
 
 LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
@@ -581,11 +513,8 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
   LZ_PROCESS_ERROR_MSG("HipLZ zeContextCreate Failed with return code ", status);
   logDebug("LZ CONTEXT {} via calling zeContextCreate ", status);
 
-  // TODO: just use DefaultQueue to maintain the context local queu and command list?
-  // Create a command list for default command queue
-  this->lzCommandList = LZCommandList::CreateCmdList(this);
   // Create the default command queue
-  this->DefaultQueue = this->lzQueue = new LZQueue(this, this->lzCommandList, 0, 0);
+  this->DefaultQueue = new LZQueue(this, LZCommandList::CreateCmdList(this), 0, 0);
   // Initialize
   monitorThreadId = 0;
 }
@@ -595,10 +524,8 @@ LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext_, ze_command_qu
   this->lzDevice = dev;
   this->hContext = hContext_;
 
-  // Create a command list for default command queue
-  this->lzCommandList = LZCommandList::CreateCmdList(this);
   // Create the default command queue
-  this->DefaultQueue = this->lzQueue = new LZQueue(this, hQueue, this->lzCommandList, 0, 0);
+  this->DefaultQueue = new LZQueue(this, hQueue, LZCommandList::CreateCmdList(this), 0, 0);
   // Initialize
   monitorThreadId = 0;
 }
@@ -636,10 +563,8 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
 
 // Configure the call to LZ kernel, here we ignore OpenCL queue but using LZ command list
 hipError_t LZContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
-  // TODO: make thread safeness
-  if (stream == nullptr)
-    stream = this->DefaultQueue;
-  LZExecItem *NewItem = new LZExecItem(grid, block, shared, stream);
+  FIND_QUEUE_LOCKED(stream);
+  LZExecItem *NewItem = new LZExecItem(grid, block, shared, Queue);
   // Here we reuse the execution item stack from super class, i.e. OpenCL context
   ExecStack.push(NewItem);
 
@@ -659,7 +584,7 @@ hipError_t LZContext::popCallConfiguration(dim3 *grid, dim3 *block,
 
 // Set argument
 hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
-  std::lock_guard<std::mutex> Lock(this->mtx);
+  std::lock_guard<std::mutex> Lock(ContextMutex);
   LZExecItem* lzExecItem = (LZExecItem* )this->ExecStack.top();
   lzExecItem->setArg(arg, size, offset);
 
@@ -668,7 +593,7 @@ hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
 
 // Launch HipLZ kernel (old HIP launch API).
 bool LZContext::launchHostFunc(const void* HostFunction) {
-  std::lock_guard<std::mutex> Lock(this->mtx);
+  std::lock_guard<std::mutex> Lock(ContextMutex);
   LZKernel* Kernel = 0;
   // logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
   // if (!this->lzModule) {
@@ -676,7 +601,6 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   // }
 
   std::string HostFunctionName = this->lzDevice->GetHostFunctionName(HostFunction);
-  // Kernel = this->lzModule->GetKernel(HostFunctionName);
   Kernel = GetKernelByFunctionName(HostFunctionName);
   if (!Kernel) {
     HIP_PROCESS_ERROR_MSG("Hiplz LZModule was not created before invoking kernel?", hipErrorInitializationError);
@@ -691,35 +615,6 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
   Arguments = (LZExecItem* )ExecStack.top();
   ExecStack.pop();
 
-  // ze_result_t status = ZE_RESULT_SUCCESS;
-  // status = zeKernelSetGroupSize(Kernel->GetKernelHandle(),
-  // 				Arguments->BlockDim.x, Arguments->BlockDim.y, Arguments->BlockDim.z);
-  // if (status != ZE_RESULT_SUCCESS) {
-  //    throw InvalidLevel0Initialization("could not set group size!");
-  //  }
-
-
-  // Arguments->setupAllArgs(Kernel);
-
-  // Launch kernel via Level-0 command list
-  // uint32_t numGroupsX = Arguments->GridDim.x;
-  // uint32_t numGroupsY = Arguments->GridDim.y;
-  // uint32_t numGroupsz = Arguments->GridDim.z;
-  // ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
-  // ze_event_handle_t hSignalEvent = nullptr;
-  // status = zeCommandListAppendLaunchKernel(this->lzCommandList->GetCommandListHandle(),
-  // 					   Kernel->GetKernelHandle(),
-  //					   &hLaunchFuncArgs,
-  // 					   hSignalEvent,
-  // 					   0,
-  // 					   nullptr);
-  // if (status != ZE_RESULT_SUCCESS) {
-  //   throw InvalidLevel0Initialization("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  " + std::to_string(status));
-  // }
-
-  // Execute kernel
-  // lzCommandList->Execute(lzQueue);
-
   return Arguments->launch(Kernel);
 }
 
@@ -727,7 +622,7 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
 bool LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
                                dim3 dimBlocks, void **args,
                                size_t sharedMemBytes, hipStream_t stream) {
-  std::lock_guard<std::mutex> Lock(this->mtx);
+  FIND_QUEUE_LOCKED(stream);
   logDebug("Launch kernel via new HIP launch API.");
 
   std::string hostFunctionName =
@@ -739,7 +634,7 @@ bool LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
         hipErrorInitializationError);
   }
 
-  LZExecItem Arguments(numBlocks, dimBlocks, sharedMemBytes, stream);
+  LZExecItem Arguments(numBlocks, dimBlocks, sharedMemBytes, Queue);
   Arguments.setArgsPointer(args);
   return Arguments.launch(kernel);
 }
@@ -978,6 +873,22 @@ bool LZContext::finishAll() {
   return true;
 }
 
+// Enforce HIP correct stream synchronization (For now only Legacy is suported by HIP)
+void LZQueue::synchronizeQueues() {
+  if (isNULLStream()) {
+    // Enforce synchonization with all non NonBlocking streams
+    // if there is any
+
+    bool needed = false;
+  } else if (isNonBlocking()) {
+    // Stream is NonBlocking no outside synchronization but
+    // sequential execution inside the stream
+  } else {
+    // This is a non NonBlocking stream, must be synchronized
+    // with the NULL stream
+  }
+}
+
 // Reset current context
 void LZContext::reset() {
   std::lock_guard<std::mutex> Lock(ContextMutex);
@@ -995,24 +906,6 @@ void LZContext::reset() {
   // this->Memory.clear();
 
   // TODO: check if the default queue still need to be initialized?
-}
-
-// Make the advise for the managed memory (i.e. unified shared memory)
-bool LZContext::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advise, hipStream_t stream) {
-  if (stream != 0) {
-    return stream->memAdvise(ptr, count, advise);
-  } else {
-    return this->DefaultQueue->memAdvise(ptr, count, advise);
-  }
-}
-
-// Make meory prefetch
-bool LZContext::memPrefetch(const void* ptr, size_t size, hipStream_t stream) {
-  if (stream != 0) {
-    return stream->memPrefetch(ptr, size);
-  } else {
-    return this->DefaultQueue->memPrefetch(ptr, size);
-  }
 }
 
 // Create Level-0 image object
@@ -1291,7 +1184,7 @@ bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
 bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   std::lock_guard<std::mutex> Lock(QueueMutex);
 
-  hipStreamCallbackData Data; //  = new hipStreamCallbackData{};
+  hipStreamCallbackData Data;
   ze_result_t status;
   ze_event_pool_desc_t ep_desc = {};
   ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
@@ -1301,10 +1194,6 @@ bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
   ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
   ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-/*  if (LastEvent == nullptr) {
-    callback(this, hipSuccess, userData);
-    return true;
-  }*/
 
   ze_device_handle_t dev = GetContext()->GetDevice()->GetDeviceHandle();
   status = zeEventPoolCreate(GetContext()->GetContextHandle(), &ep_desc, 1, &dev, &(Data.eventPool));
@@ -1326,11 +1215,6 @@ bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendBarrier FAILED with return code ", status);
   status = zeCommandListAppendSignalEvent(list, Data.waitEvent2);
   LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendSignalEvent FAILED with return code ", status);
-  // err = ::clSetEventCallback(LastEvent, CL_COMPLETE, notifyOpenCLevent, Data);
-  // if (err != CL_SUCCESS)
-  //   logError("clSetEventCallback failed with error {}\n", err);
-
-  // return (err == CL_SUCCESS);
 
   // Add event callback to callback list
   {
@@ -1342,8 +1226,6 @@ bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   CheckAndCreateMonitor();
 
   return true;
-
-  // LZ_PROCESS_ERROR_MSG("Not support LZQueue::addCallback yet!", hipErrorNotSupported);
 }
 
 // Get callback from lock protected callback list
@@ -1384,44 +1266,6 @@ void LZQueue::WaitEventMonitor() {
 
 // Record event
 bool LZQueue::recordEvent(hipEvent_t event) {
-  // std::lock_guard<std::mutex> Lock(QueueMutex);
-
-  /* slightly tricky WRT refcounts.
-   * if LastEvents != NULL, it should have refcount 1.
-   *  if NULL, enqueue a marker here;
-   * libOpenCL will process it & decrease refc to 1;
-   * we retain it here because d-tor is called at } and releases it.
-   *
-   * in both cases, event->recordStream should Retain */
-
-  // if (LastEvent == nullptr) {
-  //   cl::Event MarkerEvent;
-  //   int err = Queue.enqueueMarkerWithWaitList(nullptr, &MarkerEvent);
-  //   if (err) {
-  //     logError ("enqueueMarkerWithWaitList FAILED with {}\n", err);
-  //     return false;
-  //   } else {
-  //     LastEvent = MarkerEvent();
-  //     clRetainEvent(LastEvent);
-  //   }
-  // }
-
-  // logDebug("record Event: {} on Queue: {}\n", (void *)(LastEvent),
-  //          (void *)(Queue()));
-
-  // cl_uint refc1, refc2;
-  // int err =
-  //     ::clGetEventInfo(LastEvent, CL_EVENT_REFERENCE_COUNT, 4, &refc1, NULL);
-  // assert(err == CL_SUCCESS);
-  // can be >1 because recordEvent can be called >1 on the same event
-  // assert(refc1 >= 1);
-
-  // return event->recordStream(this, LastEvent);
-
-  // err = ::clGetEventInfo(LastEvent, CL_EVENT_REFERENCE_COUNT, 4, &refc2, NULL);
-  // assert(err == CL_SUCCESS);
-  // assert(refc2 >= 2);
-  // assert(refc2 == (refc1 + 1));
 
   if (event == nullptr)
     HIP_PROCESS_ERROR_MSG("HipLZ get null Event recorded?", hipErrorInitializationError);
@@ -1430,32 +1274,47 @@ bool LZQueue::recordEvent(hipEvent_t event) {
     HIP_PROCESS_ERROR_MSG("Invalid command list during event recording", hipErrorInitializationError);
 
   // Record event to stream
-  event->recordStream(this, nullptr);
-
-  // Record timestamp got from execution write global timestamp from command list
-  uint64_t timestamp;
-  bool res = this->defaultCmdList->ExecuteWriteGlobalTimeStamp(this, &timestamp);
-  if (res)
-    ((LZEvent* )event)->recordTimeStamp(timestamp);
-
-  return res;
+  return event->recordStream(this, nullptr);
 }
 
 // Memory copy support
 hipError_t LZQueue::memCopy(void *dst, const void *src, size_t size) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  CHECK_QUEUE_COMMAND_LIST();
   this->defaultCmdList->ExecuteMemCopy(this, dst, src, size);
+  return hipSuccess;
+}
+
+hipError_t LZQueue::memCopyAsync(void *dst, const void *src, size_t sizeBytes) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->defaultCmdList->ExecuteMemCopyAsync(this, dst, src, sizeBytes);
+  return hipSuccess;
+}
+
+// Memory fill support
+hipError_t LZQueue::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->defaultCmdList->ExecuteMemFill(this, dst, size, pattern, pattern_size);
+  return hipSuccess;
+}
+
+hipError_t LZQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->defaultCmdList->ExecuteMemFillAsync(this, dst, size, pattern, pattern_size);
   return hipSuccess;
 }
 
 // The memory copy 2D support
 hipError_t LZQueue::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 			      size_t width, size_t height) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  CHECK_QUEUE_COMMAND_LIST();
   this->defaultCmdList->ExecuteMemCopyRegion(this, dst, dpitch, src, spitch, width, height);
+  return hipSuccess;
+}
 
+hipError_t LZQueue::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
+				   size_t width, size_t height) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->defaultCmdList->ExecuteMemCopyRegionAsync(this, dst, dpitch, src, spitch, width, height);
   return hipSuccess;
 }
 
@@ -1463,19 +1322,32 @@ hipError_t LZQueue::memCopy2D(void *dst, size_t dpitch, const void *src, size_t 
 hipError_t LZQueue::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 			      const void *src, size_t spitch, size_t sspitch,
 			      size_t width, size_t height, size_t depth) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
+  CHECK_QUEUE_COMMAND_LIST();
   this->defaultCmdList->ExecuteMemCopyRegion(this, dst, dpitch, dspitch, src, spitch, sspitch,
 					     width, height, depth);
-
   return hipSuccess;
 }
 
-// Memory fill support
-hipError_t LZQueue::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
-  this->defaultCmdList->ExecuteMemFill(this, dst, size, pattern, pattern_size);
+hipError_t LZQueue::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
+				   const void *src, size_t spitch, size_t sspitch,
+				   size_t width, size_t height, size_t depth) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->defaultCmdList->ExecuteMemCopyRegionAsync(this, dst, dpitch, dspitch, src, spitch, sspitch,
+						  width, height, depth);
+  return hipSuccess;
+}
+
+// Make meory prefetch
+hipError_t LZQueue::memPrefetch(const void* ptr, size_t size) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->GetDefaultCmdList()->ExecuteMemPrefetchAsync(this, ptr, size);
+  return hipSuccess;
+}
+
+// Make the advise for the managed memory (i.e. unified shared memory)
+hipError_t LZQueue::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advise) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->GetDefaultCmdList()->ExecuteMemAdviseAsync(this, ptr, count, advise);
   return hipSuccess;
 }
 
@@ -1486,103 +1358,12 @@ hipError_t LZQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
 
 // Launch kernel support
 hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
-  if (this->defaultCmdList == nullptr) {
-    HIP_PROCESS_ERROR_MSG("Invalid command list", hipErrorInitializationError);
-  } else {
-    if (Kernel->SupportLZ() && Arguments->SupportLZ()) {
-      this->defaultCmdList->ExecuteKernelAsync(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
-    } else
-      HIP_PROCESS_ERROR_MSG("Not support LZQueue::launch yet!", hipErrorNotSupported);
-  }
-
+  CHECK_QUEUE_COMMAND_LIST();
+  if (Kernel->SupportLZ() && Arguments->SupportLZ())
+    this->defaultCmdList->ExecuteKernelAsync(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
+  else
+    HIP_PROCESS_ERROR_MSG("Not support LZQueue::launch yet!", hipErrorNotSupported);
   return hipSuccess;
-}
-
-// The asynchronous memory copy support
-bool LZQueue::memCopyAsync(void *dst, const void *src, size_t sizeBytes) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("No default command list setup in current HipLZ queue yet!", hipErrorInitializationError);
-
-  return this->defaultCmdList->ExecuteMemCopyAsync(this, dst, src, sizeBytes);
-}
-
-// The asynchronous memory copy 2D support
-hipError_t LZQueue::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
-				   size_t width, size_t height) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
-  this->defaultCmdList->ExecuteMemCopyRegionAsync(this, dst, dpitch, src, spitch, width, height);
-
-  return hipSuccess;
-}
-
-// The asynchronous memory copy 3D support
-hipError_t LZQueue::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
-				   const void *src, size_t spitch, size_t sspitch,
-				   size_t width, size_t height, size_t depth) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("HipLZ Invalid command list ", hipErrorInitializationError);
-  this->defaultCmdList->ExecuteMemCopyRegionAsync(this, dst, dpitch, dspitch, src, spitch, sspitch,
-						  width, height, depth);
-
-  return hipSuccess;
-}
-
-// The asynchronously memory fill support
-bool LZQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("No default command list setup in current HipLZ queue yet!", hipErrorInitializationError);
-
-  return this->defaultCmdList->ExecuteMemFillAsync(this, dst, size, pattern, pattern_size);
-}
-
-// The set the current event
-bool LZQueue::SetEvent(LZEvent* event) {
-  // if (this->currentEvent != nullptr)
-  HIP_PROCESS_ERROR_MSG("No current event here!", hipErrorInitializationError);
-
-  // this->currentEvent = event;
-
-  return true;
-}
-
-// Get and clear current event
-LZEvent* LZQueue::GetAndClearEvent() {
-  // LZEvent* res = this->currentEvent;
-  // this->currentEvent = nullptr;
-
-  // return res;
-
-  HIP_PROCESS_ERROR_MSG("No current event there to get and clear!", hipErrorInitializationError);
-
-  return nullptr;
-}
-
-// Create and monior event
-LZEvent* LZQueue::CreateAndMonitorEvent(LZEvent* event) {
-  if (!event)
-    event = this->lzContext->createEvent(0);
-  {
-    std::lock_guard<std::mutex> Lock(EventsMutex);
-    // Put event into local event list to enable monitor
-    this->localEvents.push_back(event);
-  }
-
-  return event;
-}
-
-LZEvent* LZQueue::GetPendingEvent() {
-  LZEvent* res = nullptr;
-  {
-    // Check if there is pending event in list
-    std::lock_guard<std::mutex> Lock(EventsMutex);
-    if (!this->localEvents.empty()) {
-      res = this->localEvents.front();
-      this->localEvents.pop_front();
-    }
-  }
-
-  return res;
 }
 
 bool LZQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
@@ -1604,22 +1385,6 @@ bool LZQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
   nativeInfo[0] = (unsigned long)device->GetDriverHandle();
 
   return true;
-}
-
-// Make meory prefetch
-bool LZQueue::memPrefetch(const void* ptr, size_t size) {
-  if (this->GetDefaultCmdList() == 0)
-    return false;
-  else
-    return this->GetDefaultCmdList()->ExecuteMemPrefetchAsync(this, ptr, size);
-}
-
-// Make the advise for the managed memory (i.e. unified shared memory)
-bool LZQueue::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advise) {
-  if (this->GetDefaultCmdList() == 0)
-    return false;
-  else
-    return this->GetDefaultCmdList()->ExecuteMemAdviseAsync(this, ptr, count, advise);
 }
 
 LZCommandList::LZCommandList(LZContext* lzContext_) {
@@ -1694,12 +1459,6 @@ LZCommandList* LZCommandList::CreateCmdList(LZContext* lzContext, bool immediate
     return new LZStdCommandList(lzContext);
 }
 
-// Get the potential signal event
-// TODO: depracate this?
-LZEvent* LZCommandList::GetSignalEvent(LZQueue* lzQueue) {
-  return lzQueue->CreateAndMonitorEvent(nullptr);
-}
-
 // Execute the Level-0 kernel
 
 void LZCommandList::kernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Arguments) {
@@ -1720,15 +1479,8 @@ void LZCommandList::kernel(LZQueue* lzQueue, LZKernel* Kernel, LZExecItem* Argum
   uint32_t numGroupsz = Arguments->GridDim.z;
   ze_group_count_t hLaunchFuncArgs = { numGroupsX, numGroupsY, numGroupsz };
 
-  // Get the potential signal event
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
-
-  status = zeCommandListAppendLaunchKernel(hCommandList,
-                                           Kernel->GetKernelHandle(),
-                                           &hLaunchFuncArgs,
-                                           hSignalEvent,
-                                           0,
-                                           nullptr);
+  status = zeCommandListAppendLaunchKernel(hCommandList, Kernel->GetKernelHandle(), &hLaunchFuncArgs,
+                                           nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("Hiplz zeCommandListAppendLaunchKernel FAILED with return code  ", status);
 
   logDebug("LZ KERNEL EXECUTION via calling zeCommandListAppendLaunchKernel {} ", status);
@@ -1748,11 +1500,8 @@ bool LZCommandList::ExecuteKernelAsync(LZQueue* lzQueue, LZKernel* Kernel, LZExe
 // Execute HipLZ memory copy command
 
 void LZCommandList::memCopy(LZQueue* lzQueue, void *dst, const void *src, size_t sizeBytes) {
-  // Get the potential signal event
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
-
   ze_result_t status = zeCommandListAppendMemoryCopy(hCommandList, dst, src, sizeBytes,
-                                                     hSignalEvent, 0, NULL);
+                                                     nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopy FAILED with return code ", status);
 }
 
@@ -1770,9 +1519,6 @@ bool LZCommandList::ExecuteMemCopyAsync(LZQueue* lzQueue, void *dst, const void 
 void LZCommandList::memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch,
                                   const void *src, size_t spitch,
                                   size_t width, size_t height) {
-  // Get the potential signal event
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
-
   // Create region
   ze_copy_region_t dstRegion;
   dstRegion.originX = 0;
@@ -1790,7 +1536,7 @@ void LZCommandList::memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch,
   srcRegion.depth = 0;
   ze_result_t status = zeCommandListAppendMemoryCopyRegion(hCommandList, dst, &dstRegion, dpitch, 0,
 							   src, &srcRegion, spitch, 0,
-							   hSignalEvent, 0, nullptr);
+							   nullptr, 0, nullptr);
 
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopyRegion FAILED with return code ", status);
 }
@@ -1812,9 +1558,6 @@ bool LZCommandList::ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_
 void LZCommandList::memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
                                   const void *src, size_t spitch, size_t sspitch,
                                   size_t width, size_t height, size_t depth) {
-  // Get the potential signal event
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
-
   ze_copy_region_t dstRegion;
   dstRegion.originX = 0;
   dstRegion.originY = 0;
@@ -1831,7 +1574,7 @@ void LZCommandList::memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, si
   srcRegion.depth = depth;
   ze_result_t status = zeCommandListAppendMemoryCopyRegion(hCommandList, dst, &dstRegion, dpitch,
                                                            dspitch, src, &srcRegion, spitch, sspitch,
-                                                           hSignalEvent, 0, nullptr);
+                                                           nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopyRegion FAILED with return code ", status);
 }
 
@@ -1852,9 +1595,7 @@ bool LZCommandList::ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_
 // Execute HipLZ memory fill command
 
 void LZCommandList::memFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  ze_event_handle_t hSignalEvent = GetSignalEvent(lzQueue)->GetEventHandler();
-
-  ze_result_t status = zeCommandListAppendMemoryFill(hCommandList, dst, pattern, pattern_size, size, hSignalEvent, 0, NULL);
+  ze_result_t status = zeCommandListAppendMemoryFill(hCommandList, dst, pattern, pattern_size, size, nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryFill FAILED with return code ", status);
 }
 
@@ -1930,9 +1671,7 @@ void LZCommandList::memAdvise(LZQueue* lzQueue, const void* ptr, size_t count, h
 
   ze_result_t status = zeCommandListAppendMemAdvise(hCommandList,
 						    lzQueue->GetContext()->GetDevice()->GetDeviceHandle(),
-						    (void* )ptr,
-						    count,
-						    zeAdvise);
+						    (void* )ptr, count, zeAdvise);
 
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemAdvise FAILED with return code ", status);
 }

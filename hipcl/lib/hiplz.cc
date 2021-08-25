@@ -1112,11 +1112,8 @@ hipError_t hipMemPrefetchAsync(const void* ptr, size_t count, int dstDevId, hipS
   LZContext *cont = dev.getPrimaryCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  bool retval = cont->memPrefetch(ptr, count, stream);
-  ERROR_IF(retval, hipErrorInvalidDevice);
-  
+  return cont->memPrefetch(ptr, count, stream);
   LZ_CATCH
-  RETURN(hipSuccess);
 }
 
 hipError_t hipMemAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, int dstDevId) {
@@ -1137,11 +1134,8 @@ hipError_t hipMemAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, i
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   // Make the advise
-  bool retval = cont->memAdvise(ptr, count, advice);
-  ERROR_IF(retval, hipErrorInvalidDevice);
-  
+  return cont->memAdvise(ptr, count, advice);
   LZ_CATCH
-  RETURN(hipSuccess);
 }
 
 DEPRECATED("use hipHostMalloc instead")
@@ -1512,7 +1506,7 @@ hipError_t hipMemsetD32(hipDeviceptr_t dst, int value, size_t count) {
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  RETURN(cont->memFill(dst, 4 * count, &value, 4));
+  RETURN(cont->memFill(dst, 4 * count, &value, 4, nullptr));
   LZ_CATCH
 }
 
@@ -1563,7 +1557,7 @@ hipError_t hipMemset(void *dst, int value, size_t sizeBytes) {
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
   char c_value = value;
-  RETURN(cont->memFill(dst, sizeBytes, &c_value, 1));
+  RETURN(cont->memFill(dst, sizeBytes, &c_value, 1, nullptr));
   LZ_CATCH
 }
 
