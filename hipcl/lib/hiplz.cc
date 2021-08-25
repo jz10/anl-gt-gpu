@@ -672,10 +672,14 @@ hipError_t hipStreamWaitEvent(hipStream_t stream, hipEvent_t event,
   ERROR_IF((stream == nullptr), hipErrorInvalidValue);
   ERROR_IF((event == nullptr), hipErrorInvalidValue);
 
+  LZ_TRY
+
   if (stream->enqueueBarrierForEvent(event))
     RETURN(hipSuccess);
   else
     RETURN(hipErrorInvalidValue);
+
+  LZ_CATCH
 }
 
 hipError_t hipStreamGetFlags(hipStream_t stream, unsigned int *flags) {

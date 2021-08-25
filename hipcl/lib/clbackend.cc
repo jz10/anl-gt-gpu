@@ -438,6 +438,10 @@ hipError_t ClQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
   return retval;
 }
 
+bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call enqueueBarrierForEvent", hipErrorNotSupported);
+}
+
 hipError_t ClQueue::memCopy(void *dst, const void *src, size_t size) {
   HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy", hipErrorNotSupported);
 }

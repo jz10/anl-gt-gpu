@@ -314,8 +314,6 @@ public:
   bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes);
 };
 
-class LZEventPool;
-
 class LZEvent : public ClEvent {
 protected:
   // The mutual exclusion support
@@ -331,16 +329,16 @@ protected:
 
   // The associated HipLZ context
   LZContext* cont;
-  LZEventPool* evPool;
 
   // The handler of HipLZ event_pool and event
   ze_event_handle_t hEvent;
+  ze_event_pool_handle_t hEventPool;
 
   // The timestamp value
   uint64_t timestamp;
 
 public:
-  LZEvent(LZContext* c, unsigned flags, LZEventPool* eventPool = nullptr);
+  LZEvent(LZContext* c, unsigned flags);
 
   LZEvent(cl::Context &c, unsigned flags) {
     // TODO:
@@ -349,6 +347,10 @@ public:
   virtual ~LZEvent() {
     if (Event)
       delete Event;
+    if (hEvent)
+      zeEventDestroy(hEvent);
+    if (hEventPool)
+      zeEventPoolDestroy(hEventPool);
   }
 
   virtual uint64_t getFinishTime();
@@ -387,25 +389,6 @@ public:
   uint64_t getTimeStamp() { return this->timestamp; };
 };
 
-class LZEventPool {
-protected:
-  // The thread-safe event pool management
-  std::mutex PoolMutex;
-  // The associated HipLZ context
-  LZContext* lzContext;
-  // The handler of event pool
-  ze_event_pool_handle_t hEventPool;
-
-public:
-  LZEventPool(LZContext* c);
-
-  // Create new event
-  LZEvent* createEvent(unsigned flags);
-
-  // Get the handler of event pool
-  ze_event_pool_handle_t GetEventPoolHandler() { return this->hEventPool; };
-};
-
 class LZCommandList;
 
 class LZContext : public ClContext {
@@ -415,9 +398,6 @@ protected:
 
   // Map between IL binary to HipLZ module
   std::map<uint8_t* , LZModule* > IL2Module;
-
-  // The default event ppol
-  LZEventPool* defaultEventPool;
 
   // HipLZ context handle
   ze_context_handle_t hContext;
@@ -435,7 +415,7 @@ protected:
   std::list<hipContextSyncData> syncData;
 
 public:
-  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), defaultEventPool(0) {}
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0) {}
   LZContext(LZDevice* dev);
   LZContext(LZDevice* dev, ze_context_handle_t hContext, ze_command_queue_handle_t hQueue);
 

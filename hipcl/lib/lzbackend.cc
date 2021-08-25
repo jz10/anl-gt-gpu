@@ -56,32 +56,6 @@ inline hipError_t ExecItem::launch(ClKernel *Kernel) {
   return Stream->launch(Kernel, this);
 }
 
-bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-  // CUDA API cudaStreamWaitEvent:
-  // event may be from a different device than stream.
-
-  cl::Event MarkerEvent;
-  logDebug("Queue is: {}\n", (void *)(Queue()));
-  int err = Queue.enqueueMarkerWithWaitList(nullptr, &MarkerEvent);
-  if (err != CL_SUCCESS)
-    return false;
-
-  cl::vector<cl::Event> Events = {MarkerEvent, ProvidedEvent->getEvent()};
-  cl::Event barrier;
-  err = Queue.enqueueBarrierWithWaitList(&Events, &barrier);
-  if (err != CL_SUCCESS) {
-    logError("clEnqueueBarrierWithWaitList failed with error {}\n", err);
-    return false;
-  }
-
-  if (LastEvent)
-    clReleaseEvent(LastEvent);
-  LastEvent = barrier();
-
-  return true;
-}
-
 LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver_) {
   this->deviceId = id;
   this->hDevice = hDevice_;
@@ -1177,7 +1151,11 @@ cl::CommandQueue& LZQueue::getQueue() {
 
 // Enqueue barrier for event
 bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
-  HIP_PROCESS_ERROR_MSG("Not support LZQueue::enqueueBarrierForEvent yet!", hipErrorNotSupported);
+  ze_command_list_handle_t list = defaultCmdList->GetCommandListHandle();
+  ze_event_handle_t ev = ((LZEvent *)event)->GetEventHandler();
+  ze_result_t status = zeCommandListAppendBarrier(list, nullptr, 1, &ev);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendBarrier FAILED with return code ", status);
+  return true;
 }
 
 // Add call back
@@ -1198,10 +1176,13 @@ bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   ze_device_handle_t dev = GetContext()->GetDevice()->GetDeviceHandle();
   status = zeEventPoolCreate(GetContext()->GetContextHandle(), &ep_desc, 1, &dev, &(Data.eventPool));
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
+  ev_desc.index = 0;
   status = zeEventCreate(Data.eventPool, &ev_desc, &(Data.waitEvent));
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+  ev_desc.index = 1;
   status = zeEventCreate(Data.eventPool, &ev_desc, &(Data.signalEvent));
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+  ev_desc.index = 2;
   status = zeEventCreate(Data.eventPool, &ev_desc, &(Data.waitEvent2));
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
   Data.Stream = this;
@@ -1210,11 +1191,11 @@ bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   Data.Status = hipSuccess;
   ze_command_list_handle_t list = defaultCmdList->GetCommandListHandle();
   status = zeCommandListAppendBarrier(list, Data.waitEvent, 0, NULL);
-  LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendBarrier FAILED with return code ", status);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendBarrier FAILED with return code ", status);
   status = zeCommandListAppendBarrier(list, NULL, 1, &(Data.signalEvent));
-  LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendBarrier FAILED with return code ", status);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendBarrier FAILED with return code ", status);
   status = zeCommandListAppendSignalEvent(list, Data.waitEvent2);
-  LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendSignalEvent FAILED with return code ", status);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendSignalEvent FAILED with return code ", status);
 
   // Add event callback to callback list
   {
@@ -1983,50 +1964,33 @@ LZKernel::~LZKernel() {
   zeKernelDestroy(this->hKernel);
 }
 
-// Create event pool
-LZEventPool::LZEventPool(LZContext* c) {
-  this->lzContext = c;
-
-  // Create event pool
-  ze_event_pool_desc_t eventPoolDesc = {
-    ZE_STRUCTURE_TYPE_EVENT_POOL_DESC,
-    nullptr,
-    ZE_EVENT_POOL_FLAG_HOST_VISIBLE, // all events in pool are visible to Host
-    1 // count
-  };
-
-  ze_result_t status = zeEventPoolCreate(this->lzContext->GetContextHandle(), &eventPoolDesc, 0, nullptr, &hEventPool);
-  LZ_PROCESS_ERROR_MSG("HipLZ event pool creation fail! ", status);
-}
-
-// Create HipLZ event from event pool
-LZEvent* LZEventPool::createEvent(unsigned flags) {
-  return new LZEvent(this->lzContext, flags, this);
-}
-
 // Create HipLZ event
-LZEvent::LZEvent(LZContext* c, unsigned flags, LZEventPool* eventPool) {
+LZEvent::LZEvent(LZContext* c, unsigned flags) {
   this->Stream = nullptr;
   this->Status = EVENT_STATUS_INIT;
   this->Flags = flags;
   this->cont = c;
-  this->evPool = nullptr;
+  this->hEvent = nullptr;
+  this->hEventPool = nullptr;
 
-  LZEventPool* pool = eventPool;
-  if (!pool) {
-    pool = new LZEventPool(c);
-    this->evPool = pool;
-  }
+  ze_event_pool_desc_t eventPoolDesc = {
+    ZE_STRUCTURE_TYPE_EVENT_POOL_DESC,
+    nullptr,
+    ZE_EVENT_POOL_FLAG_HOST_VISIBLE, // event in pool are visible to Host
+    1 // count
+  };
+  ze_result_t status = zeEventPoolCreate(c->GetContextHandle(), &eventPoolDesc, 0, nullptr, &hEventPool);
+  LZ_PROCESS_ERROR_MSG("HipLZ event pool creation fail! ", status);
 
   ze_event_desc_t eventDesc = {
     ZE_STRUCTURE_TYPE_EVENT_DESC,
     nullptr,
     0, // index
-    0, // no additional memory/cache coherency required on signal
+    ZE_EVENT_SCOPE_FLAG_HOST, // ensure memory/cache coherency required on signal
     ZE_EVENT_SCOPE_FLAG_HOST  // ensure memory coherency across device and Host after event completes
   };
 
-  ze_result_t status = zeEventCreate(pool->GetEventPoolHandler(), &eventDesc, &hEvent);
+  status = zeEventCreate(hEventPool, &eventDesc, &hEvent);
   LZ_PROCESS_ERROR_MSG("HipLZ event creation fail! ", status);
 }
 
