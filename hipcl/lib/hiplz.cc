@@ -57,7 +57,6 @@ static LZContext *getTlsDefaultLzCtx() {
 #define HIPLZ_INIT()                                                           \
   do {	                                                                       \
     LZ_TRY                                                                     \
-    InitializeOpenCL();                                                        \
     InitializeHipLZ();                                                         \
     LZ_CATCH                                                                   \
   } while (0)
@@ -2098,7 +2097,6 @@ hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
 static unsigned binaries_loaded = 0;
 
 extern "C" void **__hipRegisterFatBinary(const void *data) {
-  InitializeOpenCL();
   // Here we do not initialize HipLZ but put fat binary into a global temproary storage
   // xxx InitializeHipLZ();
   
@@ -2183,10 +2181,6 @@ extern "C" void __hipUnregisterFatBinary(void *data) {
   --binaries_loaded;
   logDebug("__hipUnRegisterFatBinary {}\n", binaries_loaded);
 
-  if (binaries_loaded == 0) {
-    UnInitializeOpenCL();
-  }
-
   delete module;
 }
 
@@ -2197,8 +2191,6 @@ extern "C" void __hipRegisterFunction(void **data, const void *hostFunction,
                                       unsigned int threadLimit, void *tid,
                                       void *bid, dim3 *blockDim, dim3 *gridDim,
                                       int *wSize) {
-  InitializeOpenCL();
-  
   std::string devFunc = deviceFunction;
   // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution)
   // Here we do not initialize HipLZ, but store the function informqtion into a temproary storage
@@ -2242,8 +2234,6 @@ extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modul
                                  const char *deviceName, int ext, int size,
                                  int constant, int global) {
   // logError("__hipRegisterVar not implemented yet\n");
-  InitializeOpenCL();
-
   // Initialize HipLZ here (this may not be the 1st place, but the intiialization process is protected via single-execution
   // Here we do not initialize HipLZ, but store the global variable informqtion into a temproary storage
   // xxx InitializeHipLZ();

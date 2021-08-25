@@ -528,9 +528,6 @@ public:
   bool releaseMem(size_t bytes);
 };
 
-void InitializeOpenCL();
-void UnInitializeOpenCL();
-
 extern size_t NumDevices;
 
 ClDevice &CLDeviceById(int deviceId);
