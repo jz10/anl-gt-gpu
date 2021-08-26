@@ -117,14 +117,11 @@ protected:
   // Synchronization mutex
   std::mutex DeviceMutex;
 
-  // The default context associated with this device
-  LZContext* defaultContext;
+  // The integer ID of current device
+  hipDevice_t Index;//deviceId;
 
-  // The device handler
-  ze_device_handle_t hDevice;
-
-  // The driver object
-  LZDriver* driver;
+  // The current device's properties
+  hipDeviceProp_t Properties;
 
   // The names of modules
   std::vector<std::string *> Modules;
@@ -134,6 +131,21 @@ protected:
 
   // The map between host function pointer nd name
   std::map<const void *, std::string> HostPtrToNameMap;
+
+  // The Hip attribute map
+  std::map<hipDeviceAttribute_t, int> Attributes;
+
+  // The default context associated with this device
+  LZContext* PrimaryContext;
+
+  // The size of total used memory
+  size_t TotalUsedMem;
+
+  // The device handler
+  ze_device_handle_t hDevice;
+
+  // The driver object
+  LZDriver* driver;
 
   // The device memory properties
   ze_device_memory_properties_t deviceMemoryProps;
@@ -147,20 +159,8 @@ protected:
   // The device module properties
   ze_device_module_properties_t deviceModuleProps;
 
-  // The size of total used memory
-  size_t TotalUsedMem;
-
   // The handle of device properties
   ze_device_properties_t deviceProps;
-
-  // The integer ID of current device
-  hipDevice_t deviceId;
-
-  // The current device's properties
-  hipDeviceProp_t Properties;
-
-  // The Hip attribute map
-  std::map<hipDeviceAttribute_t, int> Attributes;
 
   // The command queue ordinal
   uint32_t cmdQueueGraphOrdinal;
@@ -183,9 +183,7 @@ public:
   ze_driver_handle_t GetDriverHandle();
 
   // Get current device's integer ID
-  hipDevice_t getHipDeviceT() {
-    return this->deviceId;
-  }
+  hipDevice_t getHipDeviceT() { return Index; }
 
   // Check if the device can access another device
   static hipError_t CanAccessPeer(LZDevice& device, LZDevice& peerDevice, int* canAccessPeer);
@@ -213,7 +211,7 @@ public:
   std::string GetHostFunctionName(const void* HostFunction);
 
   // Get primary context
-  LZContext* getPrimaryCtx() { return this->defaultContext; };
+  LZContext* getPrimaryCtx() { return PrimaryContext; };
 
   // Get the size of global memory
   size_t getGlobalMemSize() const { return this->deviceMemoryProps.totalSize; }
@@ -477,7 +475,7 @@ protected:
   std::vector<LZDevice* > devices;
 
   // The primary device ID
-  int primaryDevieId;
+  int primaryDeviceId;
 
 public:
   // The global storage for module binary
@@ -490,7 +488,7 @@ public:
   static std::vector<std::tuple<std::string *, char *, const char *, int>> GlobalVars;
 
 public:
-  LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_) : primaryDevieId(0) {
+  LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_) : primaryDeviceId(0) {
     this->hDriver = hDriver_;
     this->deviceType = deviceType_;
 
@@ -501,7 +499,7 @@ public:
   LZDriver(ze_driver_handle_t hDriver_, const ze_device_type_t deviceType_,
 	   ze_device_handle_t hDevice,
 	   ze_context_handle_t hContext,
-	   ze_command_queue_handle_t hQueue) : primaryDevieId(0) {
+	   ze_command_queue_handle_t hQueue) : primaryDeviceId(0) {
     this->hDriver = hDriver_;
     this->deviceType = deviceType_;
 
@@ -537,12 +535,12 @@ public:
 
   // Set the primary device
   void setPrimaryDevice(int deviceId) {
-    primaryDevieId = deviceId;
+    primaryDeviceId = deviceId;
   }
 
   // Get the primary device
   LZDevice& getPrimaryDevice() {
-    return * devices.at(primaryDevieId);
+    return * devices.at(primaryDeviceId);
   }
 
   // Register the given module to all devices

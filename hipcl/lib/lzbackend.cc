@@ -49,7 +49,7 @@ static void notifyOpenCLevent(cl_event event, cl_int status, void *data) {
 }
 
 LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver_) {
-  this->deviceId = id;
+  this->Index = id;
   this->hDevice = hDevice_;
   this->driver = driver_;
 
@@ -57,7 +57,7 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
   retrieveDeviceProperties();
 
   // Create HipLZ context
-  this->defaultContext = new LZContext(this);
+  this->PrimaryContext = new LZContext(this);
 
   // Get the copute queue group ordinal
   retrieveCmdQueueGroupOrdinal(this->cmdQueueGraphOrdinal);
@@ -68,7 +68,7 @@ LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver
 
 LZDevice::LZDevice(hipDevice_t id,  ze_device_handle_t hDevice_, LZDriver* driver_,
 		   ze_context_handle_t hContext, ze_command_queue_handle_t hQueue) {
-  this->deviceId = id;
+  this->Index = id;
   this->hDevice = hDevice_;
   this->driver = driver_;
 
@@ -76,7 +76,7 @@ LZDevice::LZDevice(hipDevice_t id,  ze_device_handle_t hDevice_, LZDriver* drive
   retrieveDeviceProperties();
 
   // Create HipLZ context
-  this->defaultContext = new LZContext(this, hContext, hQueue);
+  this->PrimaryContext = new LZContext(this, hContext, hQueue);
 
   // Get the copute queue group ordinal
   retrieveCmdQueueGroupOrdinal(this->cmdQueueGraphOrdinal);
@@ -139,7 +139,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
   // std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
   // Create HipLZ module
   std::string funcName(FunctionName);
-  this->defaultContext->CreateModule((uint8_t* )module->data(), module->length(), funcName);
+  this->PrimaryContext->CreateModule((uint8_t* )module->data(), module->length(), funcName);
 
   return true;
 }
@@ -177,7 +177,7 @@ ze_driver_handle_t LZDevice::GetDriverHandle() {
 // Reset current device
 void LZDevice::reset() {
   std::lock_guard<std::mutex> Lock(DeviceMutex);
-  this->defaultContext->reset();
+  this->PrimaryContext->reset();
 }
 
 // Setup HipLZ device properties

@@ -440,17 +440,18 @@ protected:
 
   hipDevice_t Index;
   hipDeviceProp_t Properties;
-  bool SupportsIntelDiag;
-  std::map<hipDeviceAttribute_t, int> Attributes;
-  size_t TotalUsedMem, GlobalMemSize, MaxUsedMem;
-
   std::vector<std::string *> Modules;
   std::map<const void *, std::string *> HostPtrToModuleMap;
   std::map<const void *, std::string> HostPtrToNameMap;
+  std::map<hipDeviceAttribute_t, int> Attributes;
+  hipCtx_t PrimaryContext;
+  size_t TotalUsedMem, GlobalMemSize, MaxUsedMem;
+  std::set<hipCtx_t> Contexts;
+
+  bool SupportsIntelDiag;
+
   cl::Device Device;
   cl::Platform Platform;
-  ClContext *PrimaryContext;
-  std::set<ClContext *> Contexts;
 
   void setupProperties(int Index);
 
@@ -462,11 +463,11 @@ public:
   void reset();
   cl::Device &getDevice() { return Device; }
   hipDevice_t getHipDeviceT() const { return Index; }
-  ClContext *getPrimaryCtx() const { return PrimaryContext; }
+  hipCtx_t getPrimaryCtx() const { return PrimaryContext; }
 
-  ClContext *newContext(unsigned int flags);
-  bool addContext(ClContext *ctx);
-  bool removeContext(ClContext *ctx);
+  hipCtx_t newContext(unsigned int flags);
+  bool addContext(hipCtx_t ctx);
+  bool removeContext(hipCtx_t ctx);
   bool supportsIntelDiag() const { return SupportsIntelDiag; }
 
   void registerModule(std::string *module);
