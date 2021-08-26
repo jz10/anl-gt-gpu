@@ -606,8 +606,6 @@ typedef enum {
 
 class ClEvent;
 
-class LZEvent;
-
 typedef ClEvent *hipEvent_t;
 
 class ClKernel;
@@ -621,10 +619,6 @@ typedef ClProgram *hipModule_t;
 class ClQueue;
 
 typedef ClQueue *hipStream_t;
-
-class LZQueue;
-
-typedef LZQueue *hipStream_t_xxx;
 
 class LZImage;
 

@@ -48,10 +48,6 @@ static void notifyOpenCLevent(cl_event event, cl_int status, void *data) {
   delete Data;
 }
 
-hipStream_t ClContext::createRTSpecificQueue(cl::CommandQueue q, unsigned int f, int p) {
-  return new LZQueue(q, f, p);
-}
-
 LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver_) {
   this->deviceId = id;
   this->hDevice = hDevice_;
@@ -1046,12 +1042,7 @@ static void * LZQueueEventMonitor(void* data) {
   return 0;
 }
 
-LZQueue::LZQueue(LZContext* lzContext_, unsigned int f, int p) {
-  // Initialize super class fields, i.e. ClQueue
-  this->LastEvent = nullptr;
-  this->Flags = f;
-  this->Priority = p;
-
+LZQueue::LZQueue(LZContext* lzContext_, unsigned int f, int p) : ClQueue(f, p) {
   // Initialize Level-0 related class fields
   this->lzContext = lzContext_;
   this->defaultCmdList = nullptr;
@@ -1084,12 +1075,7 @@ void LZQueue::initializeQueue(LZContext* lzContext, bool needDefaultCmdList) {
   }
 }
 
-LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList, unsigned int f, int p) {
-  // Initialize super class fields, i.e. ClQueue
-  this->LastEvent = nullptr;
-  this->Flags = f;
-  this->Priority = p;
-
+LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList, unsigned int f, int p) : ClQueue(f, p) {
   // Initialize Level-0 related class fields
   this->lzContext = lzContext_;
   this->defaultCmdList = lzCmdList;
@@ -1099,12 +1085,7 @@ LZQueue::LZQueue(LZContext* lzContext_, LZCommandList* lzCmdList, unsigned int f
   initializeQueue(lzContext);
 }
 
-LZQueue::LZQueue(LZContext* lzContext_, ze_command_queue_handle_t hQueue_, LZCommandList* lzCmdList, unsigned int f, int p) {
-  // Initialize super class fields, i.e. ClQueue
-  this->LastEvent = nullptr;
-  this->Flags = f;
-  this->Priority = p;
-
+LZQueue::LZQueue(LZContext* lzContext_, ze_command_queue_handle_t hQueue_, LZCommandList* lzCmdList, unsigned int f, int p) : ClQueue(f, p) {
   // Initialize Level-0 related class fields
   this->lzContext = lzContext_;
   this->defaultCmdList = lzCmdList;

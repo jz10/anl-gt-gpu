@@ -596,6 +596,8 @@ protected:
 			ze_command_queue_handle_t hQueue = nullptr);
 };
 
+class LZQueue;
+
 class LZCommandList {
 protected:
   // Current associated HipLZ context
@@ -756,11 +758,6 @@ protected:
   pthread_t monitorThreadId;
 
 public:
-  LZQueue(cl::CommandQueue q, unsigned int f, int p) :  ClQueue(q, f, p) {
-    lzContext = nullptr;
-    defaultCmdList = nullptr;
-    monitorThreadId = 0;
-  };
   LZQueue(LZContext* lzContext, unsigned int f, int p);
   LZQueue(LZContext* lzContext, LZCommandList* lzCmdList, unsigned int f, int p);
   LZQueue(LZContext* lzContext_, ze_command_queue_handle_t hQueue_, LZCommandList* lzCmdList, unsigned int f, int p);
@@ -821,15 +818,6 @@ public:
   virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
   // Launch kernel support
   virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
-
-  // If this queue support HipLZ
-  virtual bool SupportLZ() { return true; };
-
-  // The asynchronously memory copy support
-
-  // The memory copy 2D support
-  // The memory copy 3D support
-  // The asynchronously memory fill support
 
   // Get HipLZ context object
   LZContext* GetContext() {

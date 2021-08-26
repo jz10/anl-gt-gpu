@@ -210,72 +210,50 @@ public:
 class ClQueue {
 protected:
   std::mutex QueueMutex;
-  cl::CommandQueue Queue;
-  cl_event LastEvent;
   unsigned int Flags;
   int Priority;
 
 public:
-  ClQueue(cl::CommandQueue q, unsigned int f, int p)
-    : Queue(q), LastEvent(nullptr), Flags(f), Priority(p) {}
+  ClQueue(unsigned int flags, int priority) : Flags(flags), Priority(priority) {}
+  ClQueue() : Flags(0), Priority(0) {}
 
-  // Here we add default constructor to enable sub-class for HipLZ
-  ClQueue() : LastEvent(nullptr), Flags(0), Priority(0) {}
+  virtual ~ClQueue() {}
 
-  ~ClQueue() {
-    if (LastEvent) {
-      logDebug("~ClQueue: Releasing last event {}", (void*)LastEvent);
-      clReleaseEvent(LastEvent);
-    }
-  }
+  unsigned int getFlags() const { return Flags; }
+  int getPriority() const { return Priority; }
+  bool isNonBlocking() { return 0 != (Flags & hipStreamNonBlocking);}
 
-  ClQueue(ClQueue &&rhs) {
-    Flags = rhs.Flags;
-    Priority = rhs.Priority;
-    LastEvent = rhs.LastEvent;
-    Queue = std::move(rhs.Queue);
-  }
+  virtual bool finish() = 0;
+  virtual bool enqueueBarrierForEvent(hipEvent_t event) = 0;
+  virtual bool addCallback(hipStreamCallback_t callback, void *userData) = 0;
+  virtual bool recordEvent(hipEvent_t e) = 0;
 
-  virtual cl::CommandQueue &getQueue() { return Queue; }
-  virtual unsigned int getFlags() const { return Flags; }
-  virtual int getPriority() const { return Priority; }
-
-  virtual bool finish();
-  virtual bool enqueueBarrierForEvent(hipEvent_t event);
-  virtual bool addCallback(hipStreamCallback_t callback, void *userData);
-  virtual bool recordEvent(hipEvent_t e);
-
-  virtual hipError_t memCopy(void *dst, const void *src, size_t size);
-  virtual hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes);
-  virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pat_size);
-  virtual hipError_t memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size);
-  virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block);
-  virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments);
+  virtual hipError_t memCopy(void *dst, const void *src, size_t size) = 0;
+  virtual hipError_t memCopyAsync(void *dst, const void *src, size_t sizeBytes) = 0;
+  virtual hipError_t memFill(void *dst, size_t size, const void *pattern, size_t pat_size) = 0;
+  virtual hipError_t memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) = 0;
+  virtual hipError_t launch3(ClKernel *Kernel, dim3 grid, dim3 block) = 0;
+  virtual hipError_t launch(ClKernel *Kernel, ExecItem *Arguments) = 0;
 
   virtual hipError_t memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
-			       size_t width, size_t height);
+			       size_t width, size_t height) = 0;
   virtual hipError_t memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
-				    size_t width, size_t height);
+				    size_t width, size_t height) = 0;
   virtual hipError_t memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 		       const void *src, size_t spitch, size_t sspitch,
-                       size_t width, size_t height, size_t depth);
+                       size_t width, size_t height, size_t depth) = 0;
   virtual hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
 				    const void *src, size_t spitch, size_t sspitch,
-				    size_t width, size_t height, size_t depth);
+				    size_t width, size_t height, size_t depth) = 0;
   // Make meory prefetch
-  virtual hipError_t memPrefetch(const void* ptr, size_t size);
+  virtual hipError_t memPrefetch(const void* ptr, size_t size) = 0;
 
   // Make the advise for the managed memory (i.e. unified shared memory)
-  virtual hipError_t memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice);
-
-  // If this queue object support HipLZ
-  virtual bool SupportLZ() { return false; };
+  virtual hipError_t memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice) = 0;
 
   // Get the native information
-  virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
+  virtual bool getNativeInfo(unsigned long* nativeInfo, int* size) = 0;
 
-  // Was stream created with the non-blocking flag
-  bool isNonBlocking() { return 0 != (Flags & hipStreamNonBlocking);}
 };
 
 class ExecItem {

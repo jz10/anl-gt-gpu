@@ -121,87 +121,6 @@ void SVMemoryRegion::clear() {
 
 /***********************************************************************/
 
-bool ClQueue::finish() {
-  int err = Queue.finish();
-  if (err != CL_SUCCESS)
-    logError("clFinish() failed with error {}\n", err);
-  return err == CL_SUCCESS;
-}
-
-bool ClQueue::addCallback(hipStreamCallback_t callback, void *userData) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::addCallback!", hipErrorNotSupported);   
-}
-
-bool ClQueue::recordEvent(hipEvent_t event) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::recordEvent!", hipErrorNotSupported);
-}
-
-bool ClQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::getNativeInfo!", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::launch!", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::launch3!", hipErrorNotSupported);
-}
-
-bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call enqueueBarrierForEvent", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memCopy(void *dst, const void *src, size_t size) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memCopyAsync(void *dst, const void *src, size_t sizeByte) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopyAsync", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memFill(void *dst, size_t size, const void *pattern, size_t pat_size) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memFill", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memFillAsync", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
-			      size_t width, size_t height) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy2D", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
-			      const void *src, size_t spitch, size_t sspitch,
-			      size_t width, size_t height, size_t depth) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy3D", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
-				   size_t width, size_t height) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy2DAsync", hipErrorNotSupported);
-}
-
-hipError_t ClQueue::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
-				   const void *src, size_t spitch, size_t sspitch,
-				   size_t width, size_t height, size_t depth) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClQueue to call memCopy3DAsync", hipErrorNotSupported);
-}
-
-// Make meory prefetch 
-hipError_t ClQueue::memPrefetch(const void* ptr, size_t size) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memPrefetch!", hipErrorNotSupported);
-}
-
-// Make the advise for the managed memory (i.e. unified shared memory)
-hipError_t ClQueue::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice) {
-  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::memAdvise!", hipErrorNotSupported);
-}
-
-/***********************************************************************/
-
 void ExecItem::setArg(const void *arg, size_t size, size_t offset) {
   assert(!ArgsPointer && "New HIP Launch API is active!");
 
@@ -234,6 +153,10 @@ static void intel_driver_cb(
     void *user_data) {
 
     logDebug("INTEL DIAG: {}\n", errinfo);
+}
+
+hipStream_t ClContext::createRTSpecificQueue(cl::CommandQueue q, unsigned int f, int p) {
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to createRTSpecificQueue", hipErrorNotSupported);
 }
 
 ClContext::ClContext(ClDevice *D, unsigned f) {
@@ -444,24 +367,7 @@ bool ClContext::releaseQueue(hipStream_t stream) {
 }
 
 bool ClContext::finishAll() {
-  std::vector<cl::CommandQueue> Copies;
-  {
-    std::lock_guard<std::mutex> Lock(ContextMutex);
-    for (hipStream_t I : Queues) {
-      Copies.push_back(I->getQueue());
-    }
-    // Note that this does not really go through due to the subclass : LZQueue
-    Copies.push_back(DefaultQueue->getQueue());
-  }
-
-  for (cl::CommandQueue &I : Copies) {
-    int err = I.finish();
-    if (err != CL_SUCCESS) {
-      logError("clFinish() failed with error {}\n", err);
-      return false;
-    }
-  }
-  return true;
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to finishAll", hipErrorNotSupported);
 }
 
 hipError_t ClContext::configureCall(dim3 grid, dim3 block, size_t shared,
