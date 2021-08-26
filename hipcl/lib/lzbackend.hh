@@ -104,12 +104,7 @@ public:
       : ExecItem(grid, block, shared, stream) {}
 
   // Setup all arguments for HipLZ kernel funciton invocation
-  int setupAllArgs(LZKernel *kernel);
-
-  virtual bool launch(LZKernel *Kernel);
-
-  // If this execution item support HipLZ
-  virtual bool SupportLZ() { return true; };
+  virtual int setupAllArgs(ClKernel *kernel);
 };
 
 class LZContext;
@@ -270,19 +265,12 @@ class LZKernel : public ClKernel {
 protected:
   // HipLZ kernel handle
   ze_kernel_handle_t hKernel;
-  // The function info
-  OCLFuncInfo *FuncInfo;
 
 public:
   LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* FuncInfo_);
   ~LZKernel();
 
   ze_kernel_handle_t GetKernelHandle() { return this->hKernel; }
-
-  OCLFuncInfo *getFuncInfo() const { return FuncInfo; }
-
-  // If this kernel support HipLZ
-  virtual bool SupportLZ() { return true; };
 };
 
 class LZModule {
@@ -316,17 +304,6 @@ public:
 
 class LZEvent : public ClEvent {
 protected:
-  // The mutual exclusion support
-  std::mutex EventMutex;
-  // cl::Event *Event;
-  // Associated stream
-  hipStream_t Stream;
-  // Status
-  event_status_e Status;
-  // Flags
-  unsigned Flags;
-  // cl::Context Context;
-
   // The associated HipLZ context
   LZContext* cont;
 
@@ -340,13 +317,7 @@ protected:
 public:
   LZEvent(LZContext* c, unsigned flags);
 
-  LZEvent(cl::Context &c, unsigned flags) {
-    // TODO:
-  };
-
   virtual ~LZEvent() {
-    if (Event)
-      delete Event;
     if (hEvent)
       zeEventDestroy(hEvent);
     if (hEventPool)
@@ -355,23 +326,8 @@ public:
 
   virtual uint64_t getFinishTime();
 
-  // Get the event object? this is only for OpenCL
-  virtual cl::Event getEvent();
-
-  // Check if the event is from same cl::Context? this is only for OpenCL
-  virtual bool isFromContext(cl::Context &Other);
-
-  // Check if the event is from same stream
-  virtual bool isFromStream(hipStream_t &Other) { return (Stream == Other); }
-
-  // Check if the event has been finished
-  virtual bool isFinished() const { return (Status == EVENT_STATUS_RECORDED); }
-
-  // Check if the event is during recording or has been recorded
-  virtual bool isRecordingOrRecorded() const { return (Status >= EVENT_STATUS_RECORDING); }
-
   // Record the event to stream
-  virtual bool recordStream(hipStream_t S, cl_event E);
+  virtual bool recordStream(hipStream_t S);
 
   // Update event's finish status
   virtual bool updateFinishStatus();
@@ -380,7 +336,7 @@ public:
   virtual bool wait();
 
   // Get current event handler
-  ze_event_handle_t GetEventHandler() { return this->hEvent; };
+  ze_event_handle_t GetEventHandle() { return this->hEvent; };
 
   // Record the time stamp
   void recordTimeStamp(uint64_t value) { this->timestamp = value; };
@@ -440,12 +396,12 @@ public:
   hipError_t setArg(const void *arg, size_t size, size_t offset);
 
   // Launch HipLZ kernel (old HIP launch API).
-  bool launchHostFunc(const void* HostFunction);
+  hipError_t launchHostFunc(const void* HostFunction);
 
   // Launch HipLZ kernel (new HIP launch API).
-  bool launchHostFunc(const void *function_address, dim3 numBlocks,
-                      dim3 dimBlocks, void **args, size_t sharedMemBytes,
-                      hipStream_t stream);
+  hipError_t launchHostFunc(const void *function_address, dim3 numBlocks,
+                            dim3 dimBlocks, void **args, size_t sharedMemBytes,
+                            hipStream_t stream);
 
   // Memory allocation
   void *allocate(size_t size, LZMemoryType memTy = LZMemoryType::Device);

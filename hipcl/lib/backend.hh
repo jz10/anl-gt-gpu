@@ -123,35 +123,22 @@ void logCritical(const char *fmt, const Args &... args) {
 class ClEvent {
 protected:
   std::mutex EventMutex;
-  cl::Event *Event;
   hipStream_t Stream;
   event_status_e Status;
   unsigned Flags;
-  cl::Context Context;
 
 public:
-  ClEvent(cl::Context &c, unsigned flags)
-      : Event(), Stream(nullptr), Status(EVENT_STATUS_INIT), Flags(flags),
-        Context(c) {}
+  ClEvent(unsigned flags) : Stream(nullptr), Status(EVENT_STATUS_INIT), Flags(flags) {}
+  ClEvent() : Stream(nullptr), Status(EVENT_STATUS_INIT), Flags(0) {}
+  virtual ~ClEvent() {}
 
-  ClEvent() : Event(0) {
-    // TODO:
-  }
-
-  virtual  ~ClEvent() {
-    if (Event)
-      delete Event;
-  }
-
-  virtual uint64_t getFinishTime();
-  virtual cl::Event getEvent() { return *Event; }
-  virtual bool isFromContext(cl::Context &Other) { return (Context == Other); }
-  virtual bool isFromStream(hipStream_t &Other) { return (Stream == Other); }
-  virtual bool isFinished() const { return (Status == EVENT_STATUS_RECORDED); }
-  virtual bool isRecordingOrRecorded() const { return (Status >= EVENT_STATUS_RECORDING); }
-  virtual bool recordStream(hipStream_t S, cl_event E);
-  virtual bool updateFinishStatus();
-  virtual bool wait();
+  virtual uint64_t getFinishTime() = 0;
+  virtual bool recordStream(hipStream_t S) = 0;
+  virtual bool updateFinishStatus() = 0;
+  virtual bool wait() = 0;
+  bool isFromStream(hipStream_t &Other) { return (Stream == Other); }
+  bool isFinished() const { return (Status == EVENT_STATUS_RECORDED); }
+  bool isRecordingOrRecorded() const { return (Status >= EVENT_STATUS_RECORDING); }
 };
 
 typedef std::map<const void *, std::vector<hipFunction_t>> hipFunctionMap;
@@ -160,32 +147,18 @@ class ExecItem;
 
 class ClKernel {
 protected:
-  cl::Kernel Kernel;
   std::string Name;
   OCLFuncInfo *FuncInfo;
   size_t TotalArgSize;
-  cl::Context Context;
   //  hipFuncAttributes attributes;
 
 public:
-  ClKernel(cl::Context &C, cl::Kernel &&K)
-      : Kernel(K), Name(), FuncInfo(nullptr), TotalArgSize(0), Context(C) {}
-  ClKernel() : Kernel(nullptr), Name(), FuncInfo(nullptr), TotalArgSize(0), Context(nullptr) {
-  }
-  ~ClKernel() {}
-  bool setup(size_t Index, OpenCLFunctionInfoMap &FuncInfoMap);
+  ClKernel(std::string funcName, OCLFuncInfo *funcInfo) : Name(funcName), FuncInfo(funcInfo), TotalArgSize(0) {}
+  virtual ~ClKernel() = 0;
 
   bool isNamed(const std::string &arg) const { return Name == arg; }
-  bool isFromContext(const cl::Context &arg) const { return Context == arg; }
-  cl::Kernel get() const { return Kernel; }
   OCLFuncInfo *getFuncInfo() const { return FuncInfo; }
-
-  int setAllArgs(void **args, size_t shared);
-  int setAllArgs(void *args, size_t size, size_t shared);
   size_t getTotalArgSize() const { return TotalArgSize; };
-
-  // If this kernel object support HipLZ
-  virtual bool SupportLZ() { return false; };
 };
 
 
@@ -324,17 +297,15 @@ public:
 
   ExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t q)
       : SharedMem(shared), Stream(q), GridDim(grid), BlockDim(block) {}
+  virtual ~ExecItem() {}
 
   // Records an argument for the old HIP launch API.
   void setArg(const void *arg, size_t size, size_t offset);
   // Records argument pointer for the new HIP launch API.
   void setArgsPointer(void** args);
-  int setupAllArgs(ClKernel *kernel);
+  virtual int setupAllArgs(ClKernel *kernel) = 0;
 
-  virtual hipError_t launch(ClKernel *Kernel);
-
-  // If this execution item object support HipLZ
-  virtual bool SupportLZ() { return false; };
+  virtual hipError_t launch(ClKernel *Kernel) { return Stream->launch(Kernel, this); }
 };
 
 class ClDevice;

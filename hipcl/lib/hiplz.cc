@@ -1937,10 +1937,7 @@ hipError_t hipLaunchByPtr(const void *hostFunction) {
   // Try for HipLZ kernel at first
   LZContext* lzCtx = getTlsDefaultLzCtx();
   ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
-  if (lzCtx->launchHostFunc(hostFunction)) 
-    RETURN(hipSuccess);
-  else
-    RETURN(hipErrorLaunchFailure);
+  RETURN(lzCtx->launchHostFunc(hostFunction));
 
   LZ_CATCH
 }
@@ -1975,11 +1972,8 @@ hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
   LZ_TRY
   LZContext* lzCtx = getTlsDefaultLzCtx();
   ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
-  if (lzCtx->launchHostFunc(hostFunction, gridDim, blockDim, args,
-                            sharedMem, stream))
-    RETURN(hipSuccess);
-  else
-    RETURN(hipErrorLaunchFailure);
+  RETURN(lzCtx->launchHostFunc(hostFunction, gridDim, blockDim, args,
+                               sharedMem, stream));
   LZ_CATCH
 }
 

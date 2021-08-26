@@ -52,10 +52,6 @@ hipStream_t ClContext::createRTSpecificQueue(cl::CommandQueue q, unsigned int f,
   return new LZQueue(q, f, p);
 }
 
-inline hipError_t ExecItem::launch(ClKernel *Kernel) {
-  return Stream->launch(Kernel, this);
-}
-
 LZDevice::LZDevice(hipDevice_t id, ze_device_handle_t hDevice_, LZDriver* driver_) {
   this->deviceId = id;
   this->hDevice = hDevice_;
@@ -566,7 +562,7 @@ hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
 }
 
 // Launch HipLZ kernel (old HIP launch API).
-bool LZContext::launchHostFunc(const void* HostFunction) {
+hipError_t LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
   LZKernel* Kernel = 0;
   // logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
@@ -593,7 +589,7 @@ bool LZContext::launchHostFunc(const void* HostFunction) {
 }
 
 // Launch HipLZ kernel (new HIP launch API).
-bool LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
+hipError_t LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
                                dim3 dimBlocks, void **args,
                                size_t sharedMemBytes, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
@@ -1152,7 +1148,7 @@ cl::CommandQueue& LZQueue::getQueue() {
 // Enqueue barrier for event
 bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
   ze_command_list_handle_t list = defaultCmdList->GetCommandListHandle();
-  ze_event_handle_t ev = ((LZEvent *)event)->GetEventHandler();
+  ze_event_handle_t ev = ((LZEvent *)event)->GetEventHandle();
   ze_result_t status = zeCommandListAppendBarrier(list, nullptr, 1, &ev);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendBarrier FAILED with return code ", status);
   return true;
@@ -1251,11 +1247,10 @@ bool LZQueue::recordEvent(hipEvent_t event) {
   if (event == nullptr)
     HIP_PROCESS_ERROR_MSG("HipLZ get null Event recorded?", hipErrorInitializationError);
 
-  if (this->defaultCmdList == nullptr)
-    HIP_PROCESS_ERROR_MSG("Invalid command list during event recording", hipErrorInitializationError);
+  CHECK_QUEUE_COMMAND_LIST();
 
   // Record event to stream
-  return event->recordStream(this, nullptr);
+  return event->recordStream(this);
 }
 
 // Memory copy support
@@ -1340,10 +1335,7 @@ hipError_t LZQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
 // Launch kernel support
 hipError_t LZQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
   CHECK_QUEUE_COMMAND_LIST();
-  if (Kernel->SupportLZ() && Arguments->SupportLZ())
-    this->defaultCmdList->ExecuteKernelAsync(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
-  else
-    HIP_PROCESS_ERROR_MSG("Not support LZQueue::launch yet!", hipErrorNotSupported);
+  this->defaultCmdList->ExecuteKernelAsync(this, (LZKernel* )Kernel, (LZExecItem* )Arguments);
   return hipSuccess;
 }
 
@@ -1607,7 +1599,7 @@ bool LZCommandList::ExecuteWriteGlobalTimeStampAsync(LZQueue* lzQueue, uint64_t 
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendWriteGlobalTimestamp FAILED with return code ", status);
   status = zeCommandListAppendBarrier(hCommandList, nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendBarrier FAILED with return code ", status);
-  status = zeCommandListAppendMemoryCopy(hCommandList, timestamp, shared_buf, sizeof(uint64_t), event->GetEventHandler(), 0, nullptr);
+  status = zeCommandListAppendMemoryCopy(hCommandList, timestamp, shared_buf, sizeof(uint64_t), event->GetEventHandle(), 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ  zeCommandListAppendMemoryCopy FAILED with return code ", status);
   return ExecuteAsync(lzQueue);
 }
@@ -1744,7 +1736,8 @@ bool LZImmCommandList::ExecuteAsync(LZQueue* lzQueue) {
   return true;
 }
 
-int LZExecItem::setupAllArgs(LZKernel *kernel) {
+int LZExecItem::setupAllArgs(ClKernel *k) {
+  LZKernel *kernel = (LZKernel *)k;
   OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
   size_t NumLocals = 0;
   int LastArgIdx = -1;
@@ -1861,10 +1854,6 @@ int LZExecItem::setupAllArgs(LZKernel *kernel) {
   return CL_SUCCESS;
 }
 
-bool LZExecItem::launch(LZKernel *Kernel) {
-  return Stream->launch(Kernel, this) == hipSuccess;
-};
-
 LZModule::LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) {
   // Create module with global address aware
   std::string compilerOptions = " -cl-std=CL2.0 -cl-take-global-address -cl-match-sincospi";
@@ -1943,9 +1932,7 @@ bool LZModule::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size
   return true;
 }
 
-LZKernel::LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* FuncInfo_) {
-  this->FuncInfo = FuncInfo_;
-
+LZKernel::LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* funcInfo) : ClKernel(funcName, funcInfo) {
   // Create kernel
   ze_kernel_desc_t kernelDesc = {
     ZE_STRUCTURE_TYPE_KERNEL_DESC,
@@ -1965,10 +1952,7 @@ LZKernel::~LZKernel() {
 }
 
 // Create HipLZ event
-LZEvent::LZEvent(LZContext* c, unsigned flags) {
-  this->Stream = nullptr;
-  this->Status = EVENT_STATUS_INIT;
-  this->Flags = flags;
+LZEvent::LZEvent(LZContext* c, unsigned flags) : ClEvent(flags)  {
   this->cont = c;
   this->hEvent = nullptr;
   this->hEventPool = nullptr;
@@ -2002,7 +1986,7 @@ uint64_t LZEvent::getFinishTime() {
 }
 
 // Record event into stream
-bool LZEvent::recordStream(hipStream_t S, cl_event E) {
+bool LZEvent::recordStream(hipStream_t S) {
   std::lock_guard<std::mutex> Lock(EventMutex);
 
   if (Status == EVENT_STATUS_RECORDED) {
@@ -2040,16 +2024,6 @@ bool LZEvent::wait() {
 
   Status = EVENT_STATUS_RECORDED;
   return true;
-}
-
-// Get the event object? this is only for OpenCL
-cl::Event LZEvent::getEvent() {
-  HIP_PROCESS_ERROR_MSG("HipLZ does not support cl::Event! ", hipErrorNotSupported);
-}
-
-// Check if the event is from same cl::Context? this is only for OpenCL
-bool LZEvent::isFromContext(cl::Context &Other) {
-  HIP_PROCESS_ERROR_MSG("HipLZ does not support cl::Context! ", hipErrorNotSupported);
 }
 
 LZImage::LZImage(LZContext* lzContext, hipResourceDesc* resDesc, hipTextureDesc* texDesc) {

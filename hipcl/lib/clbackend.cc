@@ -27,177 +27,7 @@ static std::vector<cl::Platform> Platforms INIT_PRIORITY(120);
 
 /********************************/
 
-bool ClEvent::updateFinishStatus() {
-  std::lock_guard<std::mutex> Lock(EventMutex);
-  if (Status != EVENT_STATUS_RECORDING)
-    return false;
-
-  int Stat = Event->getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>();
-  if (Stat <= CL_COMPLETE) {
-    Status = EVENT_STATUS_RECORDED;
-    return true;
-  }
-  return false;
-}
-
-bool ClEvent::recordStream(hipStream_t S, cl_event E) {
-  std::lock_guard<std::mutex> Lock(EventMutex);
-
-  Stream = S;
-  Status = EVENT_STATUS_RECORDING;
-
-  if (Event != nullptr) {
-    cl_uint refc = Event->getInfo<CL_EVENT_REFERENCE_COUNT>();
-    logDebug("removing old event, refc: {}\n", refc);
-
-    delete Event;
-  }
-
-  Event = new cl::Event(E, true);
-  return true;
-}
-
-bool ClEvent::wait() {
-  std::lock_guard<std::mutex> Lock(EventMutex);
-  if (Status != EVENT_STATUS_RECORDING)
-    return false;
-
-  Event->wait();
-  Status = EVENT_STATUS_RECORDED;
-  return true;
-}
-
-uint64_t ClEvent::getFinishTime() {
-  std::lock_guard<std::mutex> Lock(EventMutex);
-  int err;
-  uint64_t ret = Event->getProfilingInfo<CL_PROFILING_COMMAND_END>(&err);
-  assert(err == CL_SUCCESS);
-  return ret;
-}
-
-/********************************/
-
-static int setLocalSize(size_t shared, OCLFuncInfo *FuncInfo,
-                        cl_kernel kernel) {
-
-  int err = CL_SUCCESS;
-
-  if (shared > 0) {
-    logDebug("setLocalMemSize to {}\n", shared);
-    size_t LastArgIdx = FuncInfo->ArgTypeInfo.size() - 1;
-    if (FuncInfo->ArgTypeInfo[LastArgIdx].space != OCLSpace::Local) {
-      // this can happen if for example the llvm optimizes away
-      // the dynamic local variable
-      logWarn("Can't set the dynamic local size, "
-              "because the kernel doesn't use any local memory.\n");
-    } else {
-      err = ::clSetKernelArg(kernel, LastArgIdx, shared, nullptr);
-      if (err != CL_SUCCESS) {
-        logError("clSetKernelArg() failed to set dynamic local size!\n");
-      }
-    }
-  }
-
-  return err;
-}
-
-bool ClKernel::setup(size_t Index, OpenCLFunctionInfoMap &FuncInfoMap) {
-  int err = 0;
-  Name = Kernel.getInfo<CL_KERNEL_FUNCTION_NAME>(&err);
-  if (err != CL_SUCCESS) {
-    logError("clGetKernelInfo(CL_KERNEL_FUNCTION_NAME) failed: {}\n", err);
-    return false;
-  }
-
-  logDebug("Kernel {} is: {} \n", Index, Name);
-
-  auto it = FuncInfoMap.find(Name);
-  assert(it != FuncInfoMap.end());
-  FuncInfo = it->second;
-
-  // TODO attributes
-  cl_uint NumArgs = Kernel.getInfo<CL_KERNEL_NUM_ARGS>(&err);
-  if (err != CL_SUCCESS) {
-    logError("clGetKernelInfo(CL_KERNEL_NUM_ARGS) failed: {}\n", err);
-    return false;
-  }
-  assert(FuncInfo->ArgTypeInfo.size() == NumArgs);
-
-  if (NumArgs > 0) {
-    logDebug("Kernel {} numArgs: {} \n", Name, NumArgs);
-    logDebug("  RET_TYPE: {} {} {}\n", FuncInfo->retTypeInfo.size,
-             (unsigned)FuncInfo->retTypeInfo.space,
-             (unsigned)FuncInfo->retTypeInfo.type);
-    for (auto &argty : FuncInfo->ArgTypeInfo) {
-      logDebug("  ARG: SIZE {} SPACE {} TYPE {}\n", argty.size,
-               (unsigned)argty.space, (unsigned)argty.type);
-      TotalArgSize += argty.size;
-    }
-  }
-  return true;
-}
-
-int ClKernel::setAllArgs(void **args, size_t shared) {
-  void *p;
-  int err;
-
-  for (cl_uint i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
-    OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
-
-    if (ai.type == OCLType::Pointer) {
-      // TODO other than global AS ?
-      assert(ai.size == sizeof(void *));
-      p = *(void **)(args[i]);
-      logDebug("setArg SVM {} to PTR {}\n", i, p);
-      err = ::clSetKernelArgSVMPointer(Kernel(), i, p);
-      if (err != CL_SUCCESS) {
-        logDebug("clSetKernelArgSVMPointer failed with error {}\n", err);
-        return err;
-      }
-    } else {
-      logDebug("setArg {} SIZE {}\n", i, ai.size);
-      err = ::clSetKernelArg(Kernel(), i, ai.size, args[i]);
-      if (err != CL_SUCCESS) {
-        logDebug("clSetKernelArg failed with error {}\n", err);
-        return err;
-      }
-    }
-  }
-
-  return setLocalSize(shared, FuncInfo, Kernel());
-}
-
-int ClKernel::setAllArgs(void *args, size_t size, size_t shared) {
-  void *p = args;
-  int err;
-
-  for (cl_uint i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
-    OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
-
-    if (ai.type == OCLType::Pointer) {
-      // TODO other than global AS ?
-      assert(ai.size == sizeof(void *));
-      void *pp = *(void **)p;
-      logDebug("setArg SVM {} to PTR {}\n", i, pp);
-      err = ::clSetKernelArgSVMPointer(Kernel(), i, pp);
-      if (err != CL_SUCCESS) {
-        logDebug("clSetKernelArgSVMPointer failed with error {}\n", err);
-        return err;
-      }
-    } else {
-      logDebug("setArg {} SIZE {}\n", i, ai.size);
-      err = ::clSetKernelArg(Kernel(), i, ai.size, p);
-      if (err != CL_SUCCESS) {
-        logDebug("clSetKernelArg failed with error {}\n", err);
-        return err;
-      }
-    }
-
-    p = (char *)p + ai.size;
-  }
-
-  return setLocalSize(shared, FuncInfo, Kernel());
-}
+ClKernel::~ClKernel() {}
 
 /********************************/
 
@@ -245,14 +75,14 @@ bool ClProgram::setup(std::string &binary) {
   logDebug("Kernels in program: {} \n", kernels.size());
   Kernels.resize(kernels.size());
 
-  for (size_t i = 0; i < kernels.size(); ++i) {
-    ClKernel *k = new ClKernel(Context, std::move(kernels[i]));
-    if (k == nullptr)
-      return false; // TODO memleak
-    if (!k->setup(i, FuncInfos))
-      return false;
-    Kernels[i] = k;
-  }
+//  for (size_t i = 0; i < kernels.size(); ++i) {
+//    ClKernel *k = new ClKernel(Context, std::move(kernels[i]));
+//    if (k == nullptr)
+//      return false; // TODO memleak
+//    if (!k->setup(i, FuncInfos))
+//      return false;
+//    Kernels[i] = k;
+//  }
   return true;
 }
 
@@ -369,73 +199,11 @@ bool ClQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
 }
 
 hipError_t ClQueue::launch(ClKernel *Kernel, ExecItem *Arguments) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-  
-  if (Arguments->setupAllArgs(Kernel) != CL_SUCCESS) {
-    logError("Failed to set kernel arguments for launch! \n");
-    return hipErrorLaunchFailure;
-  }
-
-  dim3 GridDim = Arguments->GridDim;
-  dim3 BlockDim = Arguments->BlockDim;
-
-  const cl::NDRange global(GridDim.x * BlockDim.x, GridDim.y * BlockDim.y,
-                           GridDim.z * BlockDim.z);
-  const cl::NDRange local(BlockDim.x, BlockDim.y, BlockDim.z);
-
-  cl::Event ev;
-  int err = Queue.enqueueNDRangeKernel(Kernel->get(), cl::NullRange, global,
-                                       local, nullptr, &ev);
-
-  if (err != CL_SUCCESS)
-    logError("clEnqueueNDRangeKernel() failed with: {}\n", err);
-  hipError_t retval = (err == CL_SUCCESS) ? hipSuccess : hipErrorLaunchFailure;
-
-  if (retval == hipSuccess) {
-    if (LastEvent != nullptr) {
-      logDebug("Launch: LastEvent == {}, will be: {}", (void *)LastEvent,
-               (void *)ev.get());
-      clReleaseEvent(LastEvent);
-    } else
-      logDebug("launch: LastEvent == NULL, will be: {}\n", (void *)ev.get());
-    LastEvent = ev.get();
-    clRetainEvent(LastEvent);
-  }
-
-  delete Arguments;
-  return retval;
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::launch!", hipErrorNotSupported);
 }
 
 hipError_t ClQueue::launch3(ClKernel *Kernel, dim3 grid, dim3 block) {
-  std::lock_guard<std::mutex> Lock(QueueMutex);
-
-  dim3 GridDim = grid;
-  dim3 BlockDim = block;
-
-  const cl::NDRange global(GridDim.x * BlockDim.x, GridDim.y * BlockDim.y,
-                           GridDim.z * BlockDim.z);
-  const cl::NDRange local(BlockDim.x, BlockDim.y, BlockDim.z);
-
-  cl::Event ev;
-  int err = Queue.enqueueNDRangeKernel(Kernel->get(), cl::NullRange, global,
-                                       local, nullptr, &ev);
-
-  if (err != CL_SUCCESS)
-    logError("clEnqueueNDRangeKernel() failed with: {}\n", err);
-  hipError_t retval = (err == CL_SUCCESS) ? hipSuccess : hipErrorLaunchFailure;
-
-  if (retval == hipSuccess) {
-    if (LastEvent != nullptr) {
-      logDebug("Launch3: LastEvent == {}, will be: {}", (void *)LastEvent,
-               (void *)ev.get());
-      clReleaseEvent(LastEvent);
-    } else
-      logDebug("launch3: LastEvent == NULL, will be: {}\n", (void *)ev.get());
-    LastEvent = ev.get();
-    clRetainEvent(LastEvent);
-  }
-
-  return retval;
+  HIP_PROCESS_ERROR_MSG("Supported in LZQueue::launch3!", hipErrorNotSupported);
 }
 
 bool ClQueue::enqueueBarrierForEvent(hipEvent_t ProvidedEvent) {
@@ -506,88 +274,6 @@ void ExecItem::setArg(const void *arg, size_t size, size_t offset) {
 void ExecItem::setArgsPointer(void** args) {
   assert(ArgData.empty() && "Old HIP launch API is active!");
   ArgsPointer = args;
-}
-
-int ExecItem::setupAllArgs(ClKernel *kernel) {
-  OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
-  size_t NumLocals = 0;
-  for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
-    if (FuncInfo->ArgTypeInfo[i].space == OCLSpace::Local)
-      ++NumLocals;
-  }
-  // there can only be one dynamic shared mem variable, per cuda spec
-  assert (NumLocals <= 1);
-
-  // Argument processing for the new HIP launch API.
-  assert(!ArgsPointer && "UNIMPLEMENTED: setupAllArgs for new launch API.");
-
-  // Argument processing for the old HIP launch API.
-  if ((OffsetsSizes.size()+NumLocals) != FuncInfo->ArgTypeInfo.size()) {
-      logError("Some arguments are still unset\n");
-      return CL_INVALID_VALUE;
-  }
-
-  if (OffsetsSizes.size() == 0)
-    return CL_SUCCESS;
-
-  std::sort(OffsetsSizes.begin(), OffsetsSizes.end());
-  if ((std::get<0>(OffsetsSizes[0]) != 0) ||
-      (std::get<1>(OffsetsSizes[0]) == 0)) {
-          logError("Invalid offset/size\n");
-          return CL_INVALID_VALUE;
-      }
-
-  // check args are set
-  if (OffsetsSizes.size() > 1) {
-    for (size_t i = 1; i < OffsetsSizes.size(); ++i) {
-      if ( (std::get<0>(OffsetsSizes[i]) == 0) ||
-           (std::get<1>(OffsetsSizes[i]) == 0) ||
-           (
-           (std::get<0>(OffsetsSizes[i - 1]) + std::get<1>(OffsetsSizes[i - 1])) >
-            std::get<0>(OffsetsSizes[i]))
-           ) {
-          logError("Invalid offset/size\n");
-          return CL_INVALID_VALUE;
-        }
-    }
-  }
-
-  const unsigned char *start = ArgData.data();
-  void *p;
-  int err;
-  for (cl_uint i = 0; i < OffsetsSizes.size(); ++i) {
-    OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
-    logDebug("ARG {}: OS[0]: {} OS[1]: {} \n      TYPE {} SPAC {} SIZE {}\n", i,
-             std::get<0>(OffsetsSizes[i]), std::get<1>(OffsetsSizes[i]),
-             (unsigned)ai.type, (unsigned)ai.space, ai.size);
-
-    if (ai.type == OCLType::Pointer) {
-
-      // TODO other than global AS ?
-      assert(ai.size == sizeof(void *));
-      assert(std::get<1>(OffsetsSizes[i]) == ai.size);
-      p = *(void **)(start + std::get<0>(OffsetsSizes[i]));
-      logDebug("setArg SVM {} to {}\n", i, p);
-      err = ::clSetKernelArgSVMPointer(kernel->get().get(), i, p);
-      if (err != CL_SUCCESS) {
-        logDebug("clSetKernelArgSVMPointer failed with error {}\n", err);
-        return err;
-      }
-    } else {
-      size_t size = std::get<1>(OffsetsSizes[i]);
-      size_t offs = std::get<0>(OffsetsSizes[i]);
-      void* value = (void*)(start + offs);
-      logDebug("setArg {} size {} offs {}\n", i, size, offs);
-      err =
-          ::clSetKernelArg(kernel->get().get(), i, size, value);
-      if (err != CL_SUCCESS) {
-        logDebug("clSetKernelArg failed with error {}\n", err);
-        return err;
-      }
-    }
-  }
-
-  return setLocalSize(SharedMem, FuncInfo, kernel->get().get());
 }
 
 /***********************************************************************/
@@ -704,8 +390,7 @@ hipStream_t ClContext::findQueue(hipStream_t stream) {
 }
 
 ClEvent *ClContext::createEvent(unsigned flags) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-  return new ClEvent(Context, flags);
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to createEvent", hipErrorNotSupported);
 }
 
 void *ClContext::allocate(size_t size) {
@@ -918,65 +603,14 @@ hipError_t ClContext::launchWithKernelParams(dim3 grid, dim3 block,
                                              size_t shared, hipStream_t stream,
                                              void **kernelParams,
                                              hipFunction_t kernel) {
-  FIND_QUEUE_LOCKED(stream);
-
-  if (!kernel->isFromContext(Context))
-    return hipErrorLaunchFailure;
-
-  int err = kernel->setAllArgs(kernelParams, shared);
-  if (err != CL_SUCCESS) {
-    logError("Failed to set kernel arguments for launch! \n");
-    return hipErrorLaunchFailure;
-  }
-
-  return stream->launch3(kernel, grid, block);
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to call launchWithKernelParams", hipErrorNotSupported);
 }
 
 hipError_t ClContext::launchWithExtraParams(dim3 grid, dim3 block,
                                             size_t shared, hipStream_t stream,
                                             void **extraParams,
                                             hipFunction_t kernel) {
-  FIND_QUEUE_LOCKED(stream);
-
-  if (!kernel->isFromContext(Context))
-    return hipErrorLaunchFailure;
-
-  void *args = nullptr;
-  size_t size = 0;
-
-  void **p = extraParams;
-  while (*p && (*p != HIP_LAUNCH_PARAM_END)) {
-    if (*p == HIP_LAUNCH_PARAM_BUFFER_POINTER) {
-      args = (void *)p[1];
-      p += 2;
-      continue;
-    } else if (*p == HIP_LAUNCH_PARAM_BUFFER_SIZE) {
-      size = (size_t)p[1];
-      p += 2;
-      continue;
-    } else {
-      logError("Unknown parameter in extraParams: {}\n", *p);
-      return hipErrorLaunchFailure;
-    }
-  }
-
-  if (args == nullptr || size == 0) {
-    logError("extraParams doesn't contain all required parameters\n");
-    return hipErrorLaunchFailure;
-  }
-
-  // TODO This only accepts structs with no padding.
-  if (size != kernel->getTotalArgSize()) {
-    logError("extraParams doesn't have correct size\n");
-    return hipErrorLaunchFailure;
-  }
-
-  int err = kernel->setAllArgs(args, size, shared);
-  if (err != CL_SUCCESS) {
-    logError("Failed to set kernel arguments for launch! \n");
-    return hipErrorLaunchFailure;
-  }
-  return stream->launch3(kernel, grid, block);
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to call launchWithExtraParams", hipErrorNotSupported);
 }
 
 ClProgram *ClContext::createProgram(std::string &binary) {
