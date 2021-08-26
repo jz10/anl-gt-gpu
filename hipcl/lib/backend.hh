@@ -381,6 +381,7 @@ protected:
   GlobalPtrs globalPtrs;
 
   hipStream_t findQueue(hipStream_t stream);
+  virtual ExecItem* createExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t stream) = 0;
 
 public:
   ClContext(ClDevice *D, unsigned f);
@@ -397,7 +398,7 @@ public:
   virtual hipError_t recordEvent(hipStream_t stream, hipEvent_t event) = 0;
   virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority) = 0;
   virtual bool releaseQueue(hipStream_t stream) = 0;
-  bool finishAll();
+  virtual bool finishAll();
 
   virtual void *allocate(size_t size) = 0; 
   virtual void *allocate(size_t size, ClMemoryType memTy) = 0;
@@ -408,7 +409,9 @@ public:
   bool findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase,
                        size_t *psize);
 
-  virtual hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q) = 0;
+  hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
+  hipError_t popCallConfiguration(dim3 *grid, dim3 *block, size_t *shared,
+                                  hipStream_t *q);
   hipError_t setArg(const void *arg, size_t size, size_t offset);
   // Launch HipLZ kernel (old HIP launch API).
   virtual hipError_t launchHostFunc(const void *HostFunction) = 0;
@@ -427,8 +430,8 @@ public:
   ClProgram *createProgram(std::string &binary);
   hipError_t destroyProgram(ClProgram *prog);
 
-  virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes);
-  void synchronizeQueues(hipStream_t queue);
+  virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) = 0;
+//  virtual void synchronizeQueues(hipStream_t queue);
 };
 
 class ClDevice {

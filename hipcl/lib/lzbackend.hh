@@ -374,14 +374,6 @@ public:
   // Get Level-0 device object
   LZDevice* GetDevice() { return this->lzDevice; };
 
-  // Pushes a kernel call configuration to the stack.
-  hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
-
-  // Pops kernel call configuration from the stack.
-  // This is used for new HIP launch API.
-  hipError_t popCallConfiguration(dim3 *grid, dim3 *block, size_t *shared,
-                                  hipStream_t *q);
-
   // Launch HipLZ kernel (old HIP launch API).
   virtual hipError_t launchHostFunc(const void* HostFunction);
 
@@ -464,6 +456,9 @@ public:
 protected:
    // Get HipLZ kernel via function name
   hipFunction_t GetKernelByFunctionName(std::string funcName);
+  virtual ExecItem* createExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
+    return new LZExecItem(grid, block, shared, stream);
+  }
 };
 
 // HipLZ driver object that manages device objects and the current context

@@ -519,27 +519,6 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
   return true;
 }
 
-// Configure the call to LZ kernel, here we ignore OpenCL queue but using LZ command list
-hipError_t LZContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
-  FIND_QUEUE_LOCKED(stream);
-  LZExecItem *NewItem = new LZExecItem(grid, block, shared, Queue);
-  // Here we reuse the execution item stack from super class, i.e. OpenCL context
-  ExecStack.push(NewItem);
-
-  return hipSuccess;
-}
-
-hipError_t LZContext::popCallConfiguration(dim3 *grid, dim3 *block,
-                                           size_t *shared, hipStream_t *q) {
-  const auto *ei = this->ExecStack.top();
-  *grid = ei->GridDim;
-  *block = ei->BlockDim;
-  *shared = ei->SharedMem;
-  *q = ei->Stream;
-  ExecStack.pop();
-  return hipSuccess;
-}
-
 // Launch HipLZ kernel (old HIP launch API).
 hipError_t LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(ContextMutex);

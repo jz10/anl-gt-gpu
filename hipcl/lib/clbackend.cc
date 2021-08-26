@@ -265,6 +265,27 @@ bool ClContext::finishAll() {
   return true;
 }
 
+// Configure the call to LZ kernel, here we ignore OpenCL queue but using LZ command list
+hipError_t ClContext::configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  ExecItem *NewItem = createExecItem(grid, block, shared, Queue);
+  // Here we reuse the execution item stack from super class, i.e. OpenCL context
+  ExecStack.push(NewItem);
+
+  return hipSuccess;
+}
+
+hipError_t ClContext::popCallConfiguration(dim3 *grid, dim3 *block,
+                                           size_t *shared, hipStream_t *q) {
+  const auto *ei = this->ExecStack.top();
+  *grid = ei->GridDim;
+  *block = ei->BlockDim;
+  *shared = ei->SharedMem;
+  *q = ei->Stream;
+  ExecStack.pop();
+  return hipSuccess;
+}
+
 hipError_t ClContext::setArg(const void *arg, size_t size, size_t offset) {
   // Can't do a size check here b/c we don't know the kernel yet
   std::lock_guard<std::mutex> Lock(ContextMutex);
@@ -285,13 +306,6 @@ hipError_t ClContext::destroyProgram(ClProgram *prog) {
 
   Programs.erase(it);
   return hipSuccess;
-}
-
-// Get the address and size for the given symbol's name
-bool ClContext::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) {
-  // TODO: no OpenCL support yet
-  
-  return false;
 }
 
 /***********************************************************************/
