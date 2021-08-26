@@ -1095,7 +1095,7 @@ hipError_t hipMallocManaged(void ** ptr, size_t size) {
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  void *retval = cont->allocate(size, LZMemoryType::Shared);
+  void *retval = cont->allocate(size, ClMemoryType::Shared);
   ERROR_IF((retval == nullptr), hipErrorMemoryAllocation);
 
   *ptr = retval;
@@ -1171,7 +1171,7 @@ hipError_t hipHostMalloc(void **ptr, size_t size, unsigned int flags) {
   LZ_TRY
   LZContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
-  *ptr = cont->allocate(size, 0x1000, LZMemoryType::Shared);
+  *ptr = cont->allocate(size, 0x1000, ClMemoryType::Shared);
   LZ_CATCH
   RETURN(hipSuccess);
 }
@@ -1921,9 +1921,9 @@ hipError_t hipSetupArgument(const void *arg, size_t size, size_t offset) {
   LZ_TRY 
 
   // Try for HipLZ kernel at first
-  LZContext* lzCtx = getTlsDefaultLzCtx();
-  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);  
-  RETURN(lzCtx->setArg(arg, size, offset));
+  ClContext* ctx = getTlsDefaultLzCtx();
+  ERROR_IF((ctx == nullptr), hipErrorInvalidDevice);  
+  RETURN(ctx->setArg(arg, size, offset));
 
   LZ_CATCH
 }

@@ -158,7 +158,7 @@ public:
 
   bool isNamed(const std::string &arg) const { return Name == arg; }
   OCLFuncInfo *getFuncInfo() const { return FuncInfo; }
-  size_t getTotalArgSize() const { return TotalArgSize; };
+  size_t getTotalArgSize() const { return TotalArgSize; }
 };
 
 
@@ -359,6 +359,8 @@ public:
   }
 };
 
+enum class ClMemoryType : unsigned { Host = 0, Device = 1, Shared = 2};
+
 class ClContext {
 protected:
   std::mutex ContextMutex;
@@ -382,42 +384,45 @@ protected:
 
 public:
   ClContext(ClDevice *D, unsigned f);
-  ~ClContext();
+  virtual ~ClContext();
 
   ClDevice *getDevice() const { return Device; }
   unsigned getFlags() const { return Flags; }
   hipStream_t getDefaultQueue() { return DefaultQueue; }
   const std::set<hipStream_t> & getQueues() { return Queues; };
-  virtual void reset();
+  virtual void reset() = 0;
 
-  virtual hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
-  ClEvent *createEvent(unsigned Flags);
-  virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
-  hipStream_t createRTSpecificQueue(cl::CommandQueue q, unsigned int f, int p);
-  bool releaseQueue(hipStream_t stream);
-  hipError_t recordEvent(hipStream_t stream, hipEvent_t event);
-  virtual bool finishAll();
+  virtual hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) = 0;
+  virtual hipEvent_t createEvent(unsigned Flags) = 0;
+  virtual hipError_t recordEvent(hipStream_t stream, hipEvent_t event) = 0;
+  virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority) = 0;
+  virtual bool releaseQueue(hipStream_t stream) = 0;
+  bool finishAll();
 
-  void *allocate(size_t size);
-  bool free(void *p);
+  virtual void *allocate(size_t size) = 0; 
+  virtual void *allocate(size_t size, ClMemoryType memTy) = 0;
+  virtual void *allocate(size_t size, size_t alignment, ClMemoryType) = 0;
+  virtual bool free(void *p) = 0;
   bool hasPointer(const void *p);
   bool getPointerSize(void *ptr, size_t *size);
   bool findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase,
                        size_t *psize);
 
-  hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q);
+  virtual hipError_t configureCall(dim3 grid, dim3 block, size_t shared, hipStream_t q) = 0;
   hipError_t setArg(const void *arg, size_t size, size_t offset);
-  hipError_t launchHostFunc(const void *HostFunction);
-  hipError_t createProgramBuiltin(std::string *module, const void *HostFunction,
-                                  std::string &FunctionName);
-  hipError_t destroyProgramBuiltin(const void *HostFunction);
+  // Launch HipLZ kernel (old HIP launch API).
+  virtual hipError_t launchHostFunc(const void *HostFunction) = 0;
+  // Launch HipLZ kernel (new HIP launch API).
+  virtual hipError_t launchHostFunc(const void *function_address, dim3 numBlocks,
+                                    dim3 dimBlocks, void **args, size_t sharedMemBytes,
+                                    hipStream_t stream) = 0;
 
-  hipError_t launchWithKernelParams(dim3 grid, dim3 block, size_t shared,
-                                    hipStream_t stream, void **kernelParams,
-                                    hipFunction_t kernel);
-  hipError_t launchWithExtraParams(dim3 grid, dim3 block, size_t shared,
-                                   hipStream_t stream, void **extraParams,
-                                   hipFunction_t kernel);
+  virtual hipError_t launchWithKernelParams(dim3 grid, dim3 block, size_t shared,
+                                            hipStream_t stream, void **kernelParams,
+                                            hipFunction_t kernel) = 0;
+  virtual hipError_t launchWithExtraParams(dim3 grid, dim3 block, size_t shared,
+                                           hipStream_t stream, void **extraParams,
+                                           hipFunction_t kernel) = 0;
 
   ClProgram *createProgram(std::string &binary);
   hipError_t destroyProgram(ClProgram *prog);

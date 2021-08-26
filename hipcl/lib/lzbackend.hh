@@ -92,8 +92,6 @@ struct hipContextSyncData {
   std::vector<ze_event_handle_t> signaledEvents;
 };
 
-enum class LZMemoryType : unsigned { Host = 0, Device = 1, Shared = 2};
-
 class LZExecItem;
 
 class LZKernel;
@@ -384,22 +382,28 @@ public:
   hipError_t popCallConfiguration(dim3 *grid, dim3 *block, size_t *shared,
                                   hipStream_t *q);
 
-  // Set argument
-  hipError_t setArg(const void *arg, size_t size, size_t offset);
-
   // Launch HipLZ kernel (old HIP launch API).
-  hipError_t launchHostFunc(const void* HostFunction);
+  virtual hipError_t launchHostFunc(const void* HostFunction);
 
   // Launch HipLZ kernel (new HIP launch API).
-  hipError_t launchHostFunc(const void *function_address, dim3 numBlocks,
-                            dim3 dimBlocks, void **args, size_t sharedMemBytes,
-                            hipStream_t stream);
+  virtual hipError_t launchHostFunc(const void *function_address, dim3 numBlocks,
+                                    dim3 dimBlocks, void **args, size_t sharedMemBytes,
+                                    hipStream_t stream);
+  virtual hipError_t launchWithKernelParams(dim3 grid, dim3 block, size_t shared,
+                                            hipStream_t stream, void **kernelParams,
+                                            hipFunction_t kernel);
+  virtual hipError_t launchWithExtraParams(dim3 grid, dim3 block,
+                                           size_t shared, hipStream_t stream,
+                                           void **extraParams,
+                                           hipFunction_t kernel);
 
   // Memory allocation
-  void *allocate(size_t size, LZMemoryType memTy = LZMemoryType::Device);
+  virtual void* allocate(size_t size);
+  virtual void *allocate(size_t size, ClMemoryType memTy);
+  virtual void* allocate(size_t size, size_t alignment, ClMemoryType memTy);
 
   // Memory free
-  bool free(void *p);
+  virtual bool free(void *p);
 
   // Get pointer info
   bool findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase, size_t *psize);
@@ -433,23 +437,19 @@ public:
   // Make the advise for the managed memory (i.e. unified shared memory)
   virtual hipError_t memAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, hipStream_t stream = 0);
 
-  // Cteate HipLZ event
-  LZEvent* createEvent(unsigned flags);
+  // Create HipLZ event
+  virtual hipEvent_t createEvent(unsigned flags);
+  virtual hipError_t recordEvent(hipStream_t stream, hipEvent_t event);
 
   // Create stream/queue
   virtual bool createQueue(hipStream_t *stream, unsigned int Flags, int priority);
+  virtual bool releaseQueue(hipStream_t stream);
 
   // Get the elapse between two events
   virtual hipError_t eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop);
 
-  // Synchronize all streams
-  virtual bool finishAll();
-
   // Reset current context
   virtual void reset();
-
-  // Allocate memory via Level-0 runtime
-  void* allocate(size_t size, size_t alignment, LZMemoryType memTy);
 
   // Register global variable
   bool registerVar(std::string *module, const void *HostVar, const char *VarName);

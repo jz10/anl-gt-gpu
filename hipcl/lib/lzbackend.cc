@@ -408,6 +408,11 @@ bool LZDevice::HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID) {
   return false;
 }
 
+hipError_t LZContext::recordEvent(hipStream_t stream, hipEvent_t event) {
+  FIND_QUEUE_LOCKED(stream);
+  return Queue->recordEvent(event) ? hipSuccess : hipErrorInvalidContext;
+}
+
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
   return Queue->memCopy(dst, src, sizeBytes);
@@ -535,15 +540,6 @@ hipError_t LZContext::popCallConfiguration(dim3 *grid, dim3 *block,
   return hipSuccess;
 }
 
-// Set argument
-hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-  LZExecItem* lzExecItem = (LZExecItem* )this->ExecStack.top();
-  lzExecItem->setArg(arg, size, offset);
-
-  return hipSuccess;
-}
-
 // Launch HipLZ kernel (old HIP launch API).
 hipError_t LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
@@ -592,6 +588,65 @@ hipError_t LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
   return Arguments.launch(kernel);
 }
 
+hipError_t LZContext::launchWithKernelParams(dim3 grid, dim3 block, size_t shared,
+                                             hipStream_t stream, void **kernelParams,
+                                             hipFunction_t kernel) {
+  FIND_QUEUE_LOCKED(stream);
+  LZExecItem Arguments(grid, block, shared, Queue);
+  Arguments.setArgsPointer(kernelParams);
+  return Arguments.launch(kernel);
+}
+
+hipError_t LZContext::launchWithExtraParams(dim3 grid, dim3 block,
+                                            size_t shared, hipStream_t stream,
+                                            void **extraParams,
+                                            hipFunction_t kernel) {
+  FIND_QUEUE_LOCKED(stream);
+
+  void *args = nullptr;
+  size_t size = 0;
+
+  void **p = extraParams;
+  while (*p && (*p != HIP_LAUNCH_PARAM_END)) {
+    if (*p == HIP_LAUNCH_PARAM_BUFFER_POINTER) {
+      args = (void *)p[1];
+      p += 2;
+      continue;
+    } else if (*p == HIP_LAUNCH_PARAM_BUFFER_SIZE) {
+      size = (size_t)p[1];
+      p += 2;
+      continue;
+    } else {
+      logError("Unknown parameter in extraParams: {}\n", *p);
+      return hipErrorLaunchFailure;
+    }
+  }
+
+  if (args == nullptr || size == 0) {
+    logError("extraParams doesn't contain all required parameters\n");
+    return hipErrorLaunchFailure;
+  }
+
+  if (size != kernel->getTotalArgSize()) {
+    logError("extraParams doesn't have correct size\n");
+    return hipErrorLaunchFailure;
+  }
+
+  LZExecItem Arguments(grid, block, shared, Queue);
+  OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
+  size_t offset = 0;
+  for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
+    OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
+    if (ai.type == OCLType::Pointer) {
+      // TODO other than global AS ?
+      assert(ai.size == sizeof(void *));
+    }
+    Arguments.setArg(args, ai.size, offset);
+    offset += ai.size;
+    args = (char *)args + ai.size;
+  }
+  return Arguments.launch(kernel);
+}
 
 // Get HipLZ kernel via function name
 hipFunction_t LZContext::GetKernelByFunctionName(std::string funcName) {
@@ -608,9 +663,9 @@ hipFunction_t LZContext::GetKernelByFunctionName(std::string funcName) {
 }
 
 // Allocate memory via Level-0 runtime
-void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
+void* LZContext::allocate(size_t size, size_t alignment, ClMemoryType memTy) {
   void *ptr = 0;
-  if (memTy == LZMemoryType::Shared) {
+  if (memTy == ClMemoryType::Shared) {
     ze_device_mem_alloc_desc_t dmaDesc;
     dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     dmaDesc.pNext = NULL;
@@ -628,7 +683,7 @@ void* LZContext::allocate(size_t size, size_t alignment, LZMemoryType memTy) {
     logDebug("LZ MEMORY ALLOCATE via calling zeMemAllocShared {} ", status);
 
     return ptr;
-  } else if (memTy == LZMemoryType::Device) {
+  } else if (memTy == ClMemoryType::Device) {
     ze_device_mem_alloc_desc_t dmaDesc;
     dmaDesc.stype = ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC;
     dmaDesc.pNext = NULL;
@@ -662,8 +717,12 @@ bool LZContext::findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase, size
   return true;
 }
 
-void * LZContext::allocate(size_t size, LZMemoryType memTy) {
-  return allocate(size, 0x1000, memTy); // LZMemoryType::Device); // Shared);
+void * LZContext::allocate(size_t size, ClMemoryType memTy) {
+  return allocate(size, 0x1000, memTy);
+}
+
+void * LZContext::allocate(size_t size) {
+  return allocate(size, 0x1000, ClMemoryType::Device);
 }
 
 bool LZContext::free(void *p) {
@@ -747,15 +806,28 @@ bool LZContext::createQueue(hipStream_t *stream, unsigned int flags, int priorit
   hipStream_t Ptr = new LZQueue(this, flags, priority);
   Queues.insert(Ptr);
   *stream = Ptr;
+  return true;
+}
 
+bool LZContext::releaseQueue(hipStream_t stream) {
+  std::lock_guard<std::mutex> Lock(ContextMutex);
+
+  auto I = Queues.find(stream);
+  if (I == Queues.end())
+    return false;
+  hipStream_t QueuePtr = *I;
+  delete QueuePtr;
+  Queues.erase(I);
   return true;
 }
 
 // Create HipLZ event
-LZEvent* LZContext::createEvent(unsigned flags) {
+hipEvent_t LZContext::createEvent(unsigned flags) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
   return new LZEvent(this, flags);
 }
+
+#define NANOSECS 1000000000
 
 // Get the elapse between two events
 hipError_t LZContext::eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t stop) {
@@ -803,27 +875,6 @@ hipError_t LZContext::eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t s
   *ms = (float)MS + FractInMS;
 
   return hipSuccess;
-}
-
-// The synchronious among all HipLZ queues
-bool LZContext::finishAll() {
-  std::set<hipStream_t> Copies;
-  {
-    std::lock_guard<std::mutex> Lock(ContextMutex);
-    for (hipStream_t I : Queues) {
-      Copies.insert(I);
-    }
-    Copies.insert(DefaultQueue);
-  }
-
-  for (hipStream_t I : Copies) {
-    bool err = I->finish();
-    if (!err) {
-      logError("HipLZ Finish() failed with error {}\n", err);
-      return false;
-    }
-  }
-  return true;
 }
 
 // Enforce HIP correct stream synchronization (For now only Legacy is suported by HIP)
@@ -1332,7 +1383,7 @@ LZCommandList::LZCommandList(LZContext* lzContext_) {
   this->lzContext = lzContext_;
 
   // Initialize the shared memory buffer
-  this->shared_buf = this->lzContext->allocate(32, 8, LZMemoryType::Shared);
+  this->shared_buf = this->lzContext->allocate(32, 8, ClMemoryType::Shared);
 
   // Initialize the uint64_t part as 0
    * (uint64_t* )this->shared_buf = 0;

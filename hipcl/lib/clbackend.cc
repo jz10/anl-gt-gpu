@@ -155,10 +155,6 @@ static void intel_driver_cb(
     logDebug("INTEL DIAG: {}\n", errinfo);
 }
 
-hipStream_t ClContext::createRTSpecificQueue(cl::CommandQueue q, unsigned int f, int p) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to createRTSpecificQueue", hipErrorNotSupported);
-}
-
 ClContext::ClContext(ClDevice *D, unsigned f) {
   Device = D;
   Flags = f;
@@ -192,30 +188,9 @@ ClContext::ClContext(ClDevice *D, unsigned f) {
                             CL_QUEUE_PROFILING_ENABLE, &err);
   assert(err == CL_SUCCESS);
 
-  DefaultQueue = createRTSpecificQueue(CmdQueue, 0, 0); 
+//  DefaultQueue = createRTSpecificQueue(CmdQueue, 0, 0); 
 
   Memory.init(Context);
-}
-
-void ClContext::reset() {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-  int err;
-
-  while (!this->ExecStack.empty()) {
-    ExecItem *Item = ExecStack.top();
-    delete Item;
-    this->ExecStack.pop();
-  }
-
-  this->Queues.clear();
-  delete DefaultQueue;
-  this->Memory.clear();
-
-  cl::CommandQueue CmdQueue(Context, Device->getDevice(),
-                            CL_QUEUE_PROFILING_ENABLE, &err);
-  assert(err == CL_SUCCESS);
-
-  DefaultQueue = createRTSpecificQueue(CmdQueue, 0, 0); 
 }
 
 ClContext::~ClContext() {
@@ -254,32 +229,6 @@ hipStream_t ClContext::findQueue(hipStream_t stream) {
   return *I;
 }
 
-ClEvent *ClContext::createEvent(unsigned flags) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to createEvent", hipErrorNotSupported);
-}
-
-void *ClContext::allocate(size_t size) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-  if (!Device->reserveMem(size))
-    return nullptr;
-
-  void *retval = Memory.allocate(size);
-  if (retval == nullptr)
-    Device->releaseMem(size);
-  return retval;
-}
-
-bool ClContext::free(void *p) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  size_t size;
-
-  bool retval = Memory.free(p, &size);
-  if (retval)
-    Device->releaseMem(size);
-  return retval;
-}
-
 bool ClContext::hasPointer(const void *p) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
   return Memory.hasPointer(p);
@@ -296,83 +245,24 @@ bool ClContext::findPointerInfo(hipDeviceptr_t dptr, hipDeviceptr_t *pbase,
   return Memory.pointerInfo(dptr, pbase, psize);
 }
 
-hipError_t ClContext::recordEvent(hipStream_t stream, hipEvent_t event) {
-  FIND_QUEUE_LOCKED(stream);
-  
-  return Queue->recordEvent(event) ? hipSuccess : hipErrorInvalidContext;
-}
-
-#define NANOSECS 1000000000
-
-hipError_t ClContext::eventElapsedTime(float *ms, hipEvent_t start,
-                                       hipEvent_t stop) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  assert(start->isFromContext(Context));
-  assert(stop->isFromContext(Context));
-
-  if (!start->isRecordingOrRecorded() || !stop->isRecordingOrRecorded())
-    return hipErrorInvalidResourceHandle;
-
-  start->updateFinishStatus();
-  stop->updateFinishStatus();
-  if (!start->isFinished() || !stop->isFinished())
-    return hipErrorNotReady;
-
-  uint64_t Started = start->getFinishTime();
-  uint64_t Finished = stop->getFinishTime();
-
-  logDebug("EventElapsedTime: STARTED {} / {} FINISHED {} / {} \n",
-           (void *)start, Started, (void *)stop, Finished);
-
-  // apparently fails for Intel NEO, god knows why
-  // assert(Finished >= Started);
-  uint64_t Elapsed;
-  if (Finished < Started) {
-    logWarn("Finished < Started\n");
-    Elapsed = Started - Finished;
-  } else
-    Elapsed = Finished - Started;
-  uint64_t MS = (Elapsed / NANOSECS)*1000;
-  uint64_t NS = Elapsed % NANOSECS;
-  float FractInMS = ((float)NS) / 1000000.0f;
-  *ms = (float)MS + FractInMS;
-  return hipSuccess;
-}
-
-bool ClContext::createQueue(hipStream_t *stream, unsigned flags, int priority) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  int err;
-  cl::CommandQueue NewQueue(Context, Device->getDevice(),
-                            CL_QUEUE_PROFILING_ENABLE, &err);
-  assert(err == CL_SUCCESS);
-
-  hipStream_t Ptr = createRTSpecificQueue(NewQueue, flags, priority); 
-  Queues.insert(Ptr);
-  *stream = Ptr;
-  return true;
-}
-
-bool ClContext::releaseQueue(hipStream_t stream) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  auto I = Queues.find(stream);
-  if (I == Queues.end())
-    return false;
-  hipStream_t QueuePtr = *I;
-  delete QueuePtr;
-  Queues.erase(I);
-  return true;
-}
-
 bool ClContext::finishAll() {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to finishAll", hipErrorNotSupported);
-}
+  std::set<hipStream_t> Copies;
+  {
+    std::lock_guard<std::mutex> Lock(ContextMutex);
+    for (hipStream_t I : Queues) {
+      Copies.insert(I);
+    }
+    Copies.insert(DefaultQueue);
+  }
 
-hipError_t ClContext::configureCall(dim3 grid, dim3 block, size_t shared,
-                                    hipStream_t stream) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to configureCall", hipErrorNotSupported);
+  for (hipStream_t I : Copies) {
+    bool err = I->finish();
+    if (!err) {
+      logError("Finish() failed with error {}\n", err);
+      return false;
+    }
+  }
+  return true;
 }
 
 hipError_t ClContext::setArg(const void *arg, size_t size, size_t offset) {
@@ -380,87 +270,6 @@ hipError_t ClContext::setArg(const void *arg, size_t size, size_t offset) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
   ExecStack.top()->setArg(arg, size, offset);
   return hipSuccess;
-}
-
-hipError_t ClContext::createProgramBuiltin(std::string *module,
-                                           const void *HostFunction,
-                                           std::string &FunctionName) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to createProgramBuiltin", hipErrorNotSupported);
-
-/*  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  std::cout << "call cl create program builtin" << std::endl;
-  
-  logDebug("createProgramBuiltin: {}\n", FunctionName);
-
-  ClProgram *p = new ClProgram(Context, Device->getDevice());
-  if (p == nullptr)
-    return hipErrorOutOfMemory;
-
-  if (!p->setup(*module)) {
-    logCritical("Failed to build program for '{}'", FunctionName);
-    delete p;
-    return hipErrorInitializationError;
-  }
-
-  BuiltinPrograms[HostFunction] = p;
-  return hipSuccess;*/
-}
-
-hipError_t ClContext::destroyProgramBuiltin(const void *HostFunction) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  auto it = BuiltinPrograms.find(HostFunction);
-  if (it == BuiltinPrograms.end())
-    return hipErrorUnknown;
-  delete it->second;
-  BuiltinPrograms.erase(it);
-  return hipSuccess;
-}
-
-hipError_t ClContext::launchHostFunc(const void *HostFunction) {
-
-  std::string FunctionName;
-  std::string *module;
-
-  if (!Device->getModuleAndFName(HostFunction, FunctionName, &module)) {
-    logCritical("can NOT find kernel with stub address {} for device {}\n",
-                HostFunction, Device->getHipDeviceT());
-    return hipErrorLaunchFailure;
-  }
-
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  ClKernel *Kernel = nullptr;
-  // TODO can this happen ?
-  if (BuiltinPrograms.find(HostFunction) != BuiltinPrograms.end())
-    Kernel = BuiltinPrograms[HostFunction]->getKernel(FunctionName);
-
-  if (Kernel == nullptr) {
-    logCritical("can NOT find kernel with stub address {} for device {}\n",
-                HostFunction, Device->getHipDeviceT());
-    return hipErrorLaunchFailure;
-  }
-
-  ExecItem *Arguments;
-  Arguments = ExecStack.top();
-  ExecStack.pop();
-
-  return Arguments->launch(Kernel);
-}
-
-hipError_t ClContext::launchWithKernelParams(dim3 grid, dim3 block,
-                                             size_t shared, hipStream_t stream,
-                                             void **kernelParams,
-                                             hipFunction_t kernel) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to call launchWithKernelParams", hipErrorNotSupported);
-}
-
-hipError_t ClContext::launchWithExtraParams(dim3 grid, dim3 block,
-                                            size_t shared, hipStream_t stream,
-                                            void **extraParams,
-                                            hipFunction_t kernel) {
-  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to call launchWithExtraParams", hipErrorNotSupported);
 }
 
 ClProgram *ClContext::createProgram(std::string &binary) {
@@ -600,7 +409,7 @@ ClDevice::ClDevice(cl::Device d, cl::Platform p, hipDevice_t index) {
 }
 
 void ClDevice::setPrimaryCtx() {
-  PrimaryContext = new ClContext(this, 0);
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClDevice to setPrimaryCtx", hipErrorNotSupported);
 }
 
 void ClDevice::reset() {
@@ -700,66 +509,20 @@ bool ClDevice::removeContext(ClContext *ctx) {
 }
 
 ClContext *ClDevice::newContext(unsigned int flags) {
-  std::lock_guard<std::mutex> Lock(DeviceMutex);
-
-  ClContext *ctx = new ClContext(this, flags);
-  if (ctx != nullptr)
-    Contexts.emplace(ctx);
-  return ctx;
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClDevice to newContext", hipErrorNotSupported);
 }
 
 void ClDevice::registerModule(std::string *module) {
-  std::lock_guard<std::mutex> Lock(DeviceMutex);
-  Modules.push_back(module);
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClDevice to registerModule", hipErrorNotSupported);
 }
 
 void ClDevice::unregisterModule(std::string *module) {
-  std::lock_guard<std::mutex> Lock(DeviceMutex);
-
-  auto it = std::find(Modules.begin(), Modules.end(), module);
-  if (it == Modules.end()) {
-    logCritical("unregisterModule: couldn't find {}\n", (void *)module);
-    return;
-  } else
-    Modules.erase(it);
-
-  const void *HostFunction = nullptr;
-  std::map<const void *, std::string *>::iterator it2, e;
-
-  for (it2 = HostPtrToModuleMap.begin(), e = HostPtrToModuleMap.end(); it2 != e;
-       ++it2) {
-
-    if (it2->second == module) {
-      HostFunction = it2->first;
-      HostPtrToModuleMap.erase(it2);
-      auto it3 = HostPtrToNameMap.find(HostFunction);
-      HostPtrToNameMap.erase(it3);
-      PrimaryContext->destroyProgramBuiltin(HostFunction);
-      for (ClContext *C : Contexts) {
-        C->destroyProgramBuiltin(HostFunction);
-      }
-      break;
-    }
-
-  }
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClDevice to unregisterModule", hipErrorNotSupported);
 }
 
 bool ClDevice::registerFunction(std::string *module, const void *HostFunction,
                                 const char *FunctionName) {
-  std::lock_guard<std::mutex> Lock(DeviceMutex);
-
-  auto it = std::find(Modules.begin(), Modules.end(), module);
-  if (it == Modules.end()) {
-    logError("Module PTR not FOUND: {}\n", (void *)module);
-    return false;
-  }
-
-  HostPtrToModuleMap.emplace(std::make_pair(HostFunction, module));
-  HostPtrToNameMap.emplace(std::make_pair(HostFunction, FunctionName));
-
-  std::string temp(FunctionName);
-  return (PrimaryContext->createProgramBuiltin(module, HostFunction, temp) ==
-          hipSuccess);
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClDevice to registerFunction", hipErrorNotSupported);
 }
 
 bool ClDevice::getModuleAndFName(const void *HostFunction,
