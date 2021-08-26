@@ -502,31 +502,18 @@ LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext_, ze_command_qu
 
 bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
   logDebug("LZ CREATE MODULE {} ", funcName);
-  // Parse the SPIR-V fat binary to retrieve kernel function information
-  size_t numWords = ilSize / 4;
-  int32_t * binarydata = new int32_t[numWords + 1];
-  std::memcpy(binarydata, funcIL, ilSize);
-  // Extract kernel function information
-  bool res = parseSPIR(binarydata, numWords, FuncInfos);
-  delete[] binarydata;
-  if (!res) {
-    logError("SPIR-V parsing failed\n");
-    return false;
-  }
 
-  logDebug("LZ PARSE SPIR {} ", funcName);
-
-  LZModule* lzModule = 0;
+  LZProgram* lzModule = 0;
   if (this->IL2Module.find(funcIL) == this->IL2Module.end()) {
     // Create HipLZ module and register it
-    lzModule = new LZModule(this, funcIL, ilSize);
+    lzModule = new LZProgram(this, funcIL, ilSize);
     this->IL2Module[funcIL] = lzModule;
   } else
     lzModule = this->IL2Module[funcIL];
 
 
   // Create kernel object
-  lzModule->CreateKernel(funcName, FuncInfos);
+  lzModule->CreateKernel(funcName);
 
   return true;
 }
@@ -564,16 +551,16 @@ hipError_t LZContext::setArg(const void *arg, size_t size, size_t offset) {
 // Launch HipLZ kernel (old HIP launch API).
 hipError_t LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
-  LZKernel* Kernel = 0;
+  hipFunction_t Kernel = 0;
   // logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
   // if (!this->lzModule) {
-  //   HIP_PROCESS_ERROR_MSG("Hiplz LZModule was not created before invoking kernel?", hipErrorInitializationError);
+  //   HIP_PROCESS_ERROR_MSG("Hiplz LZProgram was not created before invoking kernel?", hipErrorInitializationError);
   // }
 
   std::string HostFunctionName = this->lzDevice->GetHostFunctionName(HostFunction);
   Kernel = GetKernelByFunctionName(HostFunctionName);
   if (!Kernel) {
-    HIP_PROCESS_ERROR_MSG("Hiplz LZModule was not created before invoking kernel?", hipErrorInitializationError);
+    HIP_PROCESS_ERROR_MSG("Hiplz LZProgram was not created before invoking kernel?", hipErrorInitializationError);
   }
 
   logDebug("LAUNCH HOST FUNCTION {} - {} ", HostFunctionName,  Kernel != nullptr);
@@ -597,10 +584,10 @@ hipError_t LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
 
   std::string hostFunctionName =
       this->lzDevice->GetHostFunctionName(hostFunction);
-  LZKernel *kernel = GetKernelByFunctionName(hostFunctionName);
+  hipFunction_t kernel = GetKernelByFunctionName(hostFunctionName);
   if (!kernel) {
     HIP_PROCESS_ERROR_MSG(
-        "Hiplz LZModule was not created before invoking kernel?",
+        "Hiplz LZProgram was not created before invoking kernel?",
         hipErrorInitializationError);
   }
 
@@ -611,12 +598,12 @@ hipError_t LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
 
 
 // Get HipLZ kernel via function name
-LZKernel* LZContext::GetKernelByFunctionName(std::string funcName) {
-  LZKernel* lzKernel = 0;
+hipFunction_t LZContext::GetKernelByFunctionName(std::string funcName) {
+  hipFunction_t lzKernel = 0;
   // Go through all modules in current HipLZ context to find the kernel via function name
   for (auto mod : this->IL2Module) {
-    LZModule* lzModule = mod.second;
-    lzKernel = lzModule->GetKernel(funcName);
+    LZProgram* lzModule = mod.second;
+    lzKernel = lzModule->getKernel(funcName);
     if (lzKernel)
       break;
   }
@@ -696,7 +683,7 @@ bool LZContext::registerVar(std::string *module, const void *HostVar, const char
   void* VarPtr = 0;
 
   for (auto mod : this->IL2Module) {
-    LZModule* lzModule = mod.second;
+    LZProgram* lzModule = mod.second;
 
     if (lzModule->getSymbolAddressSize(VarName, &VarPtr, &VarSize)) {
       // Register HipLZ module, address and size information based on symbol name
@@ -716,7 +703,7 @@ bool LZContext::registerVar(std::string *module, const void *HostVar, const char
   void* VarPtr = 0;
 
   for (auto mod : this->IL2Module) {
-    LZModule* lzModule = mod.second;
+    LZProgram* lzModule = mod.second;
 
     if (lzModule->getSymbolAddressSize(VarName, &VarPtr, &VarSize)) {
       // Register HipLZ module, address and size information based on symbol name
@@ -745,7 +732,7 @@ bool LZContext::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, siz
 
   // Go through HipLZ modules and identify the relevant global pointer information
   for (auto mod : IL2Module) {
-    LZModule* lzModule = mod.second;
+    LZProgram* lzModule = mod.second;
     if (lzModule->getSymbolAddressSize(name, dptr, bytes)) {
       // Register HipLZ module, address and size information based on symbol name
       GlobalVarsMap[(const char *)name] = std::make_tuple(lzModule, *dptr, *bytes);
@@ -1854,7 +1841,17 @@ int LZExecItem::setupAllArgs(ClKernel *k) {
   return CL_SUCCESS;
 }
 
-LZModule::LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) {
+LZProgram::LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) : ClProgram() {
+
+  size_t numWords = ilSize / 4;
+  int32_t * binarydata = new int32_t[numWords + 1];
+  std::memcpy(binarydata, funcIL, ilSize);
+  // Extract kernel function information
+  bool res = parseSPIR(binarydata, numWords, FuncInfos);
+  delete[] binarydata;
+  if (!res)
+    HIP_PROCESS_ERROR_MSG("Hiplz SPIR-V parsing failed", hipErrorInitializationError);
+
   // Create module with global address aware
   std::string compilerOptions = " -cl-std=CL2.0 -cl-take-global-address -cl-match-sincospi";
   ze_module_desc_t moduleDesc = {
@@ -1874,13 +1871,12 @@ LZModule::LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) {
   logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
 }
 
-LZModule::~LZModule() {
+LZProgram::~LZProgram() {
   zeModuleDestroy(this->hModule);
-  // TODO: destroy kernels
 }
 
 // Create Level-0 kernel
-void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInfos) {
+void LZProgram::CreateKernel(std::string &funcName) {
   if (this->kernels.find(funcName) != this->kernels.end())
     return;
 
@@ -1891,17 +1887,8 @@ void LZModule::CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInf
   this->kernels[funcName] = new LZKernel(this, funcName, FuncInfos[funcName]);
 }
 
-// Get Level-0 kernel
-LZKernel* LZModule::GetKernel(std::string funcName) {
-  if (kernels.find(funcName) == kernels.end())
-    return nullptr;
-
-  return kernels[funcName];
-}
-
-
 // Get hte global pointer related information
-bool LZModule::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes) {
+bool LZProgram::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes) {
   size_t varSize = 0;
   ze_result_t status = zeModuleGetGlobalPointer(this->hModule, name, &varSize, dptr);
   if (status != ZE_RESULT_SUCCESS) {
@@ -1932,7 +1919,7 @@ bool LZModule::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size
   return true;
 }
 
-LZKernel::LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* funcInfo) : ClKernel(funcName, funcInfo) {
+LZKernel::LZKernel(LZProgram* lzModule, std::string funcName, OCLFuncInfo* funcInfo) : ClKernel(funcName, funcInfo) {
   // Create kernel
   ze_kernel_desc_t kernelDesc = {
     ZE_STRUCTURE_TYPE_KERNEL_DESC,

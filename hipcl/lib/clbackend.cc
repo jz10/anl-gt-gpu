@@ -31,66 +31,9 @@ ClKernel::~ClKernel() {}
 
 /********************************/
 
-bool ClProgram::setup(std::string &binary) {
-
-  size_t numWords = binary.size() / 4;
-  int32_t *bindata = new int32_t[numWords + 1];
-  std::memcpy(bindata, binary.data(), binary.size());
-  bool res = parseSPIR(bindata, numWords, FuncInfos);
-  delete[] bindata;
-  if (!res) {
-    logError("SPIR-V parsing failed\n");
-    return false;
-  }
-
-  int err;
-  std::vector<char> binary_vec(binary.begin(), binary.end());
-  Program = cl::Program(Context, binary_vec, false, &err);
-  if (err != CL_SUCCESS) {
-    logError("CreateProgramWithIL Failed: {}\n", err);
-    return false;
-  }
-
-  std::string name = Device.getInfo<CL_DEVICE_NAME>();
-  
-  int build_failed = Program.build("-x spir -cl-kernel-arg-info");
-
-  std::string log = Program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(Device, &err);
-  if (err != CL_SUCCESS) {
-    logError("clGetProgramBuildInfo() Failed: {}\n", err);
-    return false;
-  }
-  logDebug("Program BUILD LOG for device {}:\n{}\n", name, log);
-  if (build_failed != CL_SUCCESS) {
-    logError("clBuildProgram() Failed: {}\n", build_failed);
-    return false;
-  }
-
-  std::vector<cl::Kernel> kernels;
-  err = Program.createKernels(&kernels);
-  if (err != CL_SUCCESS) {
-    logError("clCreateKernels() Failed: {}\n", err);
-    return false;
-  }
-  logDebug("Kernels in program: {} \n", kernels.size());
-  Kernels.resize(kernels.size());
-
-//  for (size_t i = 0; i < kernels.size(); ++i) {
-//    ClKernel *k = new ClKernel(Context, std::move(kernels[i]));
-//    if (k == nullptr)
-//      return false; // TODO memleak
-//    if (!k->setup(i, FuncInfos))
-//      return false;
-//    Kernels[i] = k;
-//  }
-  return true;
-}
-
 ClProgram::~ClProgram() {
-  for (hipFunction_t K : Kernels) {
-    delete K;
-  }
-  Kernels.clear();
+  for (auto x: kernels)
+    delete x.second;
 
   std::set<OCLFuncInfo *> PtrsToDelete;
   for (auto &kv : FuncInfos)
@@ -100,17 +43,16 @@ ClProgram::~ClProgram() {
 }
 
 hipFunction_t ClProgram::getKernel(std::string &name) {
-  for (hipFunction_t It : Kernels) {
-    if (It->isNamed(name)) {
-      return It;
-    }
-  }
-  return nullptr;
+  auto it = kernels.find(name);
+  if (it == kernels.end())
+    return nullptr;
+  else
+    return it->second;
 }
 
 hipFunction_t ClProgram::getKernel(const char *name) {
-  std::string SearchName(name);
-  return getKernel(SearchName);
+  std::string SName(name);
+  return this->getKernel(SName);
 }
 
 /********************************/
@@ -537,7 +479,9 @@ hipError_t ClContext::setArg(const void *arg, size_t size, size_t offset) {
 hipError_t ClContext::createProgramBuiltin(std::string *module,
                                            const void *HostFunction,
                                            std::string &FunctionName) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to createProgramBuiltin", hipErrorNotSupported);
+
+/*  std::lock_guard<std::mutex> Lock(ContextMutex);
 
   std::cout << "call cl create program builtin" << std::endl;
   
@@ -554,7 +498,7 @@ hipError_t ClContext::createProgramBuiltin(std::string *module,
   }
 
   BuiltinPrograms[HostFunction] = p;
-  return hipSuccess;
+  return hipSuccess;*/
 }
 
 hipError_t ClContext::destroyProgramBuiltin(const void *HostFunction) {
@@ -614,20 +558,7 @@ hipError_t ClContext::launchWithExtraParams(dim3 grid, dim3 block,
 }
 
 ClProgram *ClContext::createProgram(std::string &binary) {
-  std::lock_guard<std::mutex> Lock(ContextMutex);
-
-  std::cout << "call cl create program" << std::endl;
-  ClProgram *prog = new ClProgram(Context, Device->getDevice());
-  if (prog == nullptr)
-    return nullptr;
-
-  if (!prog->setup(binary)) {
-    delete prog;
-    return nullptr;
-  }
-
-  Programs.emplace(prog);
-  return prog;
+  HIP_PROCESS_ERROR_MSG("HipLZ should not use ClContext to call createProgram", hipErrorNotSupported);
 }
 
 hipError_t ClContext::destroyProgram(ClProgram *prog) {

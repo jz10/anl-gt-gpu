@@ -166,19 +166,20 @@ public:
 
 class ClProgram {
 protected:
-  cl::Program Program;
-  cl::Context Context;
-  cl::Device Device;
-  std::vector<hipFunction_t> Kernels;
   OpenCLFunctionInfoMap FuncInfos;
+  // The name --> HipLZ kernel map
+  std::map<std::string, hipFunction_t> kernels;
 
 public:
-  ClProgram(cl::Context C, cl::Device D) : Program(), Context(C), Device(D) {}
-  ~ClProgram();
+  ClProgram() {}
+  virtual ~ClProgram();
 
-  bool setup(std::string &binary);
-  hipFunction_t getKernel(const char *name);
   hipFunction_t getKernel(std::string &name);
+  hipFunction_t getKernel(const char *name);
+
+  virtual void CreateKernel(std::string &funcName) = 0;
+  virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes) = 0;
+  virtual bool symbolSupported() = 0;
 };
 
 class SVMemoryRegion {

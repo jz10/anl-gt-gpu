@@ -616,10 +616,7 @@ typedef ClKernel *hipFunction_t;
 
 class ClProgram;
 
-class LZModule;
-
-// typedef ClProgram *hipModule_t;
-typedef LZModule *hipModule_t;
+typedef ClProgram *hipModule_t;
 
 class ClQueue;
 

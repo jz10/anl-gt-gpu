@@ -259,7 +259,7 @@ protected:
   bool retrieveCmdQueueGroupOrdinal(uint32_t& ordinal);
 };
 
-class LZModule;
+class LZProgram;
 
 class LZKernel : public ClKernel {
 protected:
@@ -267,39 +267,34 @@ protected:
   ze_kernel_handle_t hKernel;
 
 public:
-  LZKernel(LZModule* lzModule, std::string funcName, OCLFuncInfo* FuncInfo_);
+  LZKernel(LZProgram* lzModule, std::string funcName, OCLFuncInfo* funcInfo);
   ~LZKernel();
 
   ze_kernel_handle_t GetKernelHandle() { return this->hKernel; }
 };
 
-class LZModule {
+class LZProgram : public ClProgram {
 protected:
   // HipLZ module handle
   ze_module_handle_t hModule;
-  // The name --> HipLZ kernel map
-  std::map<std::string, LZKernel* > kernels;
 
 public:
-  LZModule(LZContext* lzContext, uint8_t* funcIL, size_t ilSize);
-  ~LZModule();
+  LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize);
+  ~LZProgram();
 
   // Get HipLZ module handle
   ze_module_handle_t GetModuleHandle() { return this->hModule; }
 
   // Create HipLZ kernel via function name
-  void CreateKernel(std::string funcName, OpenCLFunctionInfoMap& FuncInfos);
-
-  // Get HipLZ kernel via funciton name
-  LZKernel* GetKernel(std::string funcName);
+  virtual void CreateKernel(std::string &funcName);
 
   // Check if support symbol address
-  bool symbolSupported() {
+  virtual bool symbolSupported() {
     return true;
   }
 
   // Get the pointer address and size information via gievn symbol's name
-  bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes);
+  virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t* bytes);
 };
 
 class LZEvent : public ClEvent {
@@ -353,16 +348,13 @@ protected:
   LZDevice* lzDevice;
 
   // Map between IL binary to HipLZ module
-  std::map<uint8_t* , LZModule* > IL2Module;
+  std::map<uint8_t* , LZProgram* > IL2Module;
 
   // HipLZ context handle
   ze_context_handle_t hContext;
 
-  // OpenCL function information map, this is used for presenting SPIR-V kernel funcitons' arguments
-  OpenCLFunctionInfoMap FuncInfos;
-
   // The map between global variable name and its relevant HipLZ module, device poitner and size information
-  std::map<std::string, std::tuple<LZModule *, hipDeviceptr_t, size_t>> GlobalVarsMap;
+  std::map<std::string, std::tuple<LZProgram *, hipDeviceptr_t, size_t>> GlobalVarsMap;
 
   // Monitor thread to release events for stream synchronization
   pthread_t monitorThreadId;
@@ -471,7 +463,7 @@ public:
 
 protected:
    // Get HipLZ kernel via function name
-  LZKernel* GetKernelByFunctionName(std::string funcName);
+  hipFunction_t GetKernelByFunctionName(std::string funcName);
 };
 
 // HipLZ driver object that manages device objects and the current context
