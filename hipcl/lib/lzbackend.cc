@@ -410,26 +410,31 @@ bool LZDevice::HasPCIBusId(int pciDomainID, int pciBusID, int pciDeviceID) {
 
 hipError_t LZContext::recordEvent(hipStream_t stream, hipEvent_t event) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->recordEvent(event) ? hipSuccess : hipErrorInvalidContext;
 }
 
 hipError_t LZContext::memCopy(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memCopy(dst, src, sizeBytes);
 }
 
 hipError_t LZContext::memCopyAsync(void *dst, const void *src, size_t sizeBytes, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memCopyAsync(dst, src, sizeBytes);
 }
 
 hipError_t LZContext::memFill(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memFill(dst, size, pattern, pattern_size);
 }
 
 hipError_t LZContext::memFillAsync(void *dst, size_t size, const void *pattern, size_t pattern_size, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memFillAsync(dst, size, pattern, pattern_size);
 }
 
@@ -437,12 +442,14 @@ hipError_t LZContext::memFillAsync(void *dst, size_t size, const void *pattern, 
 hipError_t LZContext::memCopy2D(void *dst, size_t dpitch, const void *src, size_t spitch,
 				size_t width, size_t height, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memCopy2D(dst, dpitch, src, spitch, width, height);
 }
 
 hipError_t LZContext::memCopy2DAsync(void *dst, size_t dpitch, const void *src, size_t spitch,
 				     size_t width, size_t height, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memCopy2DAsync(dst, dpitch, src, spitch, width, height);
 }
 
@@ -451,6 +458,7 @@ hipError_t LZContext::memCopy3D(void *dst, size_t dpitch, size_t dspitch,
 				const void *src, size_t spitch, size_t sspitch,
 				size_t width, size_t height, size_t depth, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memCopy3D(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth);
 }
 
@@ -458,6 +466,7 @@ hipError_t LZContext::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
 				     const void *src, size_t spitch, size_t sspitch,
 				     size_t width, size_t height, size_t depth, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   return Queue->memCopy3DAsync(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth);
 }
 
@@ -487,7 +496,10 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
   // Create the default command queue
   this->DefaultQueue = new LZQueue(this, LZCommandList::CreateCmdList(this), 0, 0);
   // Initialize
+  stopMonitor = false;
   monitorThreadId = 0;
+  if (CreateMonitor())
+    logError("LZ CONTEXT sync event monitor could not be created");
 }
 
 LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext_, ze_command_queue_handle_t hQueue)
@@ -498,7 +510,10 @@ LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext_, ze_command_qu
   // Create the default command queue
   this->DefaultQueue = new LZQueue(this, hQueue, LZCommandList::CreateCmdList(this), 0, 0);
   // Initialize
+  stopMonitor = false;
   monitorThreadId = 0;
+  if (CreateMonitor())
+    logError("LZ CONTEXT sync event monitor could not be created");
 }
 
 bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcName) {
@@ -522,6 +537,7 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
 // Launch HipLZ kernel (old HIP launch API).
 hipError_t LZContext::launchHostFunc(const void* HostFunction) {
   std::lock_guard<std::mutex> Lock(ContextMutex);
+  synchronizeQueues(DefaultQueue);
   hipFunction_t Kernel = 0;
   // logDebug("LAUNCH HOST FUNCTION {} ",  this->lzModule != nullptr);
   // if (!this->lzModule) {
@@ -551,6 +567,7 @@ hipError_t LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
                                dim3 dimBlocks, void **args,
                                size_t sharedMemBytes, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   logDebug("Launch kernel via new HIP launch API.");
 
   std::string hostFunctionName =
@@ -571,6 +588,7 @@ hipError_t LZContext::launchWithKernelParams(dim3 grid, dim3 block, size_t share
                                              hipStream_t stream, void **kernelParams,
                                              hipFunction_t kernel) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
   LZExecItem Arguments(grid, block, shared, Queue);
   Arguments.setArgsPointer(kernelParams);
   return Arguments.launch(kernel);
@@ -581,6 +599,7 @@ hipError_t LZContext::launchWithExtraParams(dim3 grid, dim3 block,
                                             void **extraParams,
                                             hipFunction_t kernel) {
   FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
 
   void *args = nullptr;
   size_t size = 0;
@@ -856,19 +875,168 @@ hipError_t LZContext::eventElapsedTime(float *ms, hipEvent_t start, hipEvent_t s
   return hipSuccess;
 }
 
+// Create an event pool for synchronization
+bool LZContext::CreateSyncEventPool(uint32_t count, ze_event_pool_handle_t &pool) {
+  ze_result_t status;
+  ze_event_pool_desc_t desc = {
+    .stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC,
+    .pNext = nullptr,
+    .flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE,
+    .count = count
+  };
+  ze_device_handle_t dev = lzDevice->GetDeviceHandle();
+  status = zeEventPoolCreate(hContext, &desc, 1, &dev, &pool);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
+  return true;
+}
+
+bool LZContext::GetSyncEvent(hipContextSyncData *syncEvent) {
+  bool res = false;
+  {
+    std::lock_guard<std::mutex> Lock(syncDatasMutex);
+    if (!this->syncDatas.empty()) {
+      *syncEvent = syncDatas.front();
+      syncDatas.pop_front();
+      res = true;
+    }
+  }
+  return res;
+}
+
+static void * LZContextEventMonitor(void* data) {
+  LZContext *lzContext = (LZContext *)data;
+  while (!lzContext->StopMonitor()) {
+    hipContextSyncData syncEvent;
+    while (lzContext->GetSyncEvent(&syncEvent)) {
+      ze_result_t status;
+      status = zeEventHostSynchronize(syncEvent.waitEvent, UINT64_MAX );
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventHostSynchronize FAILED with return code ", status);
+      status = zeEventDestroy(syncEvent.waitEvent);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventDestroy FAILED with return code ", status);
+      for (ze_event_handle_t event : syncEvent.signaledEvents) {
+        status = zeEventDestroy(event);
+        LZ_PROCESS_ERROR_MSG("HipLZ zeEventDestroy FAILED with return code ", status);
+      }
+      status = zeEventPoolDestroy(syncEvent.eventPool);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventDestroy FAILED with return code ", status);
+    }
+    pthread_yield();
+  }
+  return 0;
+}
+
+bool LZContext::CreateMonitor() {
+  return 0 != pthread_create(&(this->monitorThreadId), 0, LZContextEventMonitor, (void* )this);
+}
+
+void LZContext::WaitEventMonitor() {
+  if  (this->monitorThreadId == 0)
+    return;
+
+  // Join the event monitor thread
+  pthread_join(this->monitorThreadId, NULL);
+}
+
+LZContext::~LZContext() {
+  stopMonitor = true;
+  WaitEventMonitor();
+}
+
 // Enforce HIP correct stream synchronization (For now only Legacy is suported by HIP)
-void LZQueue::synchronizeQueues() {
-  if (isNULLStream()) {
+void LZContext::synchronizeQueues(hipStream_t queue) {
+  ze_result_t status;
+
+  if (queue == DefaultQueue) {
     // Enforce synchonization with all non NonBlocking streams
     // if there is any
+    size_t blocking = 0;
+    for (hipStream_t Q : Queues)
+      if (Q->isNonBlocking())
+        blocking++;
+    if (blocking != 0) {
+      // Need an event pool of to track barriers and signal event
+      hipContextSyncData syncData;
 
-    bool needed = false;
-  } else if (isNonBlocking()) {
+      CreateSyncEventPool(blocking + 2, syncData.eventPool);
+      syncData.signaledEvents.reserve(blocking + 1);
+      ze_event_handle_t event;
+      ze_event_desc_t desc = {
+        .stype = ZE_STRUCTURE_TYPE_EVENT_DESC,
+        .pNext = nullptr,
+        .index = 0,
+        .signal = ZE_EVENT_SCOPE_FLAG_DEVICE,
+        .wait = ZE_EVENT_SCOPE_FLAG_DEVICE
+      };
+      uint32_t i = 0;
+      // barriers on all blocking queues
+      for (hipStream_t Q : Queues)
+        if (Q->isNonBlocking()) {
+	  desc.index = i++;
+          status = zeEventCreate(syncData.eventPool, &desc, &event);
+          LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+          ((LZQueue*)Q)->enqueueZeBarrier(event);
+          syncData.signaledEvents.push_back(event);
+	}
+      // barrier on the default queue
+      desc.index = i++;
+      status = zeEventCreate(syncData.eventPool, &desc, &event);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+      ((LZQueue*)queue)->enqueueZeBarrier(event);
+      syncData.signaledEvents.push_back(event);
+      // barrier waiting for all previous barriers
+      desc.index = i++;
+      status = zeEventCreate(syncData.eventPool, &desc, &event);
+      LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+      ((LZQueue*)queue)->enqueueZeBarrier(event, blocking + 1, &syncData.signaledEvents[0]);
+      syncData.waitEvent = event;
+      {
+        std::lock_guard<std::mutex> Lock(syncDatasMutex);
+        syncDatas.push_back(syncData);
+      }
+    } else {
+      // Only need to synchronize queue
+      ((LZQueue*)queue)->enqueueZeBarrier();
+    }
+  } else if (queue->isNonBlocking()) {
     // Stream is NonBlocking no outside synchronization but
     // sequential execution inside the stream
+    ((LZQueue*)queue)->enqueueZeBarrier();
   } else {
     // This is a non NonBlocking stream, must be synchronized
-    // with the NULL stream
+    // with the NULL stream and itself
+    hipContextSyncData syncData;
+
+    CreateSyncEventPool(3, syncData.eventPool);
+    syncData.signaledEvents.reserve(2);
+    ze_event_handle_t event;
+    ze_event_desc_t desc = {
+      .stype = ZE_STRUCTURE_TYPE_EVENT_DESC,
+      .pNext = nullptr,
+      .index = 0,
+      .signal = ZE_EVENT_SCOPE_FLAG_DEVICE,
+      .wait = ZE_EVENT_SCOPE_FLAG_DEVICE
+    };
+
+    status = zeEventCreate(syncData.eventPool, &desc, &event);
+    LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+    ((LZQueue*)DefaultQueue)->enqueueZeBarrier(event);
+    syncData.signaledEvents.push_back(event);
+
+    desc.index = 1;
+    status = zeEventCreate(syncData.eventPool, &desc, &event);
+    LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+    ((LZQueue*)queue)->enqueueZeBarrier(event);
+    syncData.signaledEvents.push_back(event);
+
+    desc.index = 2;
+    status = zeEventCreate(syncData.eventPool, &desc, &event);
+    LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
+    ((LZQueue*)queue)->enqueueZeBarrier(event, 2, &syncData.signaledEvents[0]);
+    syncData.waitEvent = event;
+    {
+      std::lock_guard<std::mutex> Lock(syncDatasMutex);
+      syncDatas.push_back(syncData);
+    }
   }
 }
 
@@ -1152,24 +1320,26 @@ bool LZQueue::enqueueBarrierForEvent(hipEvent_t event) {
   return true;
 }
 
+bool LZQueue::enqueueZeBarrier(ze_event_handle_t event, uint32_t waitCount, ze_event_handle_t *waitList) {
+  ze_command_list_handle_t list = defaultCmdList->GetCommandListHandle();
+  ze_result_t status = zeCommandListAppendBarrier(list, event, waitCount, waitList);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendBarrier FAILED with return code ", status);
+  return true;
+}
+
 // Add call back
 bool LZQueue::addCallback(hipStreamCallback_t callback, void *userData) {
   std::lock_guard<std::mutex> Lock(QueueMutex);
 
   hipStreamCallbackData Data;
   ze_result_t status;
-  ze_event_pool_desc_t ep_desc = {};
-  ep_desc.stype = ZE_STRUCTURE_TYPE_EVENT_POOL_DESC;
-  ep_desc.count = 3;
-  ep_desc.flags = ZE_EVENT_POOL_FLAG_HOST_VISIBLE;
+
   ze_event_desc_t ev_desc = {};
   ev_desc.stype = ZE_STRUCTURE_TYPE_EVENT_DESC;
   ev_desc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
   ev_desc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
 
-  ze_device_handle_t dev = GetContext()->GetDevice()->GetDeviceHandle();
-  status = zeEventPoolCreate(GetContext()->GetContextHandle(), &ep_desc, 1, &dev, &(Data.eventPool));
-  LZ_PROCESS_ERROR_MSG("HipLZ zeEventPoolCreate FAILED with return code ", status);
+  lzContext->CreateSyncEventPool(3, Data.eventPool);
   ev_desc.index = 0;
   status = zeEventCreate(Data.eventPool, &ev_desc, &(Data.waitEvent));
   LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);

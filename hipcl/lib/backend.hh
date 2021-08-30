@@ -254,6 +254,7 @@ public:
   // Get the native information
   virtual bool getNativeInfo(unsigned long* nativeInfo, int* size) = 0;
 
+  virtual void synchronizeQueues() = 0;
 };
 
 class ExecItem {
@@ -431,7 +432,7 @@ public:
   hipError_t destroyProgram(ClProgram *prog);
 
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) = 0;
-//  virtual void synchronizeQueues(hipStream_t queue);
+  virtual void synchronizeQueues(hipStream_t queue) = 0;
 };
 
 class ClDevice {

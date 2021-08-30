@@ -116,28 +116,20 @@ protected:
 
   // Synchronization mutex
   std::mutex DeviceMutex;
-
   // The integer ID of current device
   hipDevice_t Index;//deviceId;
-
   // The current device's properties
   hipDeviceProp_t Properties;
-
   // The names of modules
   std::vector<std::string *> Modules;
-
   // The map between host function pointer and module name
   std::map<const void *, std::string *> HostPtrToModuleMap;
-
   // The map between host function pointer nd name
   std::map<const void *, std::string> HostPtrToNameMap;
-
   // The Hip attribute map
   std::map<hipDeviceAttribute_t, int> Attributes;
-
   // The default context associated with this device
   LZContext* PrimaryContext;
-
   // The size of total used memory
   size_t TotalUsedMem;
 
@@ -353,15 +345,23 @@ protected:
   std::map<std::string, std::tuple<LZProgram *, hipDeviceptr_t, size_t>> GlobalVarsMap;
 
   // Monitor thread to release events for stream synchronization
+  std::mutex syncDatasMutex;
   pthread_t monitorThreadId;
+  bool stopMonitor;
 
   // List of events to release
-  std::list<hipContextSyncData> syncData;
+  std::list<hipContextSyncData> syncDatas;
 
 public:
-  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0) {}
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0) {
+    monitorThreadId = 0;
+    stopMonitor = false;
+    if (CreateMonitor())
+      logError("LZ CONTEXT sync event monitor could not be created");
+  }
   LZContext(LZDevice* dev);
   LZContext(LZDevice* dev, ze_context_handle_t hContext, ze_command_queue_handle_t hQueue);
+  ~LZContext();
 
   // Create SPIR-V module
   bool CreateModule(uint8_t* moduleIL, size_t ilSize, std::string funcName);
@@ -451,6 +451,17 @@ public:
   // Create Level-0 image object
   LZImage* createImage(hipResourceDesc* resDesc, hipTextureDesc* texDesc);
 
+  virtual void synchronizeQueues(hipStream_t queue);
+
+  bool CreateSyncEventPool(uint32_t count, ze_event_pool_handle_t &pool);
+
+  bool GetSyncEvent(hipContextSyncData *syncEvent);
+
+  bool CreateMonitor();
+
+  void WaitEventMonitor();
+
+  bool StopMonitor() { return stopMonitor; }
 protected:
    // Get HipLZ kernel via function name
   hipFunction_t GetKernelByFunctionName(std::string funcName);
@@ -778,6 +789,8 @@ public:
   virtual bool finish();
   // Enqueue barrier for event
   virtual bool enqueueBarrierForEvent(hipEvent_t event);
+  // Enqueue barrier and signal event
+  virtual bool enqueueZeBarrier(ze_event_handle_t event = nullptr, uint32_t waitCount = 0, ze_event_handle_t *waitList = nullptr);
   // Add call back
   virtual bool addCallback(hipStreamCallback_t callback, void *userData);
   // Record event
@@ -826,9 +839,6 @@ public:
   // Get the native information
   virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
 
-  // Is this the NULL stream
-  bool isNULLStream() { return this == lzContext->getDefaultQueue();}
-
 protected:
   // Initialize Level-0 queue
   void initializeQueue(LZContext* lzContext, bool needDefaultCmdList = false);
@@ -840,7 +850,7 @@ protected:
   void WaitEventMonitor();
 
   // Enforce HIP correct stream synchronization
-  void synchronizeQueues();
+  void synchronizeQueues() { lzContext->synchronizeQueues(this); }
 };
 
 class LZImage {
