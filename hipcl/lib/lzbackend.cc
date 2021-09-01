@@ -1565,7 +1565,7 @@ bool LZImmCommandList::initializeCmdList() {
   cqDesc.ordinal = 0;
   cqDesc.index = 0;
   cqDesc.flags = ZE_COMMAND_QUEUE_FLAG_EXPLICIT_ONLY; // 0;
-  cqDesc.mode = ZE_COMMAND_QUEUE_MODE_DEFAULT;
+  cqDesc.mode = ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS;
   cqDesc.priority = ZE_COMMAND_QUEUE_PRIORITY_NORMAL;
 
   ze_result_t status = zeCommandListCreateImmediate(this->lzContext->GetContextHandle(),
