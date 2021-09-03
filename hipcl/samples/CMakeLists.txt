@@ -139,6 +139,7 @@ set(SAMPLES
     9_unroll
     10_memcpy3D
     11_device
+    12_usm
     hipSymbol
     hipDeviceLink
     sycl_hip_interop

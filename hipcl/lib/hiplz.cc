@@ -1115,8 +1115,11 @@ hipError_t hipMemPrefetchAsync(const void* ptr, size_t count, int dstDevId, hipS
   LZContext *cont = dev.getPrimaryCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
-  return cont->memPrefetch(ptr, count, stream);
+  hipError_t retval = cont->memPrefetch(ptr, count, stream);
+  ERROR_IF(retval != hipSuccess, hipErrorInvalidDevice);
+
   LZ_CATCH
+  RETURN(hipSuccess);
 }
 
 hipError_t hipMemAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, int dstDevId) {
@@ -1137,8 +1140,11 @@ hipError_t hipMemAdvise(const void* ptr, size_t count, hipMemoryAdvise advice, i
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   // Make the advise
-  return cont->memAdvise(ptr, count, advice);
+  hipError_t retval = cont->memAdvise(ptr, count, advice);
+  ERROR_IF(retval != hipSuccess, hipErrorInvalidDevice);
+
   LZ_CATCH
+  RETURN(hipSuccess);
 }
 
 DEPRECATED("use hipHostMalloc instead")
