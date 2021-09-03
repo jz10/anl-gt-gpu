@@ -303,7 +303,6 @@ hipError_t hipDeviceCanAccessPeer(int *canAccessPeer, int deviceId,
 hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
   HIPLZ_INIT();
 
-  // TODO
   int deviceId = getTlsDefaultLzCtx()->GetDevice()->getHipDeviceT();
 
   LZ_TRY
@@ -314,13 +313,11 @@ hipError_t hipDeviceEnablePeerAccess(int peerDeviceId, unsigned int flags) {
   LZ_CATCH
 
   RETURN(hipSuccess);
-  // RETURN(hipErrorInvalidDevice);
 }
 
 hipError_t hipDeviceDisablePeerAccess(int peerDeviceId) {
   HIPLZ_INIT();
 
-  // TODO
   int deviceId = getTlsDefaultLzCtx()->GetDevice()->getHipDeviceT();
 
   LZ_TRY
@@ -331,7 +328,6 @@ hipError_t hipDeviceDisablePeerAccess(int peerDeviceId) {
   LZ_CATCH
     
   RETURN(hipSuccess);
-  // RETURN(hipErrorPeerAccessNotEnabled);
 }
 
 hipError_t hipChooseDevice(int *device, const hipDeviceProp_t *prop) {
