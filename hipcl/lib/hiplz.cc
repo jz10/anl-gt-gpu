@@ -1998,10 +1998,72 @@ hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* r
 }
 
 /********************************************************************/
+#include "hip/hip_fatbin.h"
+
+#define SPIR_TRIPLE "hip-spir64-unknown-unknown"
+
+static hipError_t validateFatBinary(const void *data, std::string **module) {
+  const __CudaFatBinaryWrapper *fbwrapper =
+      reinterpret_cast<const __CudaFatBinaryWrapper *>(data);
+  if (fbwrapper->magic != __hipFatMAGIC2 || fbwrapper->version != 1) {
+    logCritical("The given object is not hipFatBinary !\n");
+    return hipErrorInvalidKernelFile;
+  }
+
+  const __ClangOffloadBundleHeader *header = fbwrapper->binary;
+  std::string magic(reinterpret_cast<const char *>(header),
+                    sizeof(CLANG_OFFLOAD_BUNDLER_MAGIC) - 1);
+  if (magic.compare(CLANG_OFFLOAD_BUNDLER_MAGIC)) {
+    logCritical("The bundled binaries are not Clang bundled "
+                "(CLANG_OFFLOAD_BUNDLER_MAGIC is missing)\n");
+    return hipErrorInvalidKernelFile;
+  }
+
+  const __ClangOffloadBundleDesc *desc = &header->desc[0];
+  bool found = false;
+
+  for (uint64_t i = 0; i < header->numBundles;
+       ++i, desc = reinterpret_cast<const __ClangOffloadBundleDesc *>(
+                reinterpret_cast<uintptr_t>(&desc->triple[0]) +
+                desc->tripleSize)) {
+
+    std::string triple{&desc->triple[0], sizeof(SPIR_TRIPLE) - 1};
+    logDebug("Triple of bundle {} is: {}\n", i, triple);
+
+    if (triple.compare(SPIR_TRIPLE) == 0) {
+      found = true;
+      break;
+    } else {
+      logDebug("not a SPIR triple, ignoring\n");
+      continue;
+    }
+  }
+
+  if (!found) {
+    logDebug("Didn't find any suitable compiled binary!\n");
+    return hipErrorInvalidKernelFile;;
+  }
+
+  *module = new std::string;
+  if (!module) {
+    logCritical("Failed to allocate memory\n");
+    return hipErrorOutOfMemory;
+  }
+
+  const char *string_data = reinterpret_cast<const char *>(
+      reinterpret_cast<uintptr_t>(header) + (uintptr_t)desc->offset);
+  size_t string_size = desc->size;
+  (*module)->assign(string_data, string_size);
+
+  return hipSuccess;
+}
+
 hipError_t hipModuleLoad(hipModule_t *module, const char *fname) {
   HIPLZ_INIT();
 
-  ClContext *cont = getTlsDefaultCtx();
+  // ClContext *cont = getTlsDefaultCtx();
+  LZContext *cont = getTlsDefaultLzCtx();
+  
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   std::ifstream file(fname, std::ios::in | std::ios::binary | std::ios::ate);
@@ -2012,10 +2074,46 @@ hipError_t hipModuleLoad(hipModule_t *module, const char *fname) {
   file.seekg(0, std::ios::beg);
   file.read(memblock, size);
   file.close();
-  std::string content(memblock, size);
+
+  // std::string content(memblock, size);
+  // delete[] memblock;
+
+  // RETURN(hipErrorNotSupported);
+
+  std::string *content;
+
+  logDebug("Trying to load module {} as a HIP fat binary\n", fname);
+  __CudaFatBinaryWrapper wrapper = {
+    .magic = __hipFatMAGIC2,
+    .version = 1,
+    .binary = (__ClangOffloadBundleHeader *)memblock,
+    .unused = nullptr
+  };
+  hipError_t err = validateFatBinary(&wrapper, &content);
+  if (hipSuccess != err) {
+    if (hipErrorOutOfMemory == err) {
+      delete[] memblock;
+      RETURN(hipErrorOutOfMemory);
+    }
+    logDebug("Not a HIP fat binary, trying as direct SPIR-V\n");
+    content = new std::string;
+    if (!content) {
+      logCritical("Failed to allocate memory\n");
+      delete[] memblock;
+      RETURN(hipErrorOutOfMemory);
+    }
+    content->assign(memblock, size);
+  }
+
   delete[] memblock;
 
-  RETURN(hipErrorNotSupported);
+  *module = cont->createProgram(*content);
+  delete content;
+  if (*module == nullptr)
+    RETURN(hipErrorInvalidValue);
+  else
+    RETURN(hipSuccess);
+  
   /* TODO: fix this by implement hipModule_t related operations via Level-0
    *module = cont->createProgram(content);
   if (*module == nullptr)
@@ -2086,16 +2184,13 @@ hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
 
 /*******************************************************************************/
 
-#include "hip/hip_fatbin.h"
-
-#define SPIR_TRIPLE "hip-spir64-unknown-unknown"
-
 static unsigned binaries_loaded = 0;
 
 extern "C" void **__hipRegisterFatBinary(const void *data) {
   // Here we do not initialize HipLZ but put fat binary into a global temproary storage
   // xxx InitializeHipLZ();
-  
+
+  /*
   const __CudaFatBinaryWrapper *fbwrapper =
       reinterpret_cast<const __CudaFatBinaryWrapper *>(data);
   if (fbwrapper->magic != __hipFatMAGIC2 || fbwrapper->version != 1) {
@@ -2147,7 +2242,12 @@ extern "C" void **__hipRegisterFatBinary(const void *data) {
       reinterpret_cast<uintptr_t>(header) + (uintptr_t)desc->offset);
   size_t string_size = desc->size;
   module->assign(string_data, string_size);
+  */
 
+  std::string *module;
+  if (hipSuccess != validateFatBinary(data, &module))
+    std::abort();
+    
   logDebug("Register module: {} \n", (void *)module);
 
   for (size_t deviceId = 0; deviceId < NumDevices; ++deviceId) {
@@ -2247,6 +2347,6 @@ extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modul
     }*/
   
   // Put the global variable information into a temproary storage
-  // LZDriver::GlobalVars.push_back(std::make_tuple(module, hostVar, deviceName, size));
+  // LZDriver::GlobalVars.push_back(std::make_tuple(module, hostVar, deviceName, size);
 }
-
+  

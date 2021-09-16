@@ -611,7 +611,9 @@ hipError_t LZContext::launchWithExtraParams(dim3 grid, dim3 block,
       p += 2;
       continue;
     } else if (*p == HIP_LAUNCH_PARAM_BUFFER_SIZE) {
-      size = (size_t)p[1];
+      // size = (size_t)p[1];
+      size = *(size_t *)p[1];
+
       p += 2;
       continue;
     } else {
