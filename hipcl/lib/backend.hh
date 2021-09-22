@@ -174,7 +174,7 @@ public:
   ClProgram() {}
   virtual ~ClProgram();
 
-  hipFunction_t getKernel(std::string &name);
+  virtual hipFunction_t getKernel(std::string &name);
   hipFunction_t getKernel(const char *name);
 
   virtual void CreateKernel(std::string &funcName) = 0;
@@ -428,7 +428,7 @@ public:
                                            hipStream_t stream, void **extraParams,
                                            hipFunction_t kernel) = 0;
 
-  ClProgram *createProgram(std::string &binary);
+  virtual ClProgram *createProgram(std::string &binary);
   hipError_t destroyProgram(ClProgram *prog);
 
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) = 0;

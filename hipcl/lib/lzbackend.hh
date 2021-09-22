@@ -270,6 +270,9 @@ public:
   LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize);
   ~LZProgram();
 
+  // Get kernel via given name
+  virtual hipFunction_t getKernel(std::string &name);
+  
   // Get HipLZ module handle
   ze_module_handle_t GetModuleHandle() { return this->hModule; }
 
@@ -462,6 +465,10 @@ public:
   void WaitEventMonitor();
 
   bool StopMonitor() { return stopMonitor; }
+
+  // Create LZProgam from binary
+  virtual ClProgram *createProgram(std::string &binary);
+  
 protected:
    // Get HipLZ kernel via function name
   hipFunction_t GetKernelByFunctionName(std::string funcName);

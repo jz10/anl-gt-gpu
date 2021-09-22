@@ -627,10 +627,12 @@ hipError_t LZContext::launchWithExtraParams(dim3 grid, dim3 block,
     return hipErrorLaunchFailure;
   }
 
-  if (size != kernel->getTotalArgSize()) {
-    logError("extraParams doesn't have correct size\n");
+  /*x
+    This check seems to be incorrect now?
+    if (size != kernel->getTotalArgSize()) {
+    logError("extraParams doesn't have correct size {} and total arg size is {}\n", size, kernel->getTotalArgSize());
     return hipErrorLaunchFailure;
-  }
+  }*/
 
   LZExecItem Arguments(grid, block, shared, Queue);
   OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
@@ -1059,6 +1061,25 @@ void LZContext::reset() {
   // this->Memory.clear();
 
   // TODO: check if the default queue still need to be initialized?
+}
+
+// Create HipLZ program that is derived from ClProgram
+ClProgram *LZContext::createProgram(std::string &binary) {
+  uint8_t* funcIL = (uint8_t* )binary.data();
+  size_t ilSize = binary.length();
+
+  LZProgram* lzProgram = 0;
+  if (this->IL2Module.find(funcIL) == this->IL2Module.end()) {
+    // Create HipLZ module and register it
+    lzProgram = new LZProgram(this, funcIL, ilSize);
+    this->IL2Module[funcIL] = lzProgram;
+  } else
+    lzProgram = this->IL2Module[funcIL];
+
+  if (!lzProgram)
+    HIP_PROCESS_ERROR_MSG("HipLZ counld not create a LZProgram ", hipErrorNotSupported);
+  
+  return lzProgram;
 }
 
 // Create Level-0 image object
@@ -2100,6 +2121,18 @@ bool LZProgram::getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, siz
     * bytes = varSize;
 
   return true;
+}
+
+// Create kernel via given name 
+hipFunction_t LZProgram::getKernel(std::string &name) {
+  if (this->kernels.find(name) == this->kernels.end()) {
+    // Create kernel here, if the LZProgram::createProgram procedure did not create kernel
+    this->CreateKernel(name);
+    return this->kernels[name];
+  } else
+    return this->kernels[name];
+
+  // HIP_PROCESS_ERROR_MSG("HipLZ could not find kernel function in LZProgram ", hipErrorInitializationError);
 }
 
 LZKernel::LZKernel(LZProgram* lzModule, std::string funcName, OCLFuncInfo* funcInfo) : ClKernel(funcName, funcInfo) {

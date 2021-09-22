@@ -2163,7 +2163,7 @@ hipError_t hipModuleLaunchKernel(hipFunction_t k, unsigned int gridDimX,
     RETURN(hipErrorLaunchFailure);
   }
 
-  ClContext *cont = getTlsDefaultCtx();
+  ClContext *cont = getTlsDefaultLzCtx();
   ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
 
   if (kernelParams == nullptr && extra == nullptr) {
