@@ -1981,20 +1981,31 @@ hipError_t hipLaunchKernel(const void *hostFunction, dim3 gridDim,
 
 
 /********************************************************************/
-hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* resDesc,
-				  hipTextureDesc* texDesc, void* opt) {
+hipChannelFormatDesc hipCreateChannelDesc(int x, int y, int z, int w, hipChannelFormatKind f) {
+  return {x, y, z, w, f};
+}
+
+hipError_t hipCreateTextureObject(hipTextureObject_t* texObj,
+				  const hipResourceDesc* pResDesc,
+                                  const hipTextureDesc* pTexDesc,
+                                  const struct hipResourceViewDesc* pResViewDesc) {
   HIPLZ_INIT();
 
   LZ_TRY
   LZContext* lzCtx = getTlsDefaultLzCtx();
   ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
-  hipTextureObject_t retObj = lzCtx->createImage(resDesc, texDesc);
+  hipTextureObject_t retObj = nullptr; // lzCtx->createImage(pResDesc, pTexDesc);
   if (retObj != nullptr) {
     * texObj = retObj;
     RETURN(hipSuccess);
   } else
     RETURN(hipErrorLaunchFailure);
   LZ_CATCH
+}
+
+hipError_t hipDestroyTextureObject(hipTextureObject_t textureObject) {
+  logError("hipDestroyTextureObject not implemented \n");
+  RETURN(hipErrorInvalidValue);
 }
 
 /********************************************************************/

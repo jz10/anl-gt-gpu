@@ -177,6 +177,41 @@ typedef enum hipChannelFormatKind {
   hipChannelFormatKindNone = 3
 } hipChannelFormatKind;
 
+typedef struct hipChannelFormatDesc {
+  int x;
+  int y;
+  int z;
+  int w;
+  enum hipChannelFormatKind f;
+} hipChannelFormatDesc;
+
+enum hipTextureAddressMode {
+  hipAddressModeWrap = 0,
+  hipAddressModeClamp = 1,
+  hipAddressModeMirror = 2,
+  hipAddressModeBorder = 3
+};
+
+enum hipTextureFilterMode { hipFilterModePoint = 0, hipFilterModeLinear = 1 };
+
+enum hipTextureReadMode { hipReadModeElementType = 0, hipReadModeNormalizedFloat = 1 };
+
+typedef struct hipTextureDesc {
+  enum hipTextureAddressMode addressMode[3];  // Texture address mode for up to 3 dimensions
+  enum hipTextureFilterMode filterMode;
+  enum hipTextureReadMode readMode;
+  int sRGB;  // Perform sRGB->linear conversion during texture read
+  float borderColor[4];
+  int normalizedCoords;
+  unsigned int maxAnisotropy;
+  enum hipTextureFilterMode mipmapFilterMode;
+  float mipmapLevelBias;
+  float minMipmapLevelClamp;
+  float maxMipmapLevelClamp;
+} hipTextureDesc;
+
+
+
 // Here we define the enum for unify memory related advice with the same content as CUDA
 typedef enum hipMemoryAdvise {
   hipMemAdviseSetReadMostly = 1,          // Data will mostly be read and only occassionally be written to
@@ -186,26 +221,6 @@ typedef enum hipMemoryAdvise {
   hipMemAdviseSetAccessedBy = 5,          // Data will be accessed by the specified device, so prevent page faults as much as possible
   hipMemAdviseUnsetAccessedBy = 6         // Let the Unified Memory subsystem decide on the page faulting policy for the specified device
 } hipMemoryAdvise;
-  
-typedef struct hipChannelFormatDesc {
-  int x;
-  int y;
-  int z;
-  int w;
-  enum hipChannelFormatKind f;
-} hipChannelFormatDesc;
-
-typedef struct hipResourceDesc {
-  int resType;
-  void * res;
-} hipResourceDesc;
-
-typedef struct hipTextureDesc {
-  int addressMode[2];
-  int filterMode;
-  int readMode;
-  int normalizedCoords;
-} hipTextureDesc;
 
 #define HIP_TRSF_NORMALIZED_COORDINATES 0x01
 #define HIP_TRSF_READ_AS_INTEGER 0x00
@@ -298,6 +313,31 @@ typedef struct hipExtent {
   size_t height;
   size_t depth;
 } hipExtent;
+
+typedef struct hipResourceDesc {
+  enum hipResourceType resType;
+
+  union {
+    struct {
+      hipArray_t array;
+    } array;
+    struct {
+      hipMipmappedArray_t mipmap;
+    } mipmap;
+    struct {
+      void* devPtr;
+      struct hipChannelFormatDesc desc;
+      size_t sizeInBytes;
+    } linear;
+    struct {
+      void* devPtr;
+      struct hipChannelFormatDesc desc;
+      size_t width;
+      size_t height;
+      size_t pitchInBytes;
+    } pitch2D;
+  } res;
+} hipResourceDesc;
 
 typedef struct hipPos {
   size_t x;
@@ -622,11 +662,18 @@ typedef ClQueue *hipStream_t;
 
 class LZImage;
 
-typedef LZImage *hipTextureObject_t;
+// typedef LZImage *hipTextureObject_t;
 
 class ClContext;
 
 typedef ClContext *hipCtx_t;
+
+#ifndef HIP_TEXTURE_OBJECT_T
+#define HIP_TEXTURE_OBJECT_T
+class ClTextureObject;
+
+typedef ClTextureObject *hipTextureObject_t;
+#endif
 
 typedef void (*hipStreamCallback_t)(hipStream_t stream, hipError_t status,
                                     void *userData);
@@ -2930,9 +2977,15 @@ hipError_t hipDriverGetVersion(int *driverVersion);
  */
 hipError_t hipRuntimeGetVersion(int *runtimeVersion);
 
-hipError_t hipCreateTextureObject(hipTextureObject_t* texObj, hipResourceDesc* resDesc,
-                                  hipTextureDesc* texDesc, void* opt);
-  
+hipChannelFormatDesc hipCreateChannelDesc(int x, int y, int z, int w, hipChannelFormatKind f);
+
+hipError_t hipCreateTextureObject(hipTextureObject_t* pTexObject,
+                                  const hipResourceDesc* pResDesc,
+                                  const hipTextureDesc* pTexDesc,
+                                  const struct hipResourceViewDesc* pResViewDesc);
+
+hipError_t hipDestroyTextureObject(hipTextureObject_t textureObject);
+
 /**
  * @brief Loads code object from file into a hipModule_t
  *

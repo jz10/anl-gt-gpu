@@ -754,3 +754,16 @@ EXPORT float CL_NAME2(shfl_down, f)(float var, uint delta) {
 int CL_NAME(group_all)(int pred) { return sub_group_all(pred); }
 int CL_NAME(group_any)(int pred) { return sub_group_any(pred); }
 ulong CL_NAME(group_ballot)(int pred) { return sub_group_reduce_add(pred ? (ulong)1 << get_sub_group_local_id() : 0); }
+
+typedef struct {
+  intptr_t  image;
+  intptr_t  sampler;
+} *hipTextureObject_t;
+
+EXPORT float CL_NAME2(tex2D, f)(hipTextureObject_t textureObject,
+				float x, float y) {
+  return read_imagef(
+    __builtin_astype(textureObject->image, read_only image2d_t),
+    __builtin_astype(textureObject->sampler, sampler_t),
+    (float2)(x, y)).x;
+}

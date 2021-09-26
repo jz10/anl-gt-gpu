@@ -42,6 +42,7 @@ THE SOFTWARE.
 #if defined(__HIP_DEVICE_COMPILE__)
 #define __DEVICE__ static __device__
 #define EXPORT static inline __device__
+#define EXPORT_TEMPLATE inline __device__
 #define OVLD __attribute__((overloadable)) __device__
 #define NON_OVLD __device__
 #define GEN_NAME(N) opencl_##N
@@ -49,6 +50,7 @@ THE SOFTWARE.
 #else
 #define __DEVICE__ extern __device__
 #define EXPORT extern __device__
+#define EXPORT_TEMPLATE __device__
 #define NON_OVLD
 #define OVLD
 #define GEN_NAME(N) N
@@ -60,9 +62,31 @@ THE SOFTWARE.
 #endif
 
 #if defined(__HIP_DEVICE_COMPILE__)
+
+#  ifndef HIP_TEXTURE_OBJECT_T
+#  define HIP_TEXTURE_OBJECT_T
+typedef struct hipTextureObject_s {
+  intptr_t image;
+  intptr_t sampler;
+} hipTextureObject_st, *hipTextureObject_t;
+#  endif
+
 typedef _Float16 api_half;
 typedef _Float16 api_half2 __attribute__((ext_vector_type(2)));
 #else
+
+#  ifndef HIP_TEXTURE_OBJECT_T
+#  define HIP_TEXTURE_OBJECT_T
+// class ClTextureObject;
+class ClTextureObject {
+public:
+  intptr_t  image;
+  intptr_t  sampler;
+};
+
+typedef ClTextureObject *hipTextureObject_t;
+#  endif
+
 typedef short api_half;
 typedef short api_half2 __attribute__((ext_vector_type(2)));
 #endif
@@ -1450,4 +1474,21 @@ EXPORT int __all(int predicate);
 EXPORT int __any(int predicate);
 EXPORT uint64_t __ballot(int predicate);
 
+#endif
+
+// Tool functions for texture
+template <typename T>
+EXPORT T tex2D(hipTextureObject_t, float, float);
+
+#if defined(__HIP_DEVICE_COMPILE__)
+extern "C" {
+NON_OVLD float GEN_NAME2(tex2D, f)(hipTextureObject_t, float, float);
+}
+template <>
+EXPORT_TEMPLATE float tex2D<float>(hipTextureObject_t textureObject, float x, float y) {
+  return GEN_NAME2(tex2D, f)(textureObject, x, y);
+};
+#else
+template <>
+EXPORT_TEMPLATE float tex2D<float>(hipTextureObject_t textureObject, float x, float y);
 #endif
