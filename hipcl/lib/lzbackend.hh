@@ -454,6 +454,11 @@ public:
   // Create Level-0 image object
   LZImage* createImage(hipResourceDesc* resDesc, hipTextureDesc* texDesc);
 
+  // Create HIP texture object
+  virtual hipTextureObject_t createTextureObject(const hipResourceDesc* pResDesc,
+						 const hipTextureDesc* pTexDesc,
+						 const struct hipResourceViewDesc* pResViewDesc);
+
   virtual void synchronizeQueues(hipStream_t queue);
 
   bool CreateSyncEventPool(uint32_t count, ze_event_pool_handle_t &pool);
@@ -872,12 +877,41 @@ public:
   LZImage(LZContext* lzContext, hipResourceDesc* resDesc, hipTextureDesc* texDesc);
 
   // Get the image handle
-  ze_image_handle_t GtImageHandle() { return this->hImage; };
+  ze_image_handle_t GetImageHandle() { return this->hImage; };
 
   // Update data to image
   bool upload(hipStream_t stream, void* srcptr);
 };
 
+// The struct that accomodate the L0/Hip texture object's content
+class LZTextureObject {
+public:
+  intptr_t  image;
+  intptr_t  sampler;
+
+  LZTextureObject() {};
+
+  // The factory function for creating the LZ texture object
+  static LZTextureObject* CreateTextureObject(LZContext* lzCtx,
+					      const hipResourceDesc* pResDesc,
+					      const hipTextureDesc* pTexDesc,
+					      const struct hipResourceViewDesc* pResViewDesc);
+
+protected:
+  // The factory function for create the LZ image object
+  static bool CreateImage(LZContext* lzCtx,
+			  const hipResourceDesc* pResDesc,
+			  const hipTextureDesc* pTexDesc,
+			  const struct hipResourceViewDesc* pResViewDesc,
+			  ze_image_handle_t* handle);
+
+  // The factory function for create the LZ sampler object
+  static bool CreateSampler(LZContext* lzCtx,
+			    const hipResourceDesc* pResDesc,
+			    const hipTextureDesc* pTexDesc,
+			    const struct hipResourceViewDesc* pResViewDesc,
+			    ze_sampler_handle_t* handle);
+};
 
 LZDevice &HipLZDeviceById(int deviceId);
 

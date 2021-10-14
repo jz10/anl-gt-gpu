@@ -1,15 +1,15 @@
 /* HIT_START
-1;95;0c1;95;0c * BUILD: %t %s ../test_common.cpp
+ * BUILD: %t %s ../test_common.cpp
  * TEST: %t
  * HIT_END
  */
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-                                         
+                                                          
 #include <hip/hip_runtime.h>
 #include "test_common.h"
-                 
+                   
 __global__ void tex2DKernel(float* outputData, hipTextureObject_t textureObject, int width,
                             int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;

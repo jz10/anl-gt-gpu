@@ -20,7 +20,7 @@ llvmGetPassPluginInfo() {
                     // Run a collection of passes run at device link time.
                     FPM.addPass(HipStripCompilerUsedPass());
                     FPM.addPass(HipDynMemExternReplaceNewPass());
-                    FPM.addPass(
+		    FPM.addPass(
                         createModuleToFunctionPassAdaptor(HipDefrostPass()));
                     return true;
                   }

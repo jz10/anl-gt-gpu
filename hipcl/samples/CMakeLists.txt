@@ -172,7 +172,7 @@ set(SAMPLES
     sycl_hip_interop
     #hip_sycl_interop
     hiploadmodule
-    # texture
+    texture
 )
 
 foreach (SAMPLE ${SAMPLES})

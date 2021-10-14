@@ -1994,7 +1994,7 @@ hipError_t hipCreateTextureObject(hipTextureObject_t* texObj,
   LZ_TRY
   LZContext* lzCtx = getTlsDefaultLzCtx();
   ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
-  hipTextureObject_t retObj = nullptr; // lzCtx->createImage(pResDesc, pTexDesc);
+  hipTextureObject_t retObj = lzCtx->createTextureObject(pResDesc, pTexDesc, pResViewDesc);
   if (retObj != nullptr) {
     * texObj = retObj;
     RETURN(hipSuccess);

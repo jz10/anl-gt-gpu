@@ -1,5 +1,3 @@
-
-
 #include <algorithm>
 #include <cassert>
 #include <fstream>
@@ -65,6 +63,20 @@ public:
   virtual ~SPIRVtypePointer(){};
   virtual OCLType ocltype() override { return OCLType::Pointer; }
   OCLSpace getAS() override { return ASpace; }
+};
+
+class SPIRVtypeImage : public SPIRVtype {
+public:
+  SPIRVtypeImage(int32_t id, size_t size) : SPIRVtype(size) {}
+  virtual ~SPIRVtypeImage(){};
+  virtual OCLType ocltype() override { return OCLType::Image; }
+};
+
+class SPIRVtypeSampler : public SPIRVtype {
+public:
+  SPIRVtypeSampler(int32_t id, size_t size) : SPIRVtype(size) {}
+  virtual ~SPIRVtypeSampler(){};
+  virtual OCLType ocltype() override { return OCLType::Sampler; }
 };
 
 class SPIRVinst {
@@ -153,6 +165,14 @@ public:
       return new SPIRVtypePOD(word1, 0);
     }
 
+    if (opcode == spv::Op::OpTypeImage) {
+      return new SPIRVtypeImage(word1, ((size_t)word2 / 8));
+    }
+
+    if (opcode == spv::Op::OpTypeSampler) {
+      return new SPIRVtypeSampler(word1, ((size_t)word2 / 8));
+    }
+    
     if (opcode == spv::Op::OpTypeBool) {
       return new SPIRVtypePOD(word1, 1);
     }
@@ -215,10 +235,10 @@ public:
     if (n_args > 0) {
       fi->ArgTypeInfo.resize(n_args);
       for (size_t i = 0; i < n_args; ++i) {
-
         int32_t type_id = orig_stream[i + 3];
         auto it = typeMap.find(type_id);
-        assert(it != typeMap.end());
+
+	assert(it != typeMap.end());
         fi->ArgTypeInfo[i].type = it->second->ocltype();
         fi->ArgTypeInfo[i].size = it->second->size();
         fi->ArgTypeInfo[i].space = it->second->getAS();
@@ -286,9 +306,10 @@ public:
     ++p;
 
     headerOK = true;
-    
+
     // INSTRUCTION STREAM
     parseOK = parseInstructionStream(p, (numWords - 5));
+    
     return valid();
   }
 
@@ -302,6 +323,7 @@ public:
       assert(ft != entryToFunctionTypeIDMap.end());
       auto fi = functionTypeMap.find(ft->second);
       assert(fi != functionTypeMap.end());
+      // std::cout << "    function name: " << i.second << std::endl;
       moduleMap.emplace(std::make_pair(i.second, fi->second));
     }
 
@@ -312,6 +334,7 @@ private:
   bool parseInstructionStream(int32_t *stream, size_t numWords) {
     int32_t *p = stream;
     size_t pointerSize = 0;
+    // std::cout << "numWords " << numWords << " and stream " << stream << std::endl;
     while (numWords > 0) {
       SPIRVinst inst(p);
 
@@ -334,7 +357,7 @@ private:
         entryPoints.emplace(
             std::make_pair(inst.entryPointID(), inst.entryPointName()));
       }
-
+      
       if (inst.isType()) {
         if (inst.isFunctionType())
           functionTypeMap.emplace(std::make_pair(
@@ -343,7 +366,7 @@ private:
           typeMap.emplace(std::make_pair(
               inst.getTypeID(), inst.decodeType(typeMap, pointerSize)));
       }
-
+      
       if (inst.isFunction() &&
           (entryPoints.find(inst.getFunctionID()) != entryPoints.end())) {
         // ret type must be void
@@ -369,5 +392,6 @@ bool parseSPIR(int32_t *stream, size_t numWords,
   SPIRVmodule Mod;
   if (!Mod.parseSPIRV(stream, numWords))
     return false;
+
   return Mod.fillModuleInfo(output);
 }

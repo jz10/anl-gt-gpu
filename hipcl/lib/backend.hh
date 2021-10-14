@@ -431,6 +431,11 @@ public:
   virtual ClProgram *createProgram(std::string &binary);
   hipError_t destroyProgram(ClProgram *prog);
 
+  // Create HIP texture object 
+  virtual hipTextureObject_t createTextureObject(const hipResourceDesc* pResDesc,
+						 const hipTextureDesc* pTexDesc,
+						 const struct hipResourceViewDesc* pResViewDesc) = 0;
+  
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) = 0;
   virtual void synchronizeQueues(hipStream_t queue) = 0;
 };

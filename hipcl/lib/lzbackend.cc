@@ -136,7 +136,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
   HostPtrToModuleMap.emplace(std::make_pair(HostFunction, module));
   HostPtrToNameMap.emplace(std::make_pair(HostFunction, FunctionName));
 
-  // std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
+  std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
   // Create HipLZ module
   std::string funcName(FunctionName);
   this->PrimaryContext->CreateModule((uint8_t* )module->data(), module->length(), funcName);
@@ -526,8 +526,8 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
     this->IL2Module[funcIL] = lzModule;
   } else
     lzModule = this->IL2Module[funcIL];
-
-
+  
+  std::cout << "CREATE MODULE" << std::endl;
   // Create kernel object
   lzModule->CreateKernel(funcName);
 
@@ -1088,6 +1088,17 @@ LZImage* LZContext::createImage(hipResourceDesc* resDesc, hipTextureDesc* texDes
     return nullptr;
 
   return new LZImage(this, resDesc, texDesc);
+}
+
+// Create HIP texture object
+hipTextureObject_t LZContext::createTextureObject(const hipResourceDesc* pResDesc,
+						  const hipTextureDesc* pTexDesc,
+						  const struct hipResourceViewDesc* pResViewDesc) {
+  // Create the Hip Texture struct here
+  LZTextureObject*  texObj = LZTextureObject::CreateTextureObject(this, pResDesc, pTexDesc,
+								  pResViewDesc);
+  
+  return (hipTextureObject_t)texObj;
 }
 
 // Initialize HipLZ drivers
@@ -2050,12 +2061,15 @@ LZProgram::LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) : ClP
   size_t numWords = ilSize / 4;
   int32_t * binarydata = new int32_t[numWords + 1];
   std::memcpy(binarydata, funcIL, ilSize);
+  
   // Extract kernel function information
   bool res = parseSPIR(binarydata, numWords, FuncInfos);
   delete[] binarydata;
   if (!res)
     HIP_PROCESS_ERROR_MSG("Hiplz SPIR-V parsing failed", hipErrorInitializationError);
 
+  std::cout << "BEFORE LOAD MODULE" << std::endl;
+  
   // Create module with global address aware
   std::string compilerOptions = " -cl-std=CL2.0 -cl-take-global-address -cl-match-sincospi";
   ze_module_desc_t moduleDesc = {
@@ -2071,7 +2085,9 @@ LZProgram::LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) : ClP
 				      lzContext->GetDevice()->GetDeviceHandle(),
 				      &moduleDesc, &this->hModule, nullptr);
   LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
-
+  if (status == ZE_RESULT_SUCCESS)
+    std::cout << "LOAD MODULE" << std::endl;
+  
   logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
 }
 
@@ -2083,10 +2099,18 @@ LZProgram::~LZProgram() {
 void LZProgram::CreateKernel(std::string &funcName) {
   if (this->kernels.find(funcName) != this->kernels.end())
     return;
-
+  
   // Register kernel
-  if (FuncInfos.find(funcName) == FuncInfos.end())
+  if (FuncInfos.find(funcName) == FuncInfos.end()) {
+    std::cout << "create kernel for: " << funcName << std::endl;
+    std::string wrapperName = funcName + "wrapper";
+    if (FuncInfos.find(wrapperName) != FuncInfos.end()) {
+      this->kernels[wrapperName] = new LZKernel(this, wrapperName, FuncInfos[wrapperName]);
+      return;
+    }
     HIP_PROCESS_ERROR_MSG("HipLZ could not find function information ", hipErrorInitializationError);
+  }
+
   // Create kernel
   this->kernels[funcName] = new LZKernel(this, funcName, FuncInfos[funcName]);
 }
@@ -2264,6 +2288,108 @@ bool LZImage::upload(hipStream_t stream, void* srcptr) {
 							      nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendImageCopyFromMemory with return code ", status);
 
+  return true;
+}
+
+// The factory function for creating the LZ texture object 
+LZTextureObject* LZTextureObject::CreateTextureObject(LZContext* lzCtx,
+                                                      const hipResourceDesc* pResDesc,
+                                                      const hipTextureDesc* pTexDesc,
+                                                      const struct hipResourceViewDesc* pResViewDesc) {
+  // Create the LZ Texture class here
+  LZTextureObject* texObj = new	LZTextureObject();
+
+  std::cout << "CREATE TEXTURE" << std::endl;
+  ze_image_handle_t   imageHandle;
+  ze_sampler_handle_t samplerHandle;
+  if (CreateImage(lzCtx, pResDesc, pTexDesc, pResViewDesc, &imageHandle)
+      && CreateSampler(lzCtx, pResDesc, pTexDesc, pResViewDesc, &samplerHandle)) {
+    texObj->image   = (intptr_t)imageHandle;
+    texObj->sampler = (intptr_t)samplerHandle;
+  } else
+    return nullptr;
+  
+  return texObj;
+}
+
+// The factory function for create the LZ image object
+bool LZTextureObject::CreateImage(LZContext* lzCtx,
+				  const hipResourceDesc* pResDesc,
+				  const hipTextureDesc* pTexDesc,
+				  const struct hipResourceViewDesc* pResViewDesc,
+				  ze_image_handle_t* handle) {
+  ze_image_format_t format = {
+    ZE_IMAGE_FORMAT_LAYOUT_32,
+    ZE_IMAGE_FORMAT_TYPE_FLOAT,
+    ZE_IMAGE_FORMAT_SWIZZLE_R,
+    ZE_IMAGE_FORMAT_SWIZZLE_0,
+    ZE_IMAGE_FORMAT_SWIZZLE_0,
+    ZE_IMAGE_FORMAT_SWIZZLE_1
+  };
+
+  ze_image_desc_t imageDesc = {
+    ZE_STRUCTURE_TYPE_IMAGE_DESC,
+    nullptr,
+    0, // read-only  
+    ZE_IMAGE_TYPE_2D,
+    format,
+    128, 128, 0, 0, 0
+  };
+
+  // Create LZ image handle
+  ze_result_t status = zeImageCreate(lzCtx->GetContextHandle(),
+				     lzCtx->GetDevice()->GetDeviceHandle(),
+				     &imageDesc, handle);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeImageCreate FAILED with return code ", status);
+  
+  return true;
+}
+
+// The factory function for create the LZ sampler object
+bool LZTextureObject::CreateSampler(LZContext* lzCtx,
+				    const hipResourceDesc* pResDesc,
+				    const hipTextureDesc* pTexDesc,
+				    const struct hipResourceViewDesc* pResViewDesc,
+				    ze_sampler_handle_t* handle) {
+  // Identify the address mode 
+  ze_sampler_address_mode_t addressMode = ZE_SAMPLER_ADDRESS_MODE_NONE;
+  if (pTexDesc->addressMode[0] == hipAddressModeWrap)
+    addressMode = ZE_SAMPLER_ADDRESS_MODE_NONE;
+  else if (pTexDesc->addressMode[0] == hipAddressModeClamp)
+    addressMode = ZE_SAMPLER_ADDRESS_MODE_CLAMP;
+  else if (pTexDesc->addressMode[0] == hipAddressModeMirror)
+    addressMode = ZE_SAMPLER_ADDRESS_MODE_MIRROR;
+  else if (pTexDesc->addressMode[0] == hipAddressModeBorder)
+    addressMode = ZE_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+
+  // Identify the filter mode
+  ze_sampler_filter_mode_t filterMode = ZE_SAMPLER_FILTER_MODE_NEAREST;
+  if (pTexDesc->filterMode == hipFilterModePoint)
+    filterMode = ZE_SAMPLER_FILTER_MODE_NEAREST;  
+  else if (pTexDesc->filterMode == hipFilterModeLinear)
+    filterMode = ZE_SAMPLER_FILTER_MODE_LINEAR;
+
+  // Identify the normalization
+  ze_bool_t isNormalized = 0;
+  if (pTexDesc->normalizedCoords == 0)
+    isNormalized = 0;
+  else
+    isNormalized = 1;
+  
+  ze_sampler_desc_t samplerDesc = {
+    ZE_STRUCTURE_TYPE_SAMPLER_DESC,
+    nullptr,
+    addressMode,
+    filterMode,
+    isNormalized
+  };
+  
+  // Create LZ samler handle
+  ze_result_t status = zeSamplerCreate(lzCtx->GetContextHandle(),
+				       lzCtx->GetDevice()->GetDeviceHandle(),
+				       &samplerDesc, handle);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeSamplerCreate FAILED with return code ", status);
+  
   return true;
 }
 

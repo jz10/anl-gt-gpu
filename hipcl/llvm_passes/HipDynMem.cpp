@@ -19,6 +19,8 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
+#include "HipTexture.h"
+
 #include <iostream>
 #include <set>
 
@@ -277,6 +279,10 @@ static RegisterPass<HipDynMemExternReplacePass>
 
 PreservedAnalyses
 HipDynMemExternReplaceNewPass::run(Module &M, ModuleAnalysisManager &AM) {
+  errs() << "DYN MEM new --\n";
+  if (OCLWrapperFunctions::runTexture(M))
+    return PreservedAnalyses::none();
+ 
   if (HipDynMemExternReplacePass::transformDynamicShMemVars(M))
     return PreservedAnalyses::none();
   return PreservedAnalyses::all();
@@ -284,6 +290,7 @@ HipDynMemExternReplaceNewPass::run(Module &M, ModuleAnalysisManager &AM) {
 
 extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
 llvmGetPassPluginInfo() {
+  errs() << "GET DYN MEM PLUGIN\n";
   return {LLVM_PLUGIN_API_VERSION, "hip-dyn-mem", LLVM_VERSION_STRING,
           [](PassBuilder &PB) {
             PB.registerPipelineParsingCallback(
@@ -291,7 +298,8 @@ llvmGetPassPluginInfo() {
                    ArrayRef<PassBuilder::PipelineElement>) {
                   if (Name == "hip-dyn-mem") {
                     FPM.addPass(HipDynMemExternReplaceNewPass());
-                    return true;
+		    FPM.addPass(HipTextureExternReplaceNewPass());
+		    return true;
                   }
                   return false;
                 });
