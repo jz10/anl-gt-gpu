@@ -5,6 +5,8 @@
 
 #include "lzbackend.hh"
 
+#include <cxxabi.h>
+
 #ifdef __GNUC__
 #pragma GCC visibility push(hidden)
 #endif
@@ -527,7 +529,6 @@ bool LZContext::CreateModule(uint8_t* funcIL, size_t ilSize, std::string funcNam
   } else
     lzModule = this->IL2Module[funcIL];
   
-  std::cout << "CREATE MODULE" << std::endl;
   // Create kernel object
   lzModule->CreateKernel(funcName);
 
@@ -1954,8 +1955,10 @@ int LZExecItem::setupAllArgs(ClKernel *k) {
 
   // Argument processing for the new HIP launch API.
   if (ArgsPointer) {
+    std::cout << "KERNEL ARG SETUP: " << FuncInfo->ArgTypeInfo.size() << std::endl;
     for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
       OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
+      std::cout << "KERNEL ARG SETUP - arg type:  " << (int)ai.type << std::endl; 
       logDebug("setArg {} size {}\n", i, ai.size);
       ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
                                                     i, ai.size, ArgsPointer[i]);
@@ -2068,8 +2071,6 @@ LZProgram::LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) : ClP
   if (!res)
     HIP_PROCESS_ERROR_MSG("Hiplz SPIR-V parsing failed", hipErrorInitializationError);
 
-  std::cout << "BEFORE LOAD MODULE" << std::endl;
-  
   // Create module with global address aware
   std::string compilerOptions = " -cl-std=CL2.0 -cl-take-global-address -cl-match-sincospi";
   ze_module_desc_t moduleDesc = {
@@ -2085,8 +2086,6 @@ LZProgram::LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) : ClP
 				      lzContext->GetDevice()->GetDeviceHandle(),
 				      &moduleDesc, &this->hModule, nullptr);
   LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
-  if (status == ZE_RESULT_SUCCESS)
-    std::cout << "LOAD MODULE" << std::endl;
   
   logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
 }
@@ -2102,12 +2101,18 @@ void LZProgram::CreateKernel(std::string &funcName) {
   
   // Register kernel
   if (FuncInfos.find(funcName) == FuncInfos.end()) {
-    std::cout << "create kernel for: " << funcName << std::endl;
-    std::string wrapperName = funcName + "wrapper";
-    if (FuncInfos.find(wrapperName) != FuncInfos.end()) {
-      this->kernels[wrapperName] = new LZKernel(this, wrapperName, FuncInfos[wrapperName]);
-      return;
+    for (auto funcInfo : FuncInfos) {
+      std::string kernelName = funcInfo.first;
+      if (LZKernel::IsEquvalentKernelName(funcName, kernelName,
+					  "ClTextureObject", "hipTextureObject_s")) {
+	if (this->kernels.find(kernelName) != this->kernels.end())
+	  this->kernels[kernelName] = new LZKernel(this, kernelName, FuncInfos[kernelName]);
+	this->kernels[funcName] = new LZKernel(this, kernelName, FuncInfos[kernelName]);
+	
+	return;
+      }
     }
+    
     HIP_PROCESS_ERROR_MSG("HipLZ could not find function information ", hipErrorInitializationError);
   }
 
@@ -2176,6 +2181,31 @@ LZKernel::LZKernel(LZProgram* lzModule, std::string funcName, OCLFuncInfo* funcI
 
 LZKernel::~LZKernel() {
   zeKernelDestroy(this->hKernel);
+}
+
+// Compare if two kernel functions' names are equvalent, including their arguments' types 
+bool LZKernel::IsEquvalentKernelName(std::string funcName, std::string targetFuncName,
+				     std::string typeName, std::string targetTypeName) {
+  int status = 0;
+  const char* real_name = abi::__cxa_demangle(funcName.c_str(), 0, 0, &status);
+  if (status)
+    return false;
+  std::string realName = real_name;
+
+  const char* real_target_name = abi::__cxa_demangle(targetFuncName.c_str(), 0, 0, &status);
+  if (status)
+    return false;
+  std::string realTargetName = real_target_name;
+ 
+  std::size_t found = realName.find(typeName);
+  if (found != std::string::npos) {
+    // Replae type name with target type name
+    realName.replace(found, typeName.length(), targetTypeName);
+    
+    return realName == realTargetName;
+  }
+  
+  return false;
 }
 
 // Create HipLZ event

@@ -259,6 +259,10 @@ public:
   ~LZKernel();
 
   ze_kernel_handle_t GetKernelHandle() { return this->hKernel; }
+
+  // Compare if two kernel functions' names are equvalent, including their arguments' types 
+  static bool IsEquvalentKernelName(std::string funcName, std::string targetFuncName,
+				    std::string typeName, std::string targeTypeName);
 };
 
 class LZProgram : public ClProgram {

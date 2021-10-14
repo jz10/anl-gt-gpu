@@ -323,7 +323,7 @@ public:
       assert(ft != entryToFunctionTypeIDMap.end());
       auto fi = functionTypeMap.find(ft->second);
       assert(fi != functionTypeMap.end());
-      // std::cout << "    function name: " << i.second << std::endl;
+      std::cout << "    function name: " << i.second << std::endl;
       moduleMap.emplace(std::make_pair(i.second, fi->second));
     }
 
