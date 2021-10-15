@@ -166,11 +166,11 @@ public:
     }
 
     if (opcode == spv::Op::OpTypeImage) {
-      return new SPIRVtypeImage(word1, ((size_t)word2 / 8));
+      return new SPIRVtypeImage(word1, (size_t)word2 - 1); // ((size_t)word2 / 8));
     }
 
     if (opcode == spv::Op::OpTypeSampler) {
-      return new SPIRVtypeSampler(word1, ((size_t)word2 / 8));
+      return new SPIRVtypeSampler(word1, (size_t)word2 - 1); // ((size_t)word2 / 8));
     }
     
     if (opcode == spv::Op::OpTypeBool) {

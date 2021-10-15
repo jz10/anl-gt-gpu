@@ -435,6 +435,9 @@ public:
   virtual hipTextureObject_t createTextureObject(const hipResourceDesc* pResDesc,
 						 const hipTextureDesc* pTexDesc,
 						 const struct hipResourceViewDesc* pResViewDesc) = 0;
+
+  // Destroy HIP texture object 
+  virtual bool destroyTextureObject(hipTextureObject_t textureObject) = 0;
   
   virtual bool getSymbolAddressSize(const char *name, hipDeviceptr_t *dptr, size_t *bytes) = 0;
   virtual void synchronizeQueues(hipStream_t queue) = 0;

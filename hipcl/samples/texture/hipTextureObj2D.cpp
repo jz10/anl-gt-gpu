@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-                                                            
+                
 #include <hip/hip_runtime.h>
 #include "test_common.h"
                    
@@ -77,6 +77,8 @@ int runTest(int argc, char** argv) {
     dim3 dimBlock(16, 16, 1);
     dim3 dimGrid(width / dimBlock.x, height / dimBlock.y, 1);
 
+    std::cout << "tex2DKernel(" << (unsigned long)dData << " , " << (unsigned long)textureObject
+	      << " , " << width << " , " << height << ")" << std::endl;
     hipLaunchKernelGGL(tex2DKernel, dim3(dimGrid), dim3(dimBlock), 0, 0, dData, textureObject,
                        width, height);
 

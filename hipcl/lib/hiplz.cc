@@ -2004,8 +2004,16 @@ hipError_t hipCreateTextureObject(hipTextureObject_t* texObj,
 }
 
 hipError_t hipDestroyTextureObject(hipTextureObject_t textureObject) {
-  logError("hipDestroyTextureObject not implemented \n");
-  RETURN(hipErrorInvalidValue);
+  HIPLZ_INIT();
+
+  LZ_TRY
+  LZContext* lzCtx = getTlsDefaultLzCtx();
+  ERROR_IF((lzCtx == nullptr), hipErrorInvalidDevice);
+  if (lzCtx->destroyTextureObject(textureObject))
+    RETURN(hipSuccess);
+  else
+    RETURN(hipErrorLaunchFailure);
+  LZ_CATCH
 }
 
 /********************************************************************/

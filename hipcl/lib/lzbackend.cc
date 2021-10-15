@@ -138,7 +138,7 @@ bool LZDevice::registerFunction(std::string *module, const void *HostFunction,
   HostPtrToModuleMap.emplace(std::make_pair(HostFunction, module));
   HostPtrToNameMap.emplace(std::make_pair(HostFunction, FunctionName));
 
-  std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
+  // std::cout << "Register function: " <<	FunctionName << "    " << (unsigned long)module->data() << std::endl;
   // Create HipLZ module
   std::string funcName(FunctionName);
   this->PrimaryContext->CreateModule((uint8_t* )module->data(), module->length(), funcName);
@@ -1102,6 +1102,11 @@ hipTextureObject_t LZContext::createTextureObject(const hipResourceDesc* pResDes
   return (hipTextureObject_t)texObj;
 }
 
+// Destroy HIP texture object 
+bool LZContext::destroyTextureObject(hipTextureObject_t textureObject) {
+  return LZTextureObject::DestroyTextureObject((LZTextureObject* )textureObject);
+}
+
 // Initialize HipLZ drivers
 bool LZDriver::InitDrivers(std::vector<LZDriver* >& drivers, const ze_device_type_t deviceType) {
   const ze_device_type_t type = ZE_DEVICE_TYPE_GPU;
@@ -1955,19 +1960,49 @@ int LZExecItem::setupAllArgs(ClKernel *k) {
 
   // Argument processing for the new HIP launch API.
   if (ArgsPointer) {
-    std::cout << "KERNEL ARG SETUP: " << FuncInfo->ArgTypeInfo.size() << std::endl;
-    for (size_t i = 0; i < FuncInfo->ArgTypeInfo.size(); ++i) {
+    
+    for (size_t i = 0, argIdx = 0; i < FuncInfo->ArgTypeInfo.size(); ++ i, ++ argIdx) {
       OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
-      std::cout << "KERNEL ARG SETUP - arg type:  " << (int)ai.type << std::endl; 
-      logDebug("setArg {} size {}\n", i, ai.size);
-      ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
-                                                    i, ai.size, ArgsPointer[i]);
-      if (status != ZE_RESULT_SUCCESS) {
-        logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
-        return CL_INVALID_VALUE;
+      
+      // std::cout << "KERNEL ARG SETUP - arg type:  " << (int)ai.type << " and size " << ai.size
+      // 	<< " ArgPointer " << (unsigned long)(ArgsPointer[i]) << " and "
+      // 	<< sizeof(intptr_t) << std::endl;
+
+      if (ai.type == OCLType::Image) {
+	// This is the case for Image type, but the actual pointer is for HipTextureObject
+	LZTextureObject* texObj = (LZTextureObject* )(* ((unsigned long *)(ArgsPointer[1])));
+
+	// Set image part
+	logDebug("setImageArg {} size {}\n", argIdx, ai.size);
+	ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
+                                                      argIdx, ai.size, &(texObj->image));
+	if (status != ZE_RESULT_SUCCESS) {
+          logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
+          return CL_INVALID_VALUE;
+        }
+	logDebug("LZ SET IMAGE ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
+	
+	// Set sampler part
+	argIdx ++;
+
+	logDebug("setImageArg {} size {}\n", argIdx, ai.size);
+        status = zeKernelSetArgumentValue(kernel->GetKernelHandle(), argIdx, ai.size,
+					  &(texObj->sampler));
+	if (status != ZE_RESULT_SUCCESS) {
+          logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
+          return CL_INVALID_VALUE;
+        }
+        logDebug("LZ SET SAMPLER ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
+      } else {
+	logDebug("setArg {} size {}\n", argIdx, ai.size);
+	ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
+						      argIdx, ai.size, ArgsPointer[i]);
+	if (status != ZE_RESULT_SUCCESS) {
+	  logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
+	  return CL_INVALID_VALUE;
+	}
+	logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
       }
-      logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ",
-               status);
     }
   } else {
     // Argument processing for the old HIP launch API.
@@ -2328,8 +2363,7 @@ LZTextureObject* LZTextureObject::CreateTextureObject(LZContext* lzCtx,
                                                       const struct hipResourceViewDesc* pResViewDesc) {
   // Create the LZ Texture class here
   LZTextureObject* texObj = new	LZTextureObject();
-
-  std::cout << "CREATE TEXTURE" << std::endl;
+  
   ze_image_handle_t   imageHandle;
   ze_sampler_handle_t samplerHandle;
   if (CreateImage(lzCtx, pResDesc, pTexDesc, pResViewDesc, &imageHandle)
@@ -2340,6 +2374,22 @@ LZTextureObject* LZTextureObject::CreateTextureObject(LZContext* lzCtx,
     return nullptr;
   
   return texObj;
+}
+
+// Destroy HIP texture object
+bool LZTextureObject::DestroyTextureObject(LZTextureObject* texObj) {
+  if (texObj == nullptr)
+    return false;
+
+  ze_image_handle_t   imageHandle =  (ze_image_handle_t)texObj->image;
+  ze_sampler_handle_t samplerHandle = (ze_sampler_handle_t)texObj->sampler;
+  if (DestroyImage(imageHandle) && DestroySampler(samplerHandle)) {
+    delete texObj;
+
+    return true;
+  } else
+    return false;
+    
 }
 
 // The factory function for create the LZ image object
@@ -2373,6 +2423,16 @@ bool LZTextureObject::CreateImage(LZContext* lzCtx,
   LZ_PROCESS_ERROR_MSG("HipLZ zeImageCreate FAILED with return code ", status);
   
   return true;
+}
+
+// Destroy the LZ image object
+bool LZTextureObject::DestroyImage(ze_image_handle_t handle) {
+  // Destroy LZ image handle   
+  ze_result_t status = zeImageDestroy(handle);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeImageDestroy FAILED with return code ", status);
+
+  return true;
+
 }
 
 // The factory function for create the LZ sampler object
@@ -2420,6 +2480,15 @@ bool LZTextureObject::CreateSampler(LZContext* lzCtx,
 				       &samplerDesc, handle);
   LZ_PROCESS_ERROR_MSG("HipLZ zeSamplerCreate FAILED with return code ", status);
   
+  return true;
+}
+
+// Destroy the LZ sampler object
+bool LZTextureObject::DestroySampler(ze_sampler_handle_t handle) {
+  // Destroy LZ samler
+  ze_result_t status = zeSamplerDestroy(handle);
+  LZ_PROCESS_ERROR_MSG("HipLZ zeSamplerDestroy FAILED with return code ", status);
+
   return true;
 }
 

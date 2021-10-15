@@ -463,6 +463,9 @@ public:
 						 const hipTextureDesc* pTexDesc,
 						 const struct hipResourceViewDesc* pResViewDesc);
 
+  // Destroy HIP texture object
+  virtual bool destroyTextureObject(hipTextureObject_t textureObject);
+  
   virtual void synchronizeQueues(hipStream_t queue);
 
   bool CreateSyncEventPool(uint32_t count, ze_event_pool_handle_t &pool);
@@ -901,6 +904,9 @@ public:
 					      const hipTextureDesc* pTexDesc,
 					      const struct hipResourceViewDesc* pResViewDesc);
 
+  // Destroy the HIP texture object
+  static bool DestroyTextureObject(LZTextureObject* texObj);
+  
 protected:
   // The factory function for create the LZ image object
   static bool CreateImage(LZContext* lzCtx,
@@ -909,12 +915,18 @@ protected:
 			  const struct hipResourceViewDesc* pResViewDesc,
 			  ze_image_handle_t* handle);
 
+  // Destroy the LZ image object
+  static bool DestroyImage(ze_image_handle_t handle);
+  
   // The factory function for create the LZ sampler object
   static bool CreateSampler(LZContext* lzCtx,
 			    const hipResourceDesc* pResDesc,
 			    const hipTextureDesc* pTexDesc,
 			    const struct hipResourceViewDesc* pResViewDesc,
 			    ze_sampler_handle_t* handle);
+
+  // Destroy the LZ sampler object
+  static bool DestroySampler(ze_sampler_handle_t handle);
 };
 
 LZDevice &HipLZDeviceById(int deviceId);
