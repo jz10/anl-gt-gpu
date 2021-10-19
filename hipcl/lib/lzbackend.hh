@@ -335,6 +335,8 @@ public:
   uint64_t getTimeStamp() { return this->timestamp; };
 };
 
+class LZTextureObject;
+
 class LZCommandList;
 
 class LZContext : public ClContext {
@@ -428,6 +430,13 @@ public:
 			    const void *src, size_t spitch, size_t sspitch,
 			    size_t width, size_t height, size_t depth, hipStream_t stream);
 
+  // Memory copy to texture object, i.e. image
+  hipError_t memCopyToTexture(LZTextureObject* texObj, void* src, hipStream_t stream);
+
+  hipError_t memCopyToTexture(LZTextureObject* texObj, void* src) {
+    return memCopyToTexture(texObj, src, getDefaultQueue());
+  }
+  
   // Make meory prefetch
   virtual hipError_t memPrefetch(const void* ptr, size_t size, hipStream_t stream = 0);
 
@@ -672,6 +681,9 @@ public:
   bool ExecuteWriteGlobalTimeStamp(LZQueue* lzQueue, uint64_t *timestamp);
   bool ExecuteWriteGlobalTimeStampAsync(LZQueue* lzQueue, uint64_t *timestamp, LZEvent *event);
 
+  // Execute HipLZ memory copy to texture object, i.e. image
+  bool ExecuteMemCopyToTexture(LZQueue* lzQueue, LZTextureObject* texObj, void* src);
+  
   // Execute the memory prefetch
   bool ExecuteMemPrefetch(LZQueue* lzQueue, const void* ptr, size_t size);
   bool ExecuteMemPrefetchAsync(LZQueue* lzQueue, const void* ptr, size_t size);
@@ -698,6 +710,7 @@ private:
                      const void *src, size_t spitch, size_t sspitch,
                      size_t width, size_t height, size_t depth);
   void memFill(LZQueue* lzQueue, void *dst, size_t size, const void *pattern, size_t pattern_size);
+  void memCopyToTexture(LZQueue* lzQueue, LZTextureObject* texObj, void* src);
   void memPrefetch(LZQueue* lzQueue, const void* ptr, size_t size);
   void memAdvise(LZQueue* lzQueue, const void* ptr, size_t count, hipMemoryAdvise advice);
 };
@@ -833,6 +846,10 @@ public:
   virtual hipError_t memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
 			    const void *src, size_t spitch, size_t sspitch,
 			    size_t width, size_t height, size_t depth);
+
+  // Memory copy to texture object, i.e. image
+  hipError_t memCopyToTexture(LZTextureObject* texObj, void* src);
+    
   // Make meory prefetch
   virtual hipError_t memPrefetch(const void* ptr, size_t size);
 

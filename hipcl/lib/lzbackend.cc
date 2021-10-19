@@ -472,6 +472,13 @@ hipError_t LZContext::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
   return Queue->memCopy3DAsync(dst, dpitch, dspitch, src, spitch, sspitch, width, height, depth);
 }
 
+// Memory copy to texture object, i.e. image
+hipError_t LZContext::memCopyToTexture(LZTextureObject* texObj, void* src, hipStream_t stream) {
+  FIND_QUEUE_LOCKED(stream);
+  synchronizeQueues(Queue);
+  return Queue->memCopyToTexture(texObj, src);
+}
+
 // Make the advise for the managed memory (i.e. unified shared memory)
 hipError_t LZContext::memAdvise(const void* ptr, size_t count, hipMemoryAdvise advise, hipStream_t stream) {
   FIND_QUEUE_LOCKED(stream);
@@ -1098,7 +1105,7 @@ hipTextureObject_t LZContext::createTextureObject(const hipResourceDesc* pResDes
   // Create the Hip Texture struct here
   LZTextureObject*  texObj = LZTextureObject::CreateTextureObject(this, pResDesc, pTexDesc,
 								  pResViewDesc);
-  
+
   return (hipTextureObject_t)texObj;
 }
 
@@ -1521,6 +1528,13 @@ hipError_t LZQueue::memCopy3DAsync(void *dst, size_t dpitch, size_t dspitch,
   return hipSuccess;
 }
 
+hipError_t LZQueue::memCopyToTexture(LZTextureObject* texObj, void* src) {
+  CHECK_QUEUE_COMMAND_LIST();
+  this->defaultCmdList->ExecuteMemCopyToTexture(this, texObj, src);
+
+  return hipSuccess;
+}
+
 // Make meory prefetch
 hipError_t LZQueue::memPrefetch(const void* ptr, size_t size) {
   CHECK_QUEUE_COMMAND_LIST();
@@ -1736,6 +1750,11 @@ bool LZCommandList::ExecuteMemCopyRegionAsync(LZQueue* lzQueue, void *dst, size_
   return ExecuteAsync(lzQueue);
 }
 
+bool LZCommandList::ExecuteMemCopyToTexture(LZQueue* lzQueue, LZTextureObject* texObj, void* src) {
+  memCopyToTexture(lzQueue, texObj, src);
+  return Execute(lzQueue);
+}
+
 void LZCommandList::memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
                                   const void *src, size_t spitch, size_t sspitch,
                                   size_t width, size_t height, size_t depth) {
@@ -1757,6 +1776,13 @@ void LZCommandList::memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, si
                                                            dspitch, src, &srcRegion, spitch, sspitch,
                                                            nullptr, 0, nullptr);
   LZ_PROCESS_ERROR_MSG("HipLZ zeCommandListAppendMemoryCopyRegion FAILED with return code ", status);
+}
+
+void LZCommandList::memCopyToTexture(LZQueue* lzQueue, LZTextureObject* texObj, void* src) {
+  ze_image_handle_t imageHandle = (ze_image_handle_t)texObj->image;
+  ze_result_t status = zeCommandListAppendImageCopyFromMemory(hCommandList, imageHandle, src, 0,
+							      0, 0, 0);
+  LZ_PROCESS_ERROR_MSG("HipLZ  FAILED with return code ", status);
 }
 
 bool LZCommandList::ExecuteMemCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, size_t dspitch,
@@ -2370,6 +2396,12 @@ LZTextureObject* LZTextureObject::CreateTextureObject(LZContext* lzCtx,
       && CreateSampler(lzCtx, pResDesc, pTexDesc, pResViewDesc, &samplerHandle)) {
     texObj->image   = (intptr_t)imageHandle;
     texObj->sampler = (intptr_t)samplerHandle;
+
+    // Check if need to copy data in
+    if (pResDesc->res.array.array != nullptr) {
+      hipArray* hipArr = pResDesc->res.array.array;
+      lzCtx->memCopyToTexture(texObj, (unsigned char *)hipArr->data);
+    }
   } else
     return nullptr;
   
@@ -2413,7 +2445,8 @@ bool LZTextureObject::CreateImage(LZContext* lzCtx,
     0, // read-only  
     ZE_IMAGE_TYPE_2D,
     format,
-    128, 128, 0, 0, 0
+    // 128, 128, 0, 0, 0
+    256, 256, 0, 0, 0
   };
 
   // Create LZ image handle
