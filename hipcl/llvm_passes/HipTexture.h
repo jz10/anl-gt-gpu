@@ -595,7 +595,7 @@ public:
       oclWrapper.wrapKernels();
     }
     
-    M.dump();
+    // M.dump();
 
     return false;
   }
