@@ -218,7 +218,7 @@ public:
       wrapper2Orig[wrapperF] = F;
 
       // Dump wrapper function
-      wrapperF->dump();
+      // wrapperF->dump();
     }
     
     return false;
@@ -251,7 +251,7 @@ protected:
       origIdx ++;
     }
 
-    dbgs() << " Orig function return type: " << * F->getReturnType() << "\n";
+    // dbgs() << " Orig function return type: " << * F->getReturnType() << "\n";
     // Create the wrapper function
     FunctionType * FuncTy = FunctionType::get(F->getReturnType(), Parameters, F->isVarArg());
     Function * wrapperF = Function::Create(FuncTy, F->getLinkage(), F->getAddressSpace(), "", &M);
@@ -366,14 +366,14 @@ protected:
                                                              "image_field_address",
                                                              contentBB);
     
-    dbgs() << "cast image: " << * castImageInst << "\n";
-    dbgs() << "get ptr: " << * getImagePtrInst << "\n";
-    dbgs() << "GEP op0: " << * getImagePtrInst->getOperand(0) << "\n";
-    dbgs() << "GET ptr operand type: " << * ((GetElementPtrInst* )getImagePtrInst)->getPointerOperandType() << "\n";
-    dbgs() << "store inst op0 type: " << * castImageInst->getType() << "\n";
-    dbgs() << "store inst op1 type: " << * getImagePtrInst->getType() << "\n";
-    dbgs() << "store inst op1 ptr element type: " << * cast<PointerType>(getImagePtrInst->getType())->getElementType() << "\n";
-    dbgs() << "store inst op1 opqaue or pointee " << cast<PointerType>(getImagePtrInst->getType())->isOpaqueOrPointeeTypeMatches(castImageInst->getType()) << "\n";
+    // dbgs() << "cast image: " << * castImageInst << "\n";
+    // dbgs() << "get ptr: " << * getImagePtrInst << "\n";
+    // dbgs() << "GEP op0: " << * getImagePtrInst->getOperand(0) << "\n";
+    // dbgs() << "GET ptr operand type: " << * ((GetElementPtrInst* )getImagePtrInst)->getPointerOperandType() << "\n";
+    // dbgs() << "store inst op0 type: " << * castImageInst->getType() << "\n";
+    // dbgs() << "store inst op1 type: " << * getImagePtrInst->getType() << "\n";
+    // dbgs() << "store inst op1 ptr element type: " << * cast<PointerType>(getImagePtrInst->getType())->getElementType() << "\n";
+    // dbgs() << "store inst op1 opqaue or pointee " << cast<PointerType>(getImagePtrInst->getType())->isOpaqueOrPointeeTypeMatches(castImageInst->getType()) << "\n";
     
     Instruction* storeImageInst = new StoreInst(castImageInst, getImagePtrInst, contentBB);
 
@@ -406,21 +406,21 @@ protected:
 				  SmallVector<Value *, 16>& Args) {
     Value* ArgVals[16];
     int count = 0;
-    dbgs() << "Callee args: ";
+    // dbgs() << "Callee args: ";
     for (Value* Arg : Args) {
       ArgVals[count ++] = Arg;
-      dbgs() << "  idx: " << count << " " << * Arg->getType();
+      // dbgs() << "  idx: " << count << " " << * Arg->getType();
     }
-    dbgs() << "\n";
+    // dbgs() << "\n";
 
-    dbgs() << "Function type: " << * origF->getFunctionType() << "\n";
+    // dbgs() << "Function type: " << * origF->getFunctionType() << "\n";
     
     // Create the call site for the original function (i.e. the implementtion function) and append it to
     // the end of basic block
     CallInst* callInst = CallInst::Create(origF, ArrayRef<Value* >(ArgVals, count), "", contentBB);
     // Set the calling convention flag
     callInst->setCallingConv(CallingConv::SPIR_FUNC);
-    dbgs() << "call inst: " << * callInst << "\n";
+    // dbgs() << "call inst: " << * callInst << "\n";
     
     // Create the return instruction
     ReturnInst* retInst = ReturnInst::Create(wrapperF->getContext(), nullptr, contentBB);
