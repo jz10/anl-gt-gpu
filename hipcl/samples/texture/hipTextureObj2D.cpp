@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-                 
+                       
 #include <hip/hip_runtime.h>
 #include "test_common.h"
                     

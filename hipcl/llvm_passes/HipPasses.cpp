@@ -2,6 +2,7 @@
 
 #include "HipDefrost.h"
 #include "HipDynMem.h"
+#include "HipTexture.h"
 #include "HipStripCompilerUsed.h"
 
 #include "llvm/Passes/PassBuilder.h"
@@ -20,6 +21,7 @@ llvmGetPassPluginInfo() {
                     // Run a collection of passes run at device link time.
                     FPM.addPass(HipStripCompilerUsedPass());
                     FPM.addPass(HipDynMemExternReplaceNewPass());
+		    FPM.addPass(HipTextureExternReplaceNewPass());
 		    FPM.addPass(
                         createModuleToFunctionPassAdaptor(HipDefrostPass()));
                     return true;

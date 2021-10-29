@@ -152,22 +152,20 @@ public:
     for (auto fi = M.begin(), fe = M.end(); fi != fe; fi ++) {
       StringRef funcName = fi->getName();
       Function* F = M.getFunction(funcName);
-      errs() << "check function: " << funcName << " and " << F->getCallingConv() << " | " << CallingConv::SPIR_KERNEL << " and " << CallingConv::SPIR_FUNC << "\n";
+      
       if (F->getCallingConv() == CallingConv::SPIR_KERNEL) {
         // Check through function arguments                                                          
         bool HasTextureType = false;
         for (Function::arg_iterator ai = F->arg_begin(), ae = F->arg_end(); ai != ae; ai ++) {
           if (textureTypes.IsHipTexturePtrTy(ai->getType())) {
             HasTextureType = true;
-            // errs() << "Got candidate: " << F->getName() << "\n";
-	    
+            	    
             break;
           }                                                                                     
         }
 
         if (HasTextureType) {
           orig2Wrapper[F] = nullptr;
-	  // F->dump();
 	}
       } else if(F->getCallingConv() == CallingConv::SPIR_FUNC) {
 	// Check through function arguments
@@ -180,7 +178,6 @@ public:
 	  }
 	}
 
-	std::cout << " --- " << HasTextureType << std::endl;
 	if (HasTextureType) {
 	  spirFuncs.insert(F);
 	}
@@ -235,8 +232,8 @@ protected:
     for (Function::const_arg_iterator ai = F->arg_begin(), ae = F->arg_end(); ai != ae; ++ ai) {
       if (textureTypes.IsHipTexturePtrTy(ai->getType())) {
         // Here we replace HipTexture type with OpenCL image and sampler types                        
-        Parameters.push_back(textureTypes.GetOCLImagePtrType(OCL_IMAGE_AS)); // GENERIC_AS));
-        Parameters.push_back(textureTypes.GetOCLSamplerPtrType(OCL_SAMPLER_AS)); // GENERIC_AS));
+        Parameters.push_back(textureTypes.GetOCLImagePtrType(OCL_IMAGE_AS)); 
+        Parameters.push_back(textureTypes.GetOCLSamplerPtrType(OCL_SAMPLER_AS)); 
 
         argMap.push_back(origIdx);
         argMap.push_back(origIdx);
@@ -246,19 +243,17 @@ protected:
         argMap.push_back(-1);
       }
 
-      errs() << " wrapper: " <<  argMap.size() << " orig: " << origIdx << "\n";
-      // Increment original function argument's ID                                                    
+      // Increment original function argument's ID 
       origIdx ++;
     }
 
-    // dbgs() << " Orig function return type: " << * F->getReturnType() << "\n";
     // Create the wrapper function
     FunctionType * FuncTy = FunctionType::get(F->getReturnType(), Parameters, F->isVarArg());
     Function * wrapperF = Function::Create(FuncTy, F->getLinkage(), F->getAddressSpace(), "", &M);
     string wrapperName = "new_wrapper";
     string origName = F->getName().str();
     F->setName(origName + "_impl");
-    // wrapperF->setName(origName + "_wrapper");
+  
     wrapperF->setName(origName);
     
     // Inherit the attributes from original function
@@ -366,23 +361,10 @@ protected:
                                                              "image_field_address",
                                                              contentBB);
     
-    // dbgs() << "cast image: " << * castImageInst << "\n";
-    // dbgs() << "get ptr: " << * getImagePtrInst << "\n";
-    // dbgs() << "GEP op0: " << * getImagePtrInst->getOperand(0) << "\n";
-    // dbgs() << "GET ptr operand type: " << * ((GetElementPtrInst* )getImagePtrInst)->getPointerOperandType() << "\n";
-    // dbgs() << "store inst op0 type: " << * castImageInst->getType() << "\n";
-    // dbgs() << "store inst op1 type: " << * getImagePtrInst->getType() << "\n";
-    // dbgs() << "store inst op1 ptr element type: " << * cast<PointerType>(getImagePtrInst->getType())->getElementType() << "\n";
-    // dbgs() << "store inst op1 opqaue or pointee " << cast<PointerType>(getImagePtrInst->getType())->isOpaqueOrPointeeTypeMatches(castImageInst->getType()) << "\n";
-    
     Instruction* storeImageInst = new StoreInst(castImageInst, getImagePtrInst, contentBB);
 
     // Create the type cast for sampler
-    // Instruction* castSamplerInst = new BitCastInst(samplerArg,
-    //                                             Type::getInt64Ty(M.getContext()),    
-    //                                             "cast_sampler_to_int64",
-    //                                             contentBB);
-    Instruction* castSamplerInst = new PtrToIntInst(samplerArg,
+     Instruction* castSamplerInst = new PtrToIntInst(samplerArg,
 						    Type::getInt64Ty(M.getContext()),
 						    "cast_sampler_to_int64ptr",
 						    contentBB);
@@ -406,21 +388,16 @@ protected:
 				  SmallVector<Value *, 16>& Args) {
     Value* ArgVals[16];
     int count = 0;
-    // dbgs() << "Callee args: ";
     for (Value* Arg : Args) {
       ArgVals[count ++] = Arg;
-      // dbgs() << "  idx: " << count << " " << * Arg->getType();
     }
-    // dbgs() << "\n";
-
-    // dbgs() << "Function type: " << * origF->getFunctionType() << "\n";
+ 
     
     // Create the call site for the original function (i.e. the implementtion function) and append it to
     // the end of basic block
     CallInst* callInst = CallInst::Create(origF, ArrayRef<Value* >(ArgVals, count), "", contentBB);
     // Set the calling convention flag
     callInst->setCallingConv(CallingConv::SPIR_FUNC);
-    // dbgs() << "call inst: " << * callInst << "\n";
     
     // Create the return instruction
     ReturnInst* retInst = ReturnInst::Create(wrapperF->getContext(), nullptr, contentBB);
@@ -435,11 +412,6 @@ protected:
     attrs = attrs.removeAttribute(M.getContext(), AttributeList::FunctionIndex, Attribute::OptimizeNone);
     attrs = attrs.removeAttribute(M.getContext(), AttributeList::FunctionIndex, Attribute::NoInline);
     attrs = attrs.removeAttribute(M.getContext(), AttributeList::FunctionIndex, "frame-pointer");
-
-    for (AttributeSet ats : attrs) {
-      // dbgs() << " attribute set: \n";
-      // ats.dump();
-    }
 
     // Inherit the attributes from original function   
     destF->setAttributes(attrs);
@@ -582,8 +554,6 @@ protected:
 public:
 
   static bool runTexture(Module& M) {
-    errs() << "RUN TEXTURE \n";
-    
      // Collect relevant types
     TextureTypes textureTypes(M);
 

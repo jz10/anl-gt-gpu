@@ -36,12 +36,10 @@ public:
   HipTextureExternReplacePass() : ModulePass(ID) {}
 
   static bool transformTexWrappers(Module& M) {
-    errs() << "HIP TEXTURE SUPPORT\n";
     return OCLWrapperFunctions::runTexture(M);
   }
   
   bool runOnModule(Module &M) override {
-    errs() << "HIP TEXTURE SUPPORT\n";
     return OCLWrapperFunctions::runTexture(M);
   }
 
@@ -62,7 +60,6 @@ static RegisterPass<HipTextureExternReplacePass>
 
 PreservedAnalyses
 HipTextureExternReplaceNewPass::run(Module &M, ModuleAnalysisManager &AM) {
-  errs() << "HIP TEXTURE SUPPORT new\n";
   if (HipTextureExternReplacePass::transformTexWrappers(M))
     return PreservedAnalyses::none();
   return PreservedAnalyses::all();
@@ -70,7 +67,6 @@ HipTextureExternReplaceNewPass::run(Module &M, ModuleAnalysisManager &AM) {
 
 extern "C" ::llvm::PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK
 llvmGetPassPluginInfo() {
-  errs() << "GET TEXTURE PLUGIN\n";
   return {LLVM_PLUGIN_API_VERSION, "hip-texture", LLVM_VERSION_STRING,
           [](PassBuilder &PB) {
             PB.registerPipelineParsingCallback(
