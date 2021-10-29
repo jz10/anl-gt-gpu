@@ -469,8 +469,8 @@ public:
 
   // Create HIP texture object
   virtual hipTextureObject_t createTextureObject(const hipResourceDesc* pResDesc,
-						 const hipTextureDesc* pTexDesc,
-						 const struct hipResourceViewDesc* pResViewDesc);
+                                                 const hipTextureDesc* pTexDesc,
+                                                 const struct hipResourceViewDesc* pResViewDesc);
 
   // Destroy HIP texture object
   virtual bool destroyTextureObject(hipTextureObject_t textureObject);
@@ -917,9 +917,9 @@ public:
 
   // The factory function for creating the LZ texture object
   static LZTextureObject* CreateTextureObject(LZContext* lzCtx,
-					      const hipResourceDesc* pResDesc,
-					      const hipTextureDesc* pTexDesc,
-					      const struct hipResourceViewDesc* pResViewDesc);
+                                              const hipResourceDesc* pResDesc,
+                                              const hipTextureDesc* pTexDesc,
+                                              const struct hipResourceViewDesc* pResViewDesc);
 
   // Destroy the HIP texture object
   static bool DestroyTextureObject(LZTextureObject* texObj);
@@ -927,20 +927,20 @@ public:
 protected:
   // The factory function for create the LZ image object
   static bool CreateImage(LZContext* lzCtx,
-			  const hipResourceDesc* pResDesc,
-			  const hipTextureDesc* pTexDesc,
-			  const struct hipResourceViewDesc* pResViewDesc,
-			  ze_image_handle_t* handle);
+                          const hipResourceDesc* pResDesc,
+                          const hipTextureDesc* pTexDesc,
+                          const struct hipResourceViewDesc* pResViewDesc,
+                          ze_image_handle_t* handle);
 
   // Destroy the LZ image object
   static bool DestroyImage(ze_image_handle_t handle);
   
   // The factory function for create the LZ sampler object
   static bool CreateSampler(LZContext* lzCtx,
-			    const hipResourceDesc* pResDesc,
-			    const hipTextureDesc* pTexDesc,
-			    const struct hipResourceViewDesc* pResViewDesc,
-			    ze_sampler_handle_t* handle);
+                            const hipResourceDesc* pResDesc,
+                            const hipTextureDesc* pTexDesc,
+                            const struct hipResourceViewDesc* pResViewDesc,
+                            ze_sampler_handle_t* handle);
 
   // Destroy the LZ sampler object
   static bool DestroySampler(ze_sampler_handle_t handle);
