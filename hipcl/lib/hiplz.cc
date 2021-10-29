@@ -2366,6 +2366,6 @@ extern "C" void __hipRegisterVar(void** data, // std::vector<hipModule_t> *modul
     }*/
   
   // Put the global variable information into a temproary storage
-  // LZDriver::GlobalVars.push_back(std::make_tuple(module, hostVar, deviceName, size);
+  // LZDriver::GlobalVars.push_back(std::make_tuple(module, hostVar, deviceName, size));
 }
-  
+
