@@ -6,17 +6,17 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-                       
+
 #include <hip/hip_runtime.h>
 #include "test_common.h"
-                    
+
 __global__ void tex2DKernel(float* outputData, hipTextureObject_t textureObject, int width,
                             int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     outputData[y * width + x] = tex2D<float>(textureObject, x, y);
 }
-    
+
 int runTest(int argc, char** argv);
 
 int main(int argc, char** argv) {

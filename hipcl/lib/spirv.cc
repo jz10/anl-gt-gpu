@@ -238,7 +238,7 @@ public:
         int32_t type_id = orig_stream[i + 3];
         auto it = typeMap.find(type_id);
 
-	assert(it != typeMap.end());
+        assert(it != typeMap.end());
         fi->ArgTypeInfo[i].type = it->second->ocltype();
         fi->ArgTypeInfo[i].size = it->second->size();
         fi->ArgTypeInfo[i].space = it->second->getAS();
@@ -323,7 +323,7 @@ public:
       assert(ft != entryToFunctionTypeIDMap.end());
       auto fi = functionTypeMap.find(ft->second);
       assert(fi != functionTypeMap.end());
-      std::cout << "    function name: " << i.second << std::endl;
+      // std::cout << "    function name: " << i.second << std::endl;
       moduleMap.emplace(std::make_pair(i.second, fi->second));
     }
 

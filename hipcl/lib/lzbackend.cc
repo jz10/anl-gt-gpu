@@ -637,10 +637,11 @@ hipError_t LZContext::launchWithExtraParams(dim3 grid, dim3 block,
 
   /*x
     This check seems to be incorrect now?
-    if (size != kernel->getTotalArgSize()) {
+  if (size != kernel->getTotalArgSize()) {
     logError("extraParams doesn't have correct size {} and total arg size is {}\n", size, kernel->getTotalArgSize());
     return hipErrorLaunchFailure;
-  }*/
+  }
+  */
 
   LZExecItem Arguments(grid, block, shared, Queue);
   OCLFuncInfo *FuncInfo = kernel->getFuncInfo();
@@ -1103,8 +1104,8 @@ hipTextureObject_t LZContext::createTextureObject(const hipResourceDesc* pResDes
 						  const hipTextureDesc* pTexDesc,
 						  const struct hipResourceViewDesc* pResViewDesc) {
   // Create the Hip Texture struct here
-  LZTextureObject*  texObj = LZTextureObject::CreateTextureObject(this, pResDesc, pTexDesc,
-								  pResViewDesc);
+  LZTextureObject*  texObj =
+    LZTextureObject::CreateTextureObject(this, pResDesc, pTexDesc, pResViewDesc);
 
   return (hipTextureObject_t)texObj;
 }
@@ -1780,8 +1781,8 @@ void LZCommandList::memCopyRegion(LZQueue* lzQueue, void *dst, size_t dpitch, si
 
 void LZCommandList::memCopyToTexture(LZQueue* lzQueue, LZTextureObject* texObj, void* src) {
   ze_image_handle_t imageHandle = (ze_image_handle_t)texObj->image;
-  ze_result_t status = zeCommandListAppendImageCopyFromMemory(hCommandList, imageHandle, src, 0,
-							      0, 0, 0);
+  ze_result_t status =
+    zeCommandListAppendImageCopyFromMemory(hCommandList, imageHandle, src, 0, 0, 0, 0);
   LZ_PROCESS_ERROR_MSG("HipLZ  FAILED with return code ", status);
 }
 
@@ -1986,48 +1987,48 @@ int LZExecItem::setupAllArgs(ClKernel *k) {
 
   // Argument processing for the new HIP launch API.
   if (ArgsPointer) {
-    
+
     for (size_t i = 0, argIdx = 0; i < FuncInfo->ArgTypeInfo.size(); ++ i, ++ argIdx) {
       OCLArgTypeInfo &ai = FuncInfo->ArgTypeInfo[i];
-      
+
       // std::cout << "KERNEL ARG SETUP - arg type:  " << (int)ai.type << " and size " << ai.size
-      // 	<< " ArgPointer " << (unsigned long)(ArgsPointer[i]) << " and "
-      // 	<< sizeof(intptr_t) << std::endl;
+      //           << " ArgPointer " << (unsigned long)(ArgsPointer[i]) << " and "
+      //           << sizeof(intptr_t) << std::endl;
 
       if (ai.type == OCLType::Image) {
-	// This is the case for Image type, but the actual pointer is for HipTextureObject
-	LZTextureObject* texObj = (LZTextureObject* )(* ((unsigned long *)(ArgsPointer[1])));
+        // This is the case for Image type, but the actual pointer is for HipTextureObject
+        LZTextureObject* texObj = (LZTextureObject* )(* ((unsigned long *)(ArgsPointer[1])));
 
-	// Set image part
-	logDebug("setImageArg {} size {}\n", argIdx, ai.size);
-	ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
+        // Set image part
+        logDebug("setImageArg {} size {}\n", argIdx, ai.size);
+        ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
                                                       argIdx, ai.size, &(texObj->image));
-	if (status != ZE_RESULT_SUCCESS) {
+        if (status != ZE_RESULT_SUCCESS) {
           logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
           return CL_INVALID_VALUE;
         }
-	logDebug("LZ SET IMAGE ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
-	
-	// Set sampler part
-	argIdx ++;
+        logDebug("LZ SET IMAGE ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
 
-	logDebug("setImageArg {} size {}\n", argIdx, ai.size);
+        // Set sampler part
+        argIdx ++;
+
+        logDebug("setImageArg {} size {}\n", argIdx, ai.size);
         status = zeKernelSetArgumentValue(kernel->GetKernelHandle(), argIdx, ai.size,
-					  &(texObj->sampler));
-	if (status != ZE_RESULT_SUCCESS) {
+                                          &(texObj->sampler));
+        if (status != ZE_RESULT_SUCCESS) {
           logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
           return CL_INVALID_VALUE;
         }
         logDebug("LZ SET SAMPLER ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
       } else {
-	logDebug("setArg {} size {}\n", argIdx, ai.size);
-	ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
-						      argIdx, ai.size, ArgsPointer[i]);
-	if (status != ZE_RESULT_SUCCESS) {
-	  logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
-	  return CL_INVALID_VALUE;
-	}
-	logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
+        logDebug("setArg {} size {}\n", argIdx, ai.size);
+        ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
+                                                      argIdx, ai.size, ArgsPointer[i]);
+        if (status != ZE_RESULT_SUCCESS) {
+          logDebug("zeKernelSetArgumentValue failed with error {}\n", status);
+          return CL_INVALID_VALUE;
+        }
+        logDebug("LZ SET ARGUMENT VALUE via calling zeKernelSetArgumentValue {} ", status);
       }
     }
   } else {
@@ -2112,8 +2113,8 @@ int LZExecItem::setupAllArgs(ClKernel *k) {
   // Setup the kernel argument's value related to dynamically sized share memory
   if (NumLocals == 1) {
     ze_result_t status = zeKernelSetArgumentValue(kernel->GetKernelHandle(),
-						  FuncInfo->ArgTypeInfo.size() - 1,
-						  SharedMem, nullptr);
+                                                  FuncInfo->ArgTypeInfo.size() - 1,
+                                                  SharedMem, nullptr);
     logDebug("LZ set dynamically sized share memory related argument via calling zeKernelSetArgumentValue {} ", status);
   }
 
@@ -2125,7 +2126,7 @@ LZProgram::LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) : ClP
   size_t numWords = ilSize / 4;
   int32_t * binarydata = new int32_t[numWords + 1];
   std::memcpy(binarydata, funcIL, ilSize);
-  
+
   // Extract kernel function information
   bool res = parseSPIR(binarydata, numWords, FuncInfos);
   delete[] binarydata;
@@ -2144,10 +2145,10 @@ LZProgram::LZProgram(LZContext* lzContext, uint8_t* funcIL, size_t ilSize) : ClP
     nullptr
   };
   ze_result_t status = zeModuleCreate(lzContext->GetContextHandle(),
-				      lzContext->GetDevice()->GetDeviceHandle(),
-				      &moduleDesc, &this->hModule, nullptr);
+                                      lzContext->GetDevice()->GetDeviceHandle(),
+                                      &moduleDesc, &this->hModule, nullptr);
   LZ_PROCESS_ERROR_MSG("Hiplz zeModuleCreate FAILED with return code  ", status);
-  
+
   logDebug("LZ CREATE MODULE via calling zeModuleCreate {} ", status);
 }
 
@@ -2159,21 +2160,21 @@ LZProgram::~LZProgram() {
 void LZProgram::CreateKernel(std::string &funcName) {
   if (this->kernels.find(funcName) != this->kernels.end())
     return;
-  
+
   // Register kernel
   if (FuncInfos.find(funcName) == FuncInfos.end()) {
     for (auto funcInfo : FuncInfos) {
       std::string kernelName = funcInfo.first;
       if (LZKernel::IsEquvalentKernelName(funcName, kernelName,
-					  "ClTextureObject", "hipTextureObject_s")) {
+                                          "ClTextureObject", "hipTextureObject_s")) {
 	if (this->kernels.find(kernelName) != this->kernels.end())
 	  this->kernels[kernelName] = new LZKernel(this, kernelName, FuncInfos[kernelName]);
 	this->kernels[funcName] = new LZKernel(this, kernelName, FuncInfos[kernelName]);
-	
+
 	return;
       }
     }
-    
+
     HIP_PROCESS_ERROR_MSG("HipLZ could not find function information ", hipErrorInitializationError);
   }
 
@@ -2262,10 +2263,10 @@ bool LZKernel::IsEquvalentKernelName(std::string funcName, std::string targetFun
   if (found != std::string::npos) {
     // Replae type name with target type name
     realName.replace(found, typeName.length(), targetTypeName);
-    
+
     return realName == realTargetName;
   }
-  
+
   return false;
 }
 
@@ -2426,14 +2427,14 @@ bool LZTextureObject::DestroyTextureObject(LZTextureObject* texObj) {
 
 // The factory function for create the LZ image object
 bool LZTextureObject::CreateImage(LZContext* lzCtx,
-				  const hipResourceDesc* pResDesc,
-				  const hipTextureDesc* pTexDesc,
-				  const struct hipResourceViewDesc* pResViewDesc,
-				  ze_image_handle_t* handle) {
+                                  const hipResourceDesc* pResDesc,
+                                  const hipTextureDesc* pTexDesc,
+                                  const struct hipResourceViewDesc* pResViewDesc,
+                                  ze_image_handle_t* handle) {
   if (pResDesc->resType != hipResourceTypeArray) {
     LZ_PROCESS_ERROR_MSG("HipLZ only support hipArray as image storage ", ZE_RESULT_ERROR_UNSUPPORTED_FEATURE);
   }
-  
+
   hipArray* hipArr = pResDesc->res.array.array;
   hipChannelFormatDesc channelDesc = hipArr->desc;
 
@@ -2447,7 +2448,7 @@ bool LZTextureObject::CreateImage(LZContext* lzCtx,
   } else {
     LZ_PROCESS_ERROR_MSG("hipChannelFormatDesc value is out of the scope ", ZE_RESULT_ERROR_UNSUPPORTED_FEATURE);
   }
-  
+
   ze_image_format_type_t format_type = ZE_IMAGE_FORMAT_TYPE_FLOAT;
   if (channelDesc.f == hipChannelFormatKindSigned) {
     format_type = ZE_IMAGE_FORMAT_TYPE_SINT;
@@ -2460,7 +2461,7 @@ bool LZTextureObject::CreateImage(LZContext* lzCtx,
   } else {
     LZ_PROCESS_ERROR_MSG("hipChannelFormatKind value is out of scope ", ZE_RESULT_ERROR_UNSUPPORTED_FEATURE);
   }
-  
+
   ze_image_format_t format = {
     format_layout,
     format_type,
@@ -2471,7 +2472,7 @@ bool LZTextureObject::CreateImage(LZContext* lzCtx,
   };
 
   ze_image_type_t image_type = ZE_IMAGE_TYPE_2D;
-  
+
   ze_image_desc_t imageDesc = {
     ZE_STRUCTURE_TYPE_IMAGE_DESC,
     nullptr,
@@ -2487,7 +2488,7 @@ bool LZTextureObject::CreateImage(LZContext* lzCtx,
 				     lzCtx->GetDevice()->GetDeviceHandle(),
 				     &imageDesc, handle);
   LZ_PROCESS_ERROR_MSG("HipLZ zeImageCreate FAILED with return code ", status);
-  
+
   return true;
 }
 
@@ -2498,15 +2499,14 @@ bool LZTextureObject::DestroyImage(ze_image_handle_t handle) {
   LZ_PROCESS_ERROR_MSG("HipLZ zeImageDestroy FAILED with return code ", status);
 
   return true;
-
 }
 
 // The factory function for create the LZ sampler object
 bool LZTextureObject::CreateSampler(LZContext* lzCtx,
-				    const hipResourceDesc* pResDesc,
-				    const hipTextureDesc* pTexDesc,
-				    const struct hipResourceViewDesc* pResViewDesc,
-				    ze_sampler_handle_t* handle) {
+                                    const hipResourceDesc* pResDesc,
+                                    const hipTextureDesc* pTexDesc,
+                                    const struct hipResourceViewDesc* pResViewDesc,
+                                    ze_sampler_handle_t* handle) {
   // Identify the address mode 
   ze_sampler_address_mode_t addressMode = ZE_SAMPLER_ADDRESS_MODE_NONE;
   if (pTexDesc->addressMode[0] == hipAddressModeWrap)
@@ -2531,7 +2531,7 @@ bool LZTextureObject::CreateSampler(LZContext* lzCtx,
     isNormalized = 0;
   else
     isNormalized = 1;
-  
+
   ze_sampler_desc_t samplerDesc = {
     ZE_STRUCTURE_TYPE_SAMPLER_DESC,
     nullptr,
@@ -2539,13 +2539,13 @@ bool LZTextureObject::CreateSampler(LZContext* lzCtx,
     filterMode,
     isNormalized
   };
-  
+
   // Create LZ samler handle
   ze_result_t status = zeSamplerCreate(lzCtx->GetContextHandle(),
 				       lzCtx->GetDevice()->GetDeviceHandle(),
 				       &samplerDesc, handle);
   LZ_PROCESS_ERROR_MSG("HipLZ zeSamplerCreate FAILED with return code ", status);
-  
+
   return true;
 }
 

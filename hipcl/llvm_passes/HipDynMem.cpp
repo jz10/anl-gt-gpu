@@ -291,7 +291,7 @@ llvmGetPassPluginInfo() {
                    ArrayRef<PassBuilder::PipelineElement>) {
                   if (Name == "hip-dyn-mem") {
                     FPM.addPass(HipDynMemExternReplaceNewPass());
-		    return true;
+                    return true;
                   }
                   return false;
                 });
