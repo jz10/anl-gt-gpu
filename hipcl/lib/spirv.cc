@@ -357,7 +357,7 @@ private:
         entryPoints.emplace(
             std::make_pair(inst.entryPointID(), inst.entryPointName()));
       }
-      
+
       if (inst.isType()) {
         if (inst.isFunctionType())
           functionTypeMap.emplace(std::make_pair(
@@ -366,7 +366,7 @@ private:
           typeMap.emplace(std::make_pair(
               inst.getTypeID(), inst.decodeType(typeMap, pointerSize)));
       }
-      
+
       if (inst.isFunction() &&
           (entryPoints.find(inst.getFunctionID()) != entryPoints.end())) {
         // ret type must be void
@@ -392,6 +392,5 @@ bool parseSPIR(int32_t *stream, size_t numWords,
   SPIRVmodule Mod;
   if (!Mod.parseSPIRV(stream, numWords))
     return false;
-
   return Mod.fillModuleInfo(output);
 }
