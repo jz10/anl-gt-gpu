@@ -48,7 +48,8 @@ if(UNIX AND NOT APPLE AND NOT CYGWIN)
             PATHS
             /opt/hiplz
             ${_IMPORT_PREFIX}
-            ENV HIP_PATH HIPLZ_PATH
+            ENV HIP_PATH
+            ENV HIPLZ_PATH
             DOC "HIPLZ installed location"
             NO_DEFAULT_PATH
             )
@@ -70,7 +71,9 @@ if(UNIX AND NOT APPLE AND NOT CYGWIN)
         PATHS
         /opt/hiplz/llvm
         "${HIP_ROOT_DIR}/llvm"
-        ENV HIP_PATH HIPLZ_PATH
+        ENV HIP_PATH
+        ENV HIPLZ_PATH
+        ENV HIPLZ_CLANG_DIR
         PATH_SUFFIXES bin
         NO_DEFAULT_PATH
         )
@@ -83,7 +86,9 @@ if(UNIX AND NOT APPLE AND NOT CYGWIN)
         PATHS
         /opt/hiplz
         "${HIP_ROOT_DIR}"
-        ENV HIP_PATH HIPLZ_PATH
+        ENV HIP_PATH
+        ENV HIPLZ_PATH
+        ENV HIPLZ_CLANG_DIR
         PATH_SUFFIXES bin
         NO_DEFAULT_PATH
         )
