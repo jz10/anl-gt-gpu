@@ -9,10 +9,13 @@ module load intel_compute_runtime cmake
 # The ONEAPI_COMPILER_PREFIX is the intallation of DPC++, e.g. ~/intel/oneapi/compiler/latest/linux
 #
 # Or using DPC++ on JLSE:
-module use /home/jyoung/gpfs_share/compilers/modulefiles/oneapi/2020.2.0.2997/
+SHARE_JY=/home/ac.jyoung/gpfs_share
+module use ${SHARE_JY}/compilers/modulefiles/oneapi/2021.3.0/
 module load mkl compiler
 
 # Set the HIPLZ_INSTALL_PREFIX as HipLZ installation since the dynamic shared library that encapsulates HIP matrix muplication was pre-built and installed at ${HIPLZ_INSTALL_PREFIX}/lib
+HOME_JZ=/home/ac.jzhao1
+export HIPLZ_INSTALL_PREFIX=${HOME_JZ}/hipclworkspace/hipcl/install/
 clang++ sycl_hiplz_interop.cpp -o sycl_hiplz_interop.exe -fsycl  -lze_loader -L${HIPLZ_INSTALL_PREFIX}/lib -lSyCL2HipLZMM -lhiplz
 
 # Run the built test
