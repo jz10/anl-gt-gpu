@@ -964,7 +964,7 @@ void LZContext::synchronizeQueues(hipStream_t queue) {
     // if there is any
     size_t blocking = 0;
     for (hipStream_t Q : Queues)
-      if (Q->isNonBlocking())
+      if (!Q->isNonBlocking())
         blocking++;
     if (blocking != 0) {
       // Need an event pool of to track barriers and signal event
