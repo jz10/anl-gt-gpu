@@ -985,7 +985,7 @@ void LZContext::synchronizeQueues(hipStream_t queue) {
       uint32_t i = 0;
       // barriers on all blocking queues
       for (hipStream_t Q : Queues)
-        if (Q->isNonBlocking()) {
+        if (!Q->isNonBlocking()) {
 	  desc.index = i++;
           status = zeEventCreate(syncData.eventPool, &desc, &event);
           LZ_PROCESS_ERROR_MSG("HipLZ zeEventCreate FAILED with return code ", status);
