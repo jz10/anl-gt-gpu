@@ -92,10 +92,15 @@ void LZDevice::retrieveDeviceProperties() {
   ze_result_t status = ZE_RESULT_SUCCESS;
 
   // Initialize members used as input for zeDeviceGet*Properties() calls.
+  this->deviceMemoryProps.stype = ZE_STRUCTURE_TYPE_DEVICE_MEMORY_PROPERTIES;
   this->deviceMemoryProps.pNext = nullptr;
+  this->deviceComputeProps.stype = ZE_STRUCTURE_TYPE_DEVICE_COMPUTE_PROPERTIES;
   this->deviceComputeProps.pNext = nullptr;
+  this->deviceCacheProps.stype = ZE_STRUCTURE_TYPE_DEVICE_CACHE_PROPERTIES;
   this->deviceCacheProps.pNext = nullptr;
+  this->deviceModuleProps.stype = ZE_STRUCTURE_TYPE_DEVICE_MODULE_PROPERTIES;
   this->deviceModuleProps.pNext = nullptr;
+  this->deviceProps.stype = ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES;
   this->deviceProps.pNext = nullptr;
 
   // Query device properties
