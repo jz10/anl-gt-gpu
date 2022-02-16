@@ -210,7 +210,9 @@ void LZDevice::setupProperties(int index) {
   Properties.clockRate = 1000 * this->deviceProps.coreClockRate; // deviceMemoryProps.maxClockRate;
   // Dev.getInfo<CL_DEVICE_MAX_CLOCK_FREQUENCY>();
 
-  Properties.multiProcessorCount = this->deviceProps.numEUsPerSubslice * this->deviceProps.numSlices; // this->deviceComputeProps.maxTotalGroupSize;
+  Properties.multiProcessorCount = this->deviceProps.numEUsPerSubslice *
+	                           this->deviceProps.numSubslicesPerSlice *
+	                           this->deviceProps.numSlices;
   //??? Dev.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
   Properties.l2CacheSize = this->deviceCacheProps.cacheSize;
   // Dev.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
