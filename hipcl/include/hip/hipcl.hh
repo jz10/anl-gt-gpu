@@ -12,6 +12,8 @@
 #define __noinline__ __attribute__((noinline))
 #define __forceinline__ inline __attribute__((always_inline))
 
+#define __launch_bounds__(...)
+
 #else
 
 /**
@@ -25,6 +27,8 @@
 
 #define __noinline__
 #define __forceinline__ inline
+
+#define __launch_bounds__(...)
 
 #endif
 
