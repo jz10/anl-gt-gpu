@@ -491,7 +491,7 @@ hipError_t LZContext::memPrefetch(const void* ptr, size_t size, hipStream_t stre
   return Queue->memPrefetch(ptr, size);
 }
 
-LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
+LZContext::LZContext(LZDevice* dev) : ClContext(0, 0), captureQueue(0) {
   this->lzDevice = dev;
   ze_context_desc_t ctxtDesc = {
     ZE_STRUCTURE_TYPE_CONTEXT_DESC,
@@ -512,7 +512,7 @@ LZContext::LZContext(LZDevice* dev) : ClContext(0, 0) {
 }
 
 LZContext::LZContext(LZDevice* dev, ze_context_handle_t hContext_, ze_command_queue_handle_t hQueue)
-  : ClContext(0, 0) {
+  : ClContext(0, 0), captureQueue(0) {
   this->lzDevice = dev;
   this->hContext = hContext_;
 
@@ -552,6 +552,26 @@ hipError_t LZContext::launchHostFunc(const void* HostFunction) {
   //   HIP_PROCESS_ERROR_MSG("Hiplz LZProgram was not created before invoking kernel?", hipErrorInitializationError);
   // }
 
+  if (this->captureQueue) {
+    // Capture kernel function invocation  
+    LZExecItem *Arguments;
+    Arguments = (LZExecItem* )ExecStack.top();
+    ExecStack.pop();
+
+    // Extact the argumentss pointer from old mode and reset arugments pointer
+    void** ArgsPtr = Arguments->ExtractArgsPointer();
+   
+    if (this->captureQueue->CaptureKernelCall(HostFunction, 
+					      Arguments->GridDim, 
+					      Arguments->BlockDim, 
+					      ArgsPtr,  
+					      Arguments->SharedMem))
+      return hipSuccess;
+    else
+      return hipErrorInitializationError;
+  }
+
+
   std::string HostFunctionName = this->lzDevice->GetHostFunctionName(HostFunction);
   Kernel = GetKernelByFunctionName(HostFunctionName);
   if (!Kernel) {
@@ -572,8 +592,16 @@ hipError_t LZContext::launchHostFunc(const void* HostFunction) {
 
 // Launch HipLZ kernel (new HIP launch API).
 hipError_t LZContext::launchHostFunc(const void *hostFunction, dim3 numBlocks,
-                               dim3 dimBlocks, void **args,
-                               size_t sharedMemBytes, hipStream_t stream) {
+				     dim3 dimBlocks, void **args,
+				     size_t sharedMemBytes, hipStream_t stream) {
+  if ((LZQueue* )stream == this->captureQueue) {
+    // Capture kernel function invocation
+    if (this->captureQueue->CaptureKernelCall(hostFunction, numBlocks, dimBlocks, args, sharedMemBytes))
+      return hipSuccess;
+    else
+      return hipErrorInitializationError;
+  }
+
   FIND_QUEUE_LOCKED(stream);
   synchronizeQueues(Queue);
   logDebug("Launch kernel via new HIP launch API.");
@@ -1583,9 +1611,48 @@ bool LZQueue::getNativeInfo(unsigned long* nativeInfo, int* size) {
   return true;
 }
 
+// Capture the kernel invocation 
+// TODO: this is not thread safe
+bool LZQueue::CaptureKernelCall(const void *function_address, dim3 numBlocks,
+				dim3 dimBlocks, void **args, size_t sharedMemBytes) {
+  hipKernelNodeParams params;
+  params.func = (void* )function_address;
+  params.blockDim = dimBlocks;
+  params.gridDim = numBlocks;
+  params.kernelParams = args;
+  params.sharedMemBytes = sharedMemBytes;
+  params.extra = nullptr;
+
+  nodeBuf.push_back(new LZGraphNodeKernel(&params));
+
+  return true;
+}
+
+// End capture process
+bool LZQueue::EndCapture(LZGraph* graph) {
+  for (int i = 0; i < nodeBuf.size(); i ++) {
+    LZGraphNode* node = nodeBuf[i];
+    graph->addTailNode(node);
+  }
+  
+  return true;
+}
+
+// End the capture mode 
+hipError_t LZContext::EndCaptureMode(ClQueue* stream, LZGraph* graph) {
+  if (this->captureQueue != (LZQueue* )stream)
+    return hipErrorInvalidResourceHandle;
+  else {
+    this->captureQueue->EndCapture(graph);
+    this->captureQueue = nullptr;
+  }
+
+  return hipSuccess;
+}
+
 LZCommandList::LZCommandList(LZContext* lzContext_) {
   this->lzContext = lzContext_;
-
+ 
   // Initialize the shared memory buffer
   this->shared_buf = this->lzContext->allocate(32, 8, ClMemoryType::Shared);
 
@@ -1969,6 +2036,28 @@ bool LZStdCommandList::ExecuteAsync(LZQueue* lzQueue) {
 // Execute HipLZ command list asynchronously in immediate command list
 bool LZImmCommandList::ExecuteAsync(LZQueue* lzQueue) {
   return true;
+}
+
+void** LZExecItem::ExtractArgsPointer() {
+  if (ArgsBuf) 
+    return ArgsBuf;
+  else if (ArgsPointer) 
+    return nullptr;
+  else if (OffsetsSizes.size() > 0) {
+    // Allocate buffer for arguments pointer
+    ArgsBuf = new void*[OffsetsSizes.size()];
+    uint8_t* buf = ArgData.data();
+    // Extract arguments pointers 
+    for (int i = 0; i < OffsetsSizes.size(); i ++) {
+      ArgsBuf[i] = (void *)(buf +  std::get<0>(OffsetsSizes[i]));
+    }
+
+    // Reset arguments pointer
+    ArgsPointer = ArgsBuf;
+
+    return ArgsBuf;
+  } else 
+    return nullptr;
 }
 
 int LZExecItem::setupAllArgs(ClKernel *k) {
@@ -2554,6 +2643,138 @@ bool LZTextureObject::DestroySampler(ze_sampler_handle_t handle) {
   // Destroy LZ samler
   ze_result_t status = zeSamplerDestroy(handle);
   LZ_PROCESS_ERROR_MSG("HipLZ zeSamplerDestroy FAILED with return code ", status);
+
+  return true;
+}
+
+// HIP graph support
+
+// Add graph node
+bool LZGraph::addGraphNode(LZGraphNode* graphNode, LZGraphNode** dependNodes, int numDeps) {
+  if (numDeps == 0) {
+    if (root == nullptr) {
+      // Add current node as root node
+      root = graphNode;
+      // Set current node as tail node
+      tail = graphNode;
+    } else 
+      // If root node is not null, then current node must have depend nodes
+      return false;
+
+    return true;
+  }
+
+  // Add the node and its dependency
+  for (int i = 0; i < numDeps; i ++) {
+    LZGraphNode* depNode = dependNodes[i];
+    // Register dependency
+    std::vector<LZGraphNode* >& succs = nodeSuccs[depNode];
+    if (std::find(succs.begin(), succs.end(), graphNode) == succs.end())
+      succs.push_back(graphNode);
+  }
+
+  return true;
+}
+
+// Add graph node as tail
+bool LZGraph::addTailNode(LZGraphNode* graphNode) {
+  if (root == nullptr) {
+    // Add 1st node as root node
+    root = graphNode;
+
+    return true;
+  }
+
+  LZGraphNode* deps[1] = {root};
+  // deps[0] = root;
+
+  return addGraphNode(graphNode, deps, 1);
+}
+
+// Destroy graph
+void LZGraph::destroy() {
+  for (std::map<LZGraphNode* , std::vector<LZGraphNode* > >::iterator mi = nodeSuccs.begin(),
+         me = nodeSuccs.end();
+       mi != me; ++ mi) {
+    auto node = mi->first;
+
+    delete node;
+  }
+
+  // Clear the map
+  nodeSuccs.clear();
+}
+
+// Instantiate an executable graph
+bool LZGraph::instantiate(LZGraphExec* graphExec) {
+  if (graphExec == 0 || (nodeSuccs.empty() && root == 0))
+    return false;
+
+  // Make BFS traversal started from root node
+  std::list<LZGraphNode* > nodes;
+  std::set<LZGraphNode* > visited;
+  nodes.push_back(root);
+  visited.insert(root);
+  
+  while (!nodes.empty()) {
+    LZGraphNode* node = nodes.front();
+    nodes.pop_front();
+    
+    // Add node to executable graph
+    graphExec->addInstantiatedGraphNode(node);
+   
+    // Collect the successors
+    if (nodeSuccs.find(node) != nodeSuccs.end()) {
+      std::vector<LZGraphNode* >& succs = nodeSuccs[node];
+      for (int i = 0; i < succs.size(); i ++) {
+	LZGraphNode* succ = succs[i];
+	if (visited.find(succ) == visited.end()) { 
+	  nodes.push_back(succ);
+	  visited.insert(succ);
+	}
+      }
+    }
+  }
+
+  // Instantiate executable graph
+  graphExec->instantiate();
+  
+  return true;
+}
+
+// Kernel function node support
+bool LZGraphNodeKernel::execute(ClQueue* queue) {
+  // Get execution context
+  LZContext* ctx = ((LZQueue* )queue)->GetContext();
+  
+  // Launch kernel function
+  hipError_t res =  ctx->launchHostFunc(params.func, 
+					params.blockDim, 
+					params.gridDim, 
+					params.kernelParams, 
+					params.sharedMemBytes, 
+					(LZQueue* )queue);
+  
+  return res == hipSuccess;
+}
+
+bool LZGraphNodeKernel::instantiate() {
+  return true;
+}
+
+// Memory copy node support
+bool LZGraphNodeMemcpy::execute(ClQueue* queue) {
+  if (this->kind == hipMemcpyHostToHost) {
+    memcpy(this->dst, this->src, this->count);
+  } else {
+    return hipSuccess == ((LZQueue* )queue)->memCopyAsync(this->dst, this->src, this->count);
+  }
+
+  return true;
+}
+
+bool LZGraphNodeMemcpy::instantiate() {
+  // Do nothing about instantiate 
 
   return true;
 }

@@ -662,6 +662,18 @@ typedef ClQueue *hipStream_t;
 
 class LZImage;
 
+class LZGraph;
+
+typedef LZGraph *hipGraph_t;
+
+class LZGraphNode;
+
+typedef LZGraphNode *hipGraphNode_t;
+
+class LZGraphExec;
+
+typedef LZGraphExec *hipGraphExec_t;
+
 // typedef LZImage *hipTextureObject_t;
 
 class ClContext;
@@ -2508,6 +2520,55 @@ hipError_t hipMemcpyPeer(void *dst, int dstDeviceId, const void *src,
 hipError_t hipMemcpyPeerAsync(void *dst, int dstDeviceId, const void *src,
                               int srcDevice, size_t sizeBytes,
                               hipStream_t stream __dparm(0));
+
+// HIP graph support
+struct hipKernelNodeParams {
+  dim3 blockDim;
+  void * func;
+  dim3  gridDim;
+  unsigned int  sharedMemBytes;
+
+  void ** extra;
+  void ** kernelParams;
+};
+
+// Create HIP graph
+hipError_t hipGraphCreate(hipGraph_t* graph, int flag);
+
+// Create HIP graph node for kernel execution
+hipError_t hipGraphAddKernelNode(hipGraphNode_t* kernelNode, hipGraph_t graph, 
+				 const hipGraphNode_t* pDependencies, int numDependencies, 
+				 hipKernelNodeParams* kernelNodeParams);
+
+// Create HIP graph node for 1D memory copy
+hipError_t hipGraphAddMemcpyNode1D(hipGraphNode_t* pGraphNode, hipGraph_t graph, 
+				   const hipGraphNode_t* pDependencies, size_t numDependencies, 
+				   void* dst, const void* src, size_t count, hipMemcpyKind kind);
+
+// Instantiate HIP graph
+hipError_t hipGraphInstantiate(hipGraphExec_t* graphExec, hipGraph_t graph, unsigned long long flags = 0);
+
+// Launches an executable graph in a stream
+hipError_t hipGraphLaunch(hipGraphExec_t graph, hipStream_t stream);
+
+// Destroys an executable graph
+hipError_t hipGraphExecDestroy(hipGraphExec_t graphExec);
+
+// Destroys a graph
+hipError_t hipGraphDestroy(hipGraph_t graph);
+
+typedef enum hipStreamCaptureMode {
+  hipStreamCaptureModeGlobal,
+  hipStreamCaptureModeThreadLocal,
+  hipStreamCaptureModeRelaxed
+} hipStreamCaptureMode;
+
+// Capture kernel invocation 
+hipError_t hipStreamBeginCapture(hipStream_t stream, hipStreamCaptureMode mode);
+
+// End up the kernel invocation capturing
+hipError_t hipStreamEndCapture(hipStream_t stream, hipGraph_t * graph);
+
 #endif
 
 // doxygen end PeerToPeer

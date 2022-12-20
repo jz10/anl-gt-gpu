@@ -161,18 +161,19 @@ set(SAMPLES
     4_shfl
     5_2dshfl
     6_dynamic_shared
-    hipInfo
-    7_streams
-    9_unroll
-    10_memcpy3D
-    11_device
-    12_usm
-    hipSymbol
-    hipDeviceLink
-    sycl_hip_interop
-    #hip_sycl_interop
-    hiploadmodule
-    texture
+    #hipInfo
+    #7_streams
+    #9_unroll
+    #10_memcpy3D
+    #11_device
+    #12_usm
+    #hipSymbol
+    #hipDeviceLink
+    #sycl_hip_interop
+    ##hip_sycl_interop
+    #hiploadmodule
+    #texture
+    hipgraph
 )
 
 foreach (SAMPLE ${SAMPLES})

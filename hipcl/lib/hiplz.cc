@@ -1891,6 +1891,113 @@ hipError_t hipMemcpyFromSymbolAsync(void *dst, const void *symbol, size_t sizeBy
   RETURN(hipMemcpyAsync(dst, (void *)((intptr_t)symPtr + offset), sizeBytes, kind, stream));
 }
 
+// Graph support
+
+// Create HIP graph     
+hipError_t hipGraphCreate(hipGraph_t* graph, int flag) {
+  HIPLZ_INIT();
+
+  // Create graph by initialize LZ graph object
+  // TODO: consider flags
+  * graph = new LZGraph();
+
+  RETURN(hipSuccess);
+}
+
+// Create HIP graph node for kernel execution   
+hipError_t hipGraphAddKernelNode(hipGraphNode_t* kernelNode, hipGraph_t graph,
+                                 const hipGraphNode_t* pDependencies, int numDependencies,
+                                 hipKernelNodeParams* kernelNodeParams) {
+  HIPLZ_INIT();
+
+  ERROR_IF((graph == nullptr), hipErrorInvalidValue);
+  // Create graph node and add it into graph
+  * kernelNode = new LZGraphNodeKernel(kernelNodeParams);
+  // Add graph node to graph
+  graph->addGraphNode(* kernelNode, (LZGraphNode** )pDependencies, numDependencies);
+
+  RETURN(hipSuccess);
+}
+
+// Create HIP graph node for 1D memory copy    
+hipError_t hipGraphAddMemcpyNode1D(hipGraphNode_t* memcpyNode, hipGraph_t graph,
+                                   const hipGraphNode_t* pDependencies, size_t numDependencies,
+                                   void* dst, const void* src, size_t count, hipMemcpyKind kind) {
+  HIPLZ_INIT();
+
+  ERROR_IF((graph == nullptr), hipErrorInvalidValue);
+  // Create graph node and add it into graph 
+  * memcpyNode = new LZGraphNodeMemcpy(dst, src, count, kind);
+  // Add graph node to graph 
+  graph->addGraphNode(* memcpyNode, (LZGraphNode** )pDependencies, numDependencies);
+
+  RETURN(hipSuccess);
+}
+
+// Instantiate HIP graph       
+hipError_t hipGraphInstantiate(hipGraphExec_t* graphExec, hipGraph_t graph, unsigned long long flags) {
+  HIPLZ_INIT();
+
+  ERROR_IF((graph == nullptr), hipErrorInvalidValue);
+  * graphExec = new LZGraphExec();
+  graph->instantiate(* graphExec);
+
+  RETURN(hipSuccess);
+}
+
+// Launches an executable graph in a stream       
+hipError_t hipGraphLaunch(hipGraphExec_t graphExec, hipStream_t stream) {
+  HIPLZ_INIT();
+
+  ERROR_IF((graphExec == nullptr), hipErrorInvalidValue);
+  graphExec->execute(stream);
+
+  RETURN(hipSuccess);
+}
+
+// Destroys an executable graph 
+hipError_t hipGraphExecDestroy(hipGraphExec_t graphExec) {
+  HIPLZ_INIT();
+
+  ERROR_IF((graphExec == nullptr), hipErrorInvalidValue);
+  // Delete executable graph 
+  delete graphExec;
+
+  RETURN(hipSuccess);
+}
+
+// Destroys a graph  
+hipError_t hipGraphDestroy(hipGraph_t graph) {
+  HIPLZ_INIT();
+
+  ERROR_IF((graph == nullptr), hipErrorInvalidValue);
+  // Delete graph 
+  delete graph;
+
+  RETURN(hipSuccess);
+}
+
+// Capture kernel invocation     
+hipError_t hipStreamBeginCapture(hipStream_t stream, hipStreamCaptureMode mode) {
+  HIPLZ_INIT();
+
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  
+  RETURN(cont->StartCaptureMode(stream));
+}
+
+// End up the kernel invocation capturing       
+hipError_t hipStreamEndCapture(hipStream_t stream, hipGraph_t * graph) {
+  HIPLZ_INIT();
+
+  LZContext *cont = getTlsDefaultLzCtx();
+  ERROR_IF((cont == nullptr), hipErrorInvalidDevice);
+  * graph = new LZGraph();
+
+  RETURN(cont->EndCaptureMode(stream, * graph));
+}
+
 hipError_t hipModuleLoadData(hipModule_t *module, const void *image) {
   logError("hipModuleLoadData not implemented\n");
   return hipErrorNoBinaryForGpu;

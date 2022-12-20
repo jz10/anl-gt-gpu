@@ -5,6 +5,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <iostream>
 
 #include <pthread.h>
 
@@ -99,10 +100,21 @@ class LZKernel;
 class LZExecItem : public ExecItem {
 public:
   LZExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t stream)
-      : ExecItem(grid, block, shared, stream) {}
+    : ArgsBuf(0), ExecItem(grid, block, shared, stream) {}
+
+  virtual ~LZExecItem() {
+    if (ArgsBuf)
+      delete ArgsBuf;
+  }
 
   // Setup all arguments for HipLZ kernel funciton invocation
   virtual int setupAllArgs(ClKernel *kernel);
+
+  // Get data buffer
+  void** ExtractArgsPointer(); 
+
+protected:
+  void** ArgsBuf;
 };
 
 class LZContext;
@@ -337,7 +349,11 @@ public:
 
 class LZTextureObject;
 
+class LZQueue;
+
 class LZCommandList;
+
+class LZGraph;
 
 class LZContext : public ClContext {
 protected:
@@ -358,11 +374,13 @@ protected:
   pthread_t monitorThreadId;
   bool stopMonitor;
 
+  LZQueue* captureQueue;
+
   // List of events to release
   std::list<hipContextSyncData> syncDatas;
 
 public:
-  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0) {
+  LZContext(ClDevice* D, unsigned f) : ClContext(D, f), lzDevice(0), captureQueue(0) {
     monitorThreadId = 0;
     stopMonitor = false;
     if (CreateMonitor())
@@ -475,6 +493,22 @@ public:
   // Destroy HIP texture object
   virtual bool destroyTextureObject(hipTextureObject_t textureObject);
   
+  // Start to capture knernel invocation on the given stream
+  hipError_t StartCaptureMode(ClQueue* stream) {
+    if (this->captureQueue != nullptr) {
+      return hipErrorInvalidResourceHandle;
+    } else if (stream == nullptr) {
+      return hipErrorInvalidResourceHandle;
+    } else {
+      this->captureQueue = (LZQueue* )stream;
+    }
+
+    return hipSuccess;
+  }
+
+  // End the capture mode
+  hipError_t EndCaptureMode(ClQueue* stream, LZGraph* graph);
+
   virtual void synchronizeQueues(hipStream_t queue);
 
   bool CreateSyncEventPool(uint32_t count, ze_event_pool_handle_t &pool);
@@ -493,6 +527,7 @@ public:
 protected:
    // Get HipLZ kernel via function name
   hipFunction_t GetKernelByFunctionName(std::string funcName);
+
   virtual ExecItem* createExecItem(dim3 grid, dim3 block, size_t shared, hipStream_t stream) {
     return new LZExecItem(grid, block, shared, stream);
   }
@@ -628,8 +663,6 @@ protected:
 			ze_command_queue_handle_t hQueue = nullptr);
 };
 
-class LZQueue;
-
 class LZCommandList {
 protected:
   // Current associated HipLZ context
@@ -764,6 +797,8 @@ protected:
   bool initializeCmdList();
 };
 
+class LZGraphNode;
+
 class LZQueue : public ClQueue {
 protected:
   // Level-0 context reference
@@ -792,6 +827,9 @@ protected:
 
   // The thread ID for monitor thread
   pthread_t monitorThreadId;
+
+  // The buffer for captured kernel function call
+  std::vector<LZGraphNode* > nodeBuf;
 
 public:
   LZQueue(LZContext* lzContext, unsigned int f, int p);
@@ -875,6 +913,13 @@ public:
   // Get the native information
   virtual bool getNativeInfo(unsigned long* nativeInfo, int* size);
 
+  // Capture the kernel invocation
+  bool CaptureKernelCall(const void *function_address, dim3 numBlocks,
+			 dim3 dimBlocks, void **args, size_t sharedMemBytes);
+
+  // End capture
+  bool EndCapture(LZGraph* graph);
+
 protected:
   // Initialize Level-0 queue
   void initializeQueue(LZContext* lzContext, bool needDefaultCmdList = false);
@@ -944,6 +989,140 @@ protected:
 
   // Destroy the LZ sampler object
   static bool DestroySampler(ze_sampler_handle_t handle);
+};
+
+// HIP graph support
+
+class LZGraphExec;
+
+class LZGraphNode;
+
+class LZGraph {
+public:
+  LZGraph() : root(0), tail(0) {};
+
+  // Release all graph nodes
+  ~LZGraph() {
+    destroy();
+  };
+
+  // Add graph node
+  bool addGraphNode(LZGraphNode* graphNode, LZGraphNode** dependNodes, int numDeps);
+
+  // Add graph node as tail
+  bool addTailNode(LZGraphNode* graphNode);
+
+  // Instantiate the graph for execution
+  bool instantiate(LZGraphExec* graphExec);
+
+  // Destroy graph
+  void destroy();
+
+protected:
+  // The map beteween graph node and its successors 
+  std::map<LZGraphNode* , std::vector<LZGraphNode* > > nodeSuccs;
+
+  // The root graph node
+  LZGraphNode* root;
+
+  // The tail graph node
+  LZGraphNode* tail;
+};
+
+class LZGraphNode {
+protected:
+  // Current graph node ID
+  int ID;
+
+  friend LZGraph;
+
+public:
+  LZGraphNode() : ID(0) {};
+  virtual ~LZGraphNode() {};
+
+  // Execute the graph node 
+  virtual bool execute(ClQueue* queue) = 0;
+
+  // Instantiate the graph node
+  virtual bool instantiate() = 0;
+};
+
+class LZGraphNodeKernel : public LZGraphNode {
+public:
+  LZGraphNodeKernel(hipKernelNodeParams* params) {
+    // Copy parameters
+    this->params = * params;
+  }
+
+  virtual ~LZGraphNodeKernel() {};
+
+  // Execute the kernel function
+  virtual bool execute(ClQueue* queue);
+
+  // Instantiate the graph node 
+  virtual bool instantiate();
+
+protected:
+  // Kernel function parameters
+  hipKernelNodeParams params;
+};
+
+class LZGraphNodeMemcpy : public LZGraphNode {
+public:
+  LZGraphNodeMemcpy(void* dst, const void* src, size_t count, hipMemcpyKind kind) : dst(dst), 
+										    src(src), 
+										    count(count), 
+										    kind(kind) {
+  };
+
+  virtual ~LZGraphNodeMemcpy() {};
+
+  // Execute the memory copy
+  virtual bool execute(ClQueue* queue);
+
+  // Instantiate the graph node 
+  virtual bool instantiate();
+
+protected:
+  void* dst;
+  const void* src;
+  size_t count; 
+  hipMemcpyKind kind;
+};
+
+class LZGraphExec {
+protected:
+  // Add graph nodes for execution
+  void addInstantiatedGraphNode(LZGraphNode* node) {
+    nodes.push_back(node);
+  }
+
+  // Instantiate gaph node
+  void instantiate() {
+    for (int i = 0; i < nodes.size(); i ++) {
+      nodes[i]->instantiate();
+    }
+  }
+
+  friend LZGraph;
+
+public:
+  LZGraphExec() {};
+
+  // Iteratively execute instantiated graph nodes
+  bool execute(ClQueue* queue) {
+    for (int i = 0; i < nodes.size(); i ++) {
+      if (!nodes[i]->execute(queue))
+	// The graph execution is interrupted if there's a failure happened
+	return false;
+    }
+
+    return true;
+  }
+
+protected:
+  // Graph nodes for execution 
+  std::vector<LZGraphNode* > nodes;
 };
 
 LZDevice &HipLZDeviceById(int deviceId);
